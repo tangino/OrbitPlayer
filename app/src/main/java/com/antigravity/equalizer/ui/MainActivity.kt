@@ -1,0 +1,179 @@
+package com.antigravity.equalizer.ui
+
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.os.Build
+import android.os.Bundle
+import android.os.LocaleList
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import com.antigravity.equalizer.data.model.AppScreen
+import com.antigravity.equalizer.ui.screens.MainEqualizerScreen
+import com.antigravity.equalizer.ui.screens.MusicLibraryScreen
+import com.antigravity.equalizer.ui.screens.ParametricEqScreen
+import com.antigravity.equalizer.ui.screens.SettingsScreen
+import com.antigravity.equalizer.ui.theme.MusicEqualizerTheme
+import com.antigravity.equalizer.ui.viewmodel.EqualizerViewModel
+import com.antigravity.equalizer.ui.viewmodel.MusicPlayerViewModel
+import com.antigravity.equalizer.utils.LocaleHelper
+import java.util.Locale
+
+class MainActivity : ComponentActivity() {
+
+    private val equalizerViewModel: EqualizerViewModel by viewModels()
+    private val musicPlayerViewModel: MusicPlayerViewModel by viewModels()
+
+    override fun attachBaseContext(newBase: Context) {
+        val savedLang = LocaleHelper.getSelectedLanguage(newBase)
+        super.attachBaseContext(LocaleHelper.applyLocale(newBase, savedLang))
+    }
+
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
+        // 只要音频/存储权限授权成功，立即触发扫描
+        val isAudioGranted = results[Manifest.permission.READ_MEDIA_AUDIO] == true ||
+                results[Manifest.permission.READ_EXTERNAL_STORAGE] == true
+
+        if (isAudioGranted) {
+            musicPlayerViewModel.scanMedia()
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        checkAndRequestPermissions()
+
+        setContent {
+            val uiState by equalizerViewModel.uiState.collectAsState()
+
+            val targetLocale = when (uiState.selectedLanguage) {
+                "zh" -> Locale.SIMPLIFIED_CHINESE
+                "en" -> Locale.ENGLISH
+                else -> Locale.getDefault()
+            }
+
+            val currentConfig = LocalConfiguration.current
+            val updatedConfig = remember(targetLocale) {
+                Configuration(currentConfig).apply {
+                    setLocale(targetLocale)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        setLocales(LocaleList(targetLocale))
+                    }
+                }
+            }
+
+            val currentContext = LocalContext.current
+            val localizedContext = remember(targetLocale) {
+                currentContext.createConfigurationContext(updatedConfig)
+            }
+
+            // 全局各级页面系统返回手势（BackHandler）精准拦截
+            BackHandler(enabled = uiState.currentScreen == AppScreen.MAIN) {
+                equalizerViewModel.navigateTo(AppScreen.LIBRARY)
+            }
+            BackHandler(enabled = uiState.currentScreen == AppScreen.PARAMETRIC) {
+                equalizerViewModel.navigateTo(AppScreen.MAIN)
+            }
+            BackHandler(enabled = uiState.currentScreen == AppScreen.SETTINGS) {
+                equalizerViewModel.navigateTo(AppScreen.MAIN)
+            }
+
+            CompositionLocalProvider(
+                LocalConfiguration provides updatedConfig,
+                LocalContext provides localizedContext
+            ) {
+                MusicEqualizerTheme {
+                    when (uiState.currentScreen) {
+                        AppScreen.LIBRARY -> {
+                            MusicLibraryScreen(
+                                viewModel = musicPlayerViewModel,
+                                equalizerUiState = uiState,
+                                onOpenEqualizer = { equalizerViewModel.navigateTo(AppScreen.MAIN) }
+                            )
+                        }
+                        AppScreen.MAIN -> {
+                            MainEqualizerScreen(
+                                viewModel = equalizerViewModel,
+                                onBackToLibrary = { equalizerViewModel.navigateTo(AppScreen.LIBRARY) }
+                            )
+                        }
+                        AppScreen.PARAMETRIC -> {
+                            ParametricEqScreen(
+                                viewModel = equalizerViewModel,
+                                onBack = { equalizerViewModel.navigateTo(AppScreen.MAIN) }
+                            )
+                        }
+                        AppScreen.SETTINGS -> {
+                            SettingsScreen(
+                                viewModel = equalizerViewModel,
+                                onBack = { equalizerViewModel.navigateTo(AppScreen.MAIN) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        com.antigravity.equalizer.service.EqualizerService.start(this)
+
+        // 若拥有读取权限且列表为空，自动刷新一次
+        val hasAudioPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
+
+        if (hasAudioPermission) {
+            musicPlayerViewModel.scanMedia()
+        }
+    }
+
+    private fun checkAndRequestPermissions() {
+        val permissionsToRequest = mutableListOf<String>()
+
+        // 媒体读取权限 (Android 13+ READ_MEDIA_AUDIO，低版本 READ_EXTERNAL_STORAGE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(Manifest.permission.READ_MEDIA_AUDIO)
+            }
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+        }
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.RECORD_AUDIO)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(Manifest.permission.BLUETOOTH_CONNECT)
+            }
+        }
+
+        if (permissionsToRequest.isNotEmpty()) {
+            requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
+        }
+    }
+}

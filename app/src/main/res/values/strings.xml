@@ -1,0 +1,87 @@
+<resources>
+    <string name="app_name">Orbit Player</string>
+    <string name="equalizer_on">ON</string>
+    <string name="equalizer_off">OFF</string>
+    <string name="preamp">Preamp</string>
+    <string name="limiter">Limiter</string>
+    <string name="bass_boost">Bass Boost</string>
+    <string name="treble_boost">Treble Boost</string>
+    <string name="compressor">Compressor</string>
+    <string name="preset">Preset</string>
+    <string name="bands">Bands</string>
+    <string name="parametric">Parametric</string>
+    <string name="realtime_spectrum">REALTIME SPECTRUM</string>
+    <string name="filter_bands">FILTER BANDS</string>
+    <string name="reset_flat">Reset Flat</string>
+    <string name="settings">Settings</string>
+    <string name="parametric_eq">Parametric EQ</string>
+    <string name="add_band">Add Band</string>
+    <string name="band_number">Band #%1$d</string>
+    <string name="freq_label">Freq: %1$dHz</string>
+    <string name="gain_label">Gain: %1$.1fdB</string>
+    <string name="q_label">Q: %1$.2f</string>
+    <string name="clip_warning">CLIP</string>
+    <string name="done">Done</string>
+    <string name="cancel">Cancel</string>
+    <string name="import_text">Import</string>
+    <string name="export_text">Export</string>
+
+    <!-- Settings Sections -->
+    <string name="section_audio_engine">AUDIO ENGINE</string>
+    <string name="section_presets_backup">PRESETS &amp; BACKUP</string>
+    <string name="section_per_app_device">PER-APP &amp; DEVICE PROFILES</string>
+    <string name="section_system_diagnostics">SYSTEM &amp; DIAGNOSTICS</string>
+
+    <!-- Settings Items -->
+    <string name="language_title">Display Language</string>
+    <string name="language_subtitle">Change application display language</string>
+    <string name="language_system">Follow System</string>
+    <string name="language_chinese">简体中文 (Chinese)</string>
+    <string name="language_english">English</string>
+
+    <string name="sample_rate_title">Sample Rate</string>
+    <string name="sample_rate_subtitle">Target DSP processing rate</string>
+    <string name="num_bands_title">Number of Bands</string>
+    <string name="num_bands_subtitle">Graphic EQ resolution</string>
+    <string name="auto_gain_title">Auto Gain Control</string>
+    <string name="auto_gain_subtitle">Prevent digital clipping by adjusting preamp</string>
+    <string name="import_preset_title">Import Preset / AutoEQ</string>
+    <string name="import_preset_subtitle">Import from JSON or AutoEQ GraphicEQ text</string>
+    <string name="export_preset_title">Export Presets to JSON</string>
+    <string name="export_preset_subtitle">Backup all equalizer presets</string>
+    <string name="per_app_eq_title">Per-App EQ Profiles</string>
+    <string name="per_app_eq_subtitle">Configure independent EQ for Spotify, QQ Music, etc.</string>
+    <string name="auto_device_preset_title">Auto Device Preset</string>
+    <string name="auto_device_preset_subtitle">Automatically load device-specific EQ when connected</string>
+    <string name="current_audio_device">Current Audio Device</string>
+    <string name="dsp_engine_title">DSP Engine</string>
+    <string name="dsp_engine_value">C++17 SIMD / Lock-Free</string>
+    <string name="dsp_latency_title">DSP Latency</string>
+    <string name="dsp_latency_value">&lt; 2.5 ms</string>
+    <string name="version_title">Version</string>
+    <string name="version_value">1.0.0 Pro</string>
+
+    <!-- Import / Export Dialogs -->
+    <string name="import_dialog_title">Import Preset / AutoEQ</string>
+    <string name="import_dialog_desc">Paste JSON preset string or AutoEQ GraphicEQ text below:</string>
+    <string name="export_dialog_title">Exported Presets JSON</string>
+    <string name="per_app_dialog_title">Per-App EQ Profiles</string>
+
+    <!-- Notifications & Service -->
+    <string name="notification_channel_name">Equalizer Service</string>
+    <string name="notification_channel_desc">Shows active equalizer status</string>
+    <string name="service_running">Equalizer active</string>
+    <string name="service_ready">Ready</string>
+    <string name="service_active_device">Active: %1$s</string>
+
+    <!-- Presets -->
+    <string name="preset_flat">Flat</string>
+    <string name="preset_rock">Rock</string>
+    <string name="preset_pop">Pop</string>
+    <string name="preset_classical">Classical</string>
+    <string name="preset_jazz">Jazz</string>
+    <string name="preset_vocal">Vocal</string>
+    <string name="preset_bass_boost">Bass Boost</string>
+    <string name="preset_treble_boost">Treble Boost</string>
+    <string name="preset_custom">Custom</string>
+</resources>

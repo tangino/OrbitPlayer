@@ -1,0 +1,113 @@
+要打造一款媲美 **Poweramp** 的专业级 Android 音乐播放器，核心在于**高性能音频引擎/播放服务**与**高度可定制且流畅的 UI 交互（双轴缩放/布局切换）**。
+
+建议采用现代化的 Android 技术栈（全 Kotlin + Jetpack Compose + Media3）。
+
+---
+
+## 一、 技术选型方案
+
+| 模块 | 推荐选型 | 选型理由与补充说明 |
+| --- | --- | --- |
+| **语言与构建** | Kotlin + Gradle (KTS) | 现代化开发标准，原生协程支持 |
+| **UI 框架** | **Jetpack Compose** | 极佳的复杂 UI 渲染能力，非常适合实现自定义 Pinch-to-Zoom 动画和布局无缝切换 |
+| **音频播放核心** | **AndroidX Media3 (ExoPlayer)** + `MediaLibraryService` | Google 官方推荐标准。自带后台播放、通知栏控制、蓝牙/车机交互，支持无缝切歌（Gapless Playback）与音轨格式拓展 |
+| **数据库/元数据** | **Room DB** + MediaStore Sync | 缓存音频元数据（所有歌曲、专辑、艺术家、自定义播放列表、文件夹树结构），提升读取与检索速度 |
+| **图片加载** | **Coil (Compose 版)** | 高效加载/缓存专辑封面（支持嵌入式 APIC 标签提取），对内存占用控制极佳 |
+| **音效处理（Poweramp 核心）** | **AudioEffect API** / Custom Native (OpenSL ES / AAudio) | 基础方案使用 Android 内置 EQ (`Equalizer`, `Virtualizer`, `BassBoost`)；高级方案（媲美 Poweramp 独立音频引擎）可通过 C++ (NDK) 自定义 DSP 滤镜 |
+| **依赖注入** | **Hilt** | 官方依赖注入库，管理 ViewModel、Service 和 Repository 声明周期 |
+
+---
+
+## 二、 核心技术难点与实现方案：手势捏放切换 UI (Pinch-to-Zoom Grid/List)
+
+Poweramp 最具特色的功能之一就是列表通过 Pinch 手势动态在不同 View Type 之间切换（无缩放列表 $\rightarrow$ 小图列表 $\rightarrow$ 大图列表 $\rightarrow$ 网格 Grid，且 Grid 文本支持 Overlay/Bottom）。
+
+### 实现思路：
+
+1. **视图状态设计 (ViewState Enum)**：
+* `LIST_COMPACT`：紧凑列表（无缩放图）
+* `LIST_MEDIUM`：标准列表（带小缩放图）
+* `LIST_LARGE`：大图卡片列表
+* `GRID_OVERLAY`：网格（文字重叠在缩放图上）
+* `GRID_BOTTOM`：网格（文字位于缩放图下方）
+
+
+2. **手势捕捉与过渡动画**：
+* 在根布局监听 `pointerInput` 中的 `detectTransformGestures` (缩放因子 `zoom`)。
+* **连续缩放态 (Interactive State)**：手势进行中，使用 Compose 的 `graphicsLayer { scaleX = ...; scaleY = ... }` 实时对当前 Item 进行全局缩放与透明度过度，提供实时反馈。
+* **阈值触发与布局切换**：当缩放比例超过设定的阈值（例如 $>1.3f$ 或 $<0.7f$）时，切换 ViewState 枚举值。
+* **布局平滑过渡**：使用 Compose 的 `AnimatedContent` 或 `LazyVerticalGrid` 搭配 `Modifier.animateItem()`，为视图切换及网格列数改变提供流畅的布局重排动画。
+
+
+
+---
+
+## 三、 开发计划（分阶段 RoadMap）
+
+总体预计开发周期：**12 - 16 周**（单人/小团队标准研发节奏）。
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ Phase 1: 基础架构与媒体库 (W1-W3)                                        │
+│  └─ MediaStore扫描 / 文件夹树构建 / Room数据库 / Media3 后台服务         │
+├────────────────────────────────────────────────────────────────────────┤
+│ Phase 2: 播放引擎与基础UI (W4-W6)                                      │
+│  └─ 播放/暂停/切歌/进度条 / 迷你播放器 / 播放列表CRUD                   │
+├────────────────────────────────────────────────────────────────────────┤
+│ Phase 3: 核心交互 - Pinch-to-Zoom 与高级 UI (W7-W10)                   │
+│  └─ 5种布局样式 / 动态手势缩放与过渡动画 / 文本Overlay/Bottom交互       │
+├────────────────────────────────────────────────────────────────────────┤
+│ Phase 4: 音效引擎与Poweramp特色功能 (W11-W13)                          │
+│  └─ 10段均衡器 / 歌词匹配 / 专辑封面提取 / 歌单导入导出                 │
+├────────────────────────────────────────────────────────────────────────┤
+│ Phase 5: 优化与测试 (W14-W16)                                          │
+│  └─ 性能优化(大图/上万首歌曲加载) / 内存泄漏检测 / 多终端适配           │
+└────────────────────────────────────────────────────────────────────────┘
+
+```
+
+### 详细阶段任务划分：
+
+#### 阶段 1：底层基础与媒体库搭建（Week 1 - 3）
+
+* **权限管理**：适配 Android 13+ (`READ_MEDIA_AUDIO`) 及低版本存储权限。
+* **媒体库扫描引擎**：
+* 使用 ContentResolver 增量扫描本地 `MediaStore.Audio`。
+* **文件夹模式**：递归解析文件路径，构建虚拟文件夹目录树（支持按目录层级浏览）。
+
+
+* **数据库设计**：使用 Room 建立 `Song`、`Folder`、`Playlist` 和 `PlaylistSongXRef` 数据表。
+* **Media3 播放服务**：封装 `MediaLibraryService`，确保后台播放不被杀，配置通知栏控制控制器（MediaStyle Notification）。
+
+#### 阶段 2：基础播放功能与 UI 框架（Week 4 - 6）
+
+* **播放交互**：实现顺序播放、随机播放、单曲循环、列表循环。
+* **播放列表管理**：创建、重命名、删除自定义播放列表，实现拖拽排序（Reorder）。
+* **基础 Compose 页面**：主界面 BottomBar + 迷你播放器（Mini Player） + 展开式全屏播放界面（Now Playing Screen）。
+
+#### 阶段 3：核心亮点 —— 手势 Pinch-to-Zoom 列表系统（Week 7 - 10）
+
+* **多形态 Compose 组件开发**：
+* 编写统一的 `SongItem` 组件，入参为 `ViewState`，分别渲染无图列表、小图列表、大图列表、文字上浮 Grid 和文字置底 Grid。
+
+
+* **手势缩放状态机**：
+* 开发 `Modifier.pinchToZoomLayoutSwitch()` 自定义 Modifier。
+* 记录缩放手势变化量，配合 `SharedTransitionLayout` (Compose 1.7+) 实现网格放大到卡片列表的平滑共享元素过渡动画。
+
+
+* **布局记忆**：将用户设置的列表/网格模式持久化存入 DataStore，支持按页面独立保存（例如“文件夹”用列表，而“所有歌曲”用网格）。
+
+#### 阶段 4：音效与高级特性（Week 11 - 13）
+
+* **均衡器 (EQ)**：整合 Android `Equalizer` API，提供预设（Rock, Pop, Jazz）与自定义频段调节。
+* **无缝播放 (Gapless)** 与 **交叉淡入淡出 (Crossfade)**。
+* **音频标签编辑与封面内嵌**：使用 JAudioTagger 库解析和修改 MP3/FLAC 元数据及内嵌封面。
+
+#### 阶段 5：性能调优与发布准备（Week 14 - 16）
+
+* **大数据量优化**：测试 10,000+ 首本地歌曲场景，针对 Compose `LazyColumn` / `LazyVerticalGrid` 的 `key` 进行优化，确保滑动 60/120 FPS。
+* **内存与图片缓存**：限制 Coil 的 Bitmap 缓存大小，避免因加载大量高清专辑封面导致 OOM。
+* **音频焦点 (Audio Focus)**：完美处理电话打入、导航语音打断、蓝牙耳机拔出自动暂停等逻辑。
+
+---

@@ -1,0 +1,87 @@
+<resources>
+    <string name="app_name">Orbit Player</string>
+    <string name="equalizer_on">开启</string>
+    <string name="equalizer_off">关闭</string>
+    <string name="preamp">前级增益</string>
+    <string name="limiter">限幅器</string>
+    <string name="bass_boost">低音增强</string>
+    <string name="treble_boost">高音增强</string>
+    <string name="compressor">动态压缩</string>
+    <string name="preset">预设</string>
+    <string name="bands">频段</string>
+    <string name="parametric">参数均衡</string>
+    <string name="realtime_spectrum">实时音频频谱</string>
+    <string name="filter_bands">滤波频段列表</string>
+    <string name="reset_flat">重置为平直</string>
+    <string name="settings">设置中心</string>
+    <string name="parametric_eq">参数均衡器 (Parametric EQ)</string>
+    <string name="add_band">新增频段</string>
+    <string name="band_number">频段 #%1$d</string>
+    <string name="freq_label">频率: %1$dHz</string>
+    <string name="gain_label">增益: %1$.1fdB</string>
+    <string name="q_label">品质因子 Q: %1$.2f</string>
+    <string name="clip_warning">削波</string>
+    <string name="done">完成</string>
+    <string name="cancel">取消</string>
+    <string name="import_text">导入</string>
+    <string name="export_text">导出</string>
+
+    <!-- Settings Sections -->
+    <string name="section_audio_engine">音频处理引擎</string>
+    <string name="section_presets_backup">预设管理与备份</string>
+    <string name="section_per_app_device">应用与设备专属配置</string>
+    <string name="section_system_diagnostics">系统与性能诊断</string>
+
+    <!-- Settings Items -->
+    <string name="language_title">显示语言 (Language)</string>
+    <string name="language_subtitle">自定义切换应用界面的语言</string>
+    <string name="language_system">跟随系统 (System)</string>
+    <string name="language_chinese">简体中文 (Chinese)</string>
+    <string name="language_english">English (英语)</string>
+
+    <string name="sample_rate_title">DSP 采样率</string>
+    <string name="sample_rate_subtitle">目标高保真音频处理采样率</string>
+    <string name="num_bands_title">图示频段数量</string>
+    <string name="num_bands_subtitle">图示均衡器频点分辨率</string>
+    <string name="auto_gain_title">自动增益控制 (Auto Gain)</string>
+    <string name="auto_gain_subtitle">根据 EQ 提升自动缩减前级，防止数字削波失真</string>
+    <string name="import_preset_title">导入预设 / AutoEQ</string>
+    <string name="import_preset_subtitle">支持从 JSON 字符串或 AutoEQ 文本格式导入</string>
+    <string name="export_preset_title">导出预设为 JSON</string>
+    <string name="export_preset_subtitle">备份所有用户自定义均衡器预设</string>
+    <string name="per_app_eq_title">Per-App 应用专属 EQ</string>
+    <string name="per_app_eq_subtitle">为 Spotify、QQ音乐、网易云等分别设置独立音效</string>
+    <string name="auto_device_preset_title">设备专属预设自动切换</string>
+    <string name="auto_device_preset_subtitle">连接蓝牙耳机或外部 DAC 时自动加载专属音效</string>
+    <string name="current_audio_device">当前音频输出设备</string>
+    <string name="dsp_engine_title">DSP 核心架构</string>
+    <string name="dsp_engine_value">C++17 SIMD / 零内存分配 / 无锁</string>
+    <string name="dsp_latency_title">处理延迟</string>
+    <string name="dsp_latency_value">&lt; 2.5 毫秒 (极低延迟)</string>
+    <string name="version_title">软件版本</string>
+    <string name="version_value">1.0.0 专业版</string>
+
+    <!-- Import / Export Dialogs -->
+    <string name="import_dialog_title">导入预设 / AutoEQ 调音</string>
+    <string name="import_dialog_desc">请在下方粘贴预设 JSON 文本或 AutoEQ GraphicEQ 调音数据：</string>
+    <string name="export_dialog_title">已导出的预设 JSON 数据</string>
+    <string name="per_app_dialog_title">Per-App 专属应用音效配置</string>
+
+    <!-- Notifications & Service -->
+    <string name="notification_channel_name">均衡器服务</string>
+    <string name="notification_channel_desc">显示当前均衡器后台运行状态与设备联动信息</string>
+    <string name="service_running">均衡器音效运行中</string>
+    <string name="service_ready">就绪</string>
+    <string name="service_active_device">当前生效设备: %1$s</string>
+
+    <!-- Presets -->
+    <string name="preset_flat">平直 (Flat)</string>
+    <string name="preset_rock">摇滚 (Rock)</string>
+    <string name="preset_pop">流行 (Pop)</string>
+    <string name="preset_classical">古典 (Classical)</string>
+    <string name="preset_jazz">爵士 (Jazz)</string>
+    <string name="preset_vocal">人声清澈 (Vocal)</string>
+    <string name="preset_bass_boost">重低音 (Bass Boost)</string>
+    <string name="preset_treble_boost">高音提升 (Treble Boost)</string>
+    <string name="preset_custom">自定义预设</string>
+</resources>

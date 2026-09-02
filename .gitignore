@@ -1,0 +1,18 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+._*
+build/
+*/build/
+.cxx/
+*/.cxx/
+.externalNativeBuild/
+*.apk
+*.aab
+
+# 用户指定的外部环境与SDK排除
+Android/
+android studio/
+
