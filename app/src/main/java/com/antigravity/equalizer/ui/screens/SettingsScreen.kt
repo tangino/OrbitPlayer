@@ -45,16 +45,16 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.settings), fontWeight = FontWeight.Bold, color = TextPrimary) },
+                title = { Text(stringResource(R.string.settings), fontWeight = FontWeight.Bold, color = OrbitTheme.colors.textPrimary) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cancel), tint = TextPrimary)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cancel), tint = OrbitTheme.colors.textPrimary)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBackground)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = OrbitTheme.colors.background)
             )
         },
-        containerColor = DarkBackground
+        containerColor = OrbitTheme.colors.background
     ) { innerPadding ->
         LazyColumn(
             modifier = modifier
@@ -63,7 +63,33 @@ fun SettingsScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 0. Language 语言设置
+            // 0.1 Theme 外观主题设置
+            item {
+                SettingsSectionHeader(stringResource(R.string.theme_title))
+                SettingsCard {
+                    val themeOptions = listOf(
+                        "system" to stringResource(R.string.theme_system),
+                        "dark" to stringResource(R.string.theme_dark),
+                        "light" to stringResource(R.string.theme_light)
+                    )
+                    val currentThemeLabel = themeOptions.find { it.first == uiState.themeMode }?.second
+                        ?: stringResource(R.string.theme_system)
+
+                    SettingsDropdownItem(
+                        icon = Icons.Default.Brightness4,
+                        title = stringResource(R.string.theme_title),
+                        subtitle = stringResource(R.string.theme_subtitle),
+                        currentValue = currentThemeLabel,
+                        options = themeOptions.map { it.second },
+                        onOptionSelected = { selectedLabel ->
+                            val mode = themeOptions.find { it.second == selectedLabel }?.first ?: "system"
+                            viewModel.setThemeMode(mode)
+                        }
+                    )
+                }
+            }
+
+            // 0.2 Language 语言设置
             item {
                 SettingsSectionHeader(stringResource(R.string.language_title))
                 SettingsCard {
@@ -183,7 +209,7 @@ fun SettingsScreen(
                         onCheckedChange = { viewModel.toggleAutoDeviceProfile(it) }
                     )
 
-                    HorizontalDivider(color = GridLineColor)
+                    HorizontalDivider(color = OrbitTheme.colors.gridLine)
 
                     SettingsInfoItem(
                         icon = Icons.Default.Headphones,
@@ -198,9 +224,9 @@ fun SettingsScreen(
                 SettingsSectionHeader(stringResource(R.string.section_system_diagnostics))
                 SettingsCard {
                     SettingsInfoItem(icon = Icons.Default.Memory, title = stringResource(R.string.dsp_engine_title), value = stringResource(R.string.dsp_engine_value))
-                    HorizontalDivider(color = GridLineColor)
+                    HorizontalDivider(color = OrbitTheme.colors.gridLine)
                     SettingsInfoItem(icon = Icons.Default.Speed, title = stringResource(R.string.dsp_latency_title), value = stringResource(R.string.dsp_latency_value))
-                    HorizontalDivider(color = GridLineColor)
+                    HorizontalDivider(color = OrbitTheme.colors.gridLine)
                     SettingsInfoItem(icon = Icons.Default.Info, title = stringResource(R.string.version_title), value = stringResource(R.string.version_value))
                 }
                 Spacer(modifier = Modifier.height(24.dp))
@@ -212,7 +238,7 @@ fun SettingsScreen(
     if (showAppProfileDialog) {
         AlertDialog(
             onDismissRequest = { showAppProfileDialog = false },
-            title = { Text(stringResource(R.string.per_app_dialog_title), color = TextPrimary, fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.per_app_dialog_title), color = OrbitTheme.colors.textPrimary, fontWeight = FontWeight.Bold) },
             text = {
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().height(260.dp),
@@ -224,35 +250,35 @@ fun SettingsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(SurfaceDark)
+                                .background(OrbitTheme.colors.surface)
                                 .padding(10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(profile.appName, fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 13.sp)
-                                Text(profile.packageName, color = TextSecondary, fontSize = 10.sp)
+                                Text(profile.appName, fontWeight = FontWeight.Bold, color = OrbitTheme.colors.textPrimary, fontSize = 13.sp)
+                                Text(profile.packageName, color = OrbitTheme.colors.textSecondary, fontSize = 10.sp)
                             }
                             Box {
                                 Text(
                                     text = profile.presetId.uppercase(),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
-                                    color = PrimaryNeonCyan,
+                                    color = OrbitTheme.colors.primary,
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(4.dp))
-                                        .background(SurfaceCard)
+                                        .background(OrbitTheme.colors.surfaceCard)
                                         .clickable { expanded = true }
                                         .padding(horizontal = 8.dp, vertical = 4.dp)
                                 )
                                 DropdownMenu(
                                     expanded = expanded,
                                     onDismissRequest = { expanded = false },
-                                    modifier = Modifier.background(SurfaceCard)
+                                    modifier = Modifier.background(OrbitTheme.colors.surfaceCard)
                                 ) {
                                     uiState.presets.forEach { preset ->
                                         DropdownMenuItem(
-                                            text = { Text(preset.name, color = TextPrimary) },
+                                            text = { Text(preset.name, color = OrbitTheme.colors.textPrimary) },
                                             onClick = {
                                                 AppProfileRepository.instance.saveAppProfile(profile.copy(presetId = preset.id))
                                                 expanded = false
@@ -268,12 +294,12 @@ fun SettingsScreen(
             confirmButton = {
                 Button(
                     onClick = { showAppProfileDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryNeonCyan)
+                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary)
                 ) {
-                    Text(stringResource(R.string.done), color = DarkBackground)
+                    Text(stringResource(R.string.done), color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White)
                 }
             },
-            containerColor = SurfaceCard
+            containerColor = OrbitTheme.colors.surfaceCard
         )
     }
 
@@ -281,20 +307,20 @@ fun SettingsScreen(
     if (showImportDialog) {
         AlertDialog(
             onDismissRequest = { showImportDialog = false },
-            title = { Text(stringResource(R.string.import_dialog_title), color = TextPrimary) },
+            title = { Text(stringResource(R.string.import_dialog_title), color = OrbitTheme.colors.textPrimary) },
             text = {
                 Column {
                     Text(
                         stringResource(R.string.import_dialog_desc),
                         fontSize = 12.sp,
-                        color = TextSecondary
+                        color = OrbitTheme.colors.textSecondary
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = importText,
                         onValueChange = { importText = it },
                         modifier = Modifier.fillMaxWidth().height(140.dp),
-                        placeholder = { Text("{\"id\":\"...\"} or GraphicEQ: 31.25 ...", color = TextSecondary) }
+                        placeholder = { Text("{\"id\":\"...\"} or GraphicEQ: 31.25 ...", color = OrbitTheme.colors.textSecondary) }
                     )
                 }
             },
@@ -304,17 +330,17 @@ fun SettingsScreen(
                         viewModel.importPresetText(importText)
                         showImportDialog = false
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryNeonCyan)
+                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary)
                 ) {
-                    Text(stringResource(R.string.import_text), color = DarkBackground)
+                    Text(stringResource(R.string.import_text), color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showImportDialog = false }) {
-                    Text(stringResource(R.string.cancel), color = TextSecondary)
+                    Text(stringResource(R.string.cancel), color = OrbitTheme.colors.textSecondary)
                 }
             },
-            containerColor = SurfaceCard
+            containerColor = OrbitTheme.colors.surfaceCard
         )
     }
 
@@ -322,7 +348,7 @@ fun SettingsScreen(
     if (showExportDialog) {
         AlertDialog(
             onDismissRequest = { showExportDialog = false },
-            title = { Text(stringResource(R.string.export_dialog_title), color = TextPrimary) },
+            title = { Text(stringResource(R.string.export_dialog_title), color = OrbitTheme.colors.textPrimary) },
             text = {
                 OutlinedTextField(
                     value = exportedJson,
@@ -334,12 +360,12 @@ fun SettingsScreen(
             confirmButton = {
                 Button(
                     onClick = { showExportDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimaryNeonCyan)
+                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary)
                 ) {
-                    Text(stringResource(R.string.done), color = DarkBackground)
+                    Text(stringResource(R.string.done), color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White)
                 }
             },
-            containerColor = SurfaceCard
+            containerColor = OrbitTheme.colors.surfaceCard
         )
     }
 }
@@ -362,7 +388,7 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(SurfaceCard)
+            .background(OrbitTheme.colors.surfaceCard)
             .padding(vertical = 4.dp),
         content = content
     )
@@ -382,20 +408,20 @@ private fun SettingsSwitchItem(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = title, tint = PrimaryNeonCyan, modifier = Modifier.size(22.dp))
+        Icon(icon, contentDescription = title, tint = OrbitTheme.colors.primary, modifier = Modifier.size(22.dp))
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-            Text(subtitle, fontSize = 12.sp, color = TextSecondary)
+            Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = OrbitTheme.colors.textPrimary)
+            Text(subtitle, fontSize = 12.sp, color = OrbitTheme.colors.textSecondary)
         }
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = SurfaceDark,
-                checkedTrackColor = PrimaryNeonCyan,
-                uncheckedThumbColor = TextSecondary,
-                uncheckedTrackColor = SurfaceDark
+                checkedThumbColor = OrbitTheme.colors.surface,
+                checkedTrackColor = OrbitTheme.colors.primary,
+                uncheckedThumbColor = OrbitTheme.colors.textSecondary,
+                uncheckedTrackColor = OrbitTheme.colors.surface
             )
         )
     }
@@ -415,13 +441,13 @@ private fun SettingsActionItem(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = title, tint = AccentPurple, modifier = Modifier.size(22.dp))
+        Icon(icon, contentDescription = title, tint = OrbitTheme.colors.secondary, modifier = Modifier.size(22.dp))
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-            Text(subtitle, fontSize = 12.sp, color = TextSecondary)
+            Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = OrbitTheme.colors.textPrimary)
+            Text(subtitle, fontSize = 12.sp, color = OrbitTheme.colors.textSecondary)
         }
-        Icon(Icons.Default.ChevronRight, contentDescription = "Go", tint = TextSecondary)
+        Icon(Icons.Default.ChevronRight, contentDescription = "Go", tint = OrbitTheme.colors.textSecondary)
     }
 }
 
@@ -443,23 +469,23 @@ private fun SettingsDropdownItem(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = title, tint = AccentOrange, modifier = Modifier.size(22.dp))
+        Icon(icon, contentDescription = title, tint = OrbitTheme.colors.tertiary, modifier = Modifier.size(22.dp))
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary)
-            Text(subtitle, fontSize = 12.sp, color = TextSecondary)
+            Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = OrbitTheme.colors.textPrimary)
+            Text(subtitle, fontSize = 12.sp, color = OrbitTheme.colors.textSecondary)
         }
-        Text(currentValue, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = PrimaryNeonCyan)
-        Icon(Icons.Default.ArrowDropDown, contentDescription = "Expand", tint = TextSecondary)
+        Text(currentValue, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = OrbitTheme.colors.primary)
+        Icon(Icons.Default.ArrowDropDown, contentDescription = "Expand", tint = OrbitTheme.colors.textSecondary)
 
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
-            modifier = Modifier.background(SurfaceCard)
+            modifier = Modifier.background(OrbitTheme.colors.surfaceCard)
         ) {
             options.forEach { opt ->
                 DropdownMenuItem(
-                    text = { Text(opt, color = TextPrimary) },
+                    text = { Text(opt, color = OrbitTheme.colors.textPrimary) },
                     onClick = {
                         onOptionSelected(opt)
                         expanded = false

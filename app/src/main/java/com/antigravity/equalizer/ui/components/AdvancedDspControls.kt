@@ -11,13 +11,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.antigravity.equalizer.R
-import com.antigravity.equalizer.ui.theme.*
+import com.antigravity.equalizer.ui.theme.OrbitTheme
 
 /**
  * 前级增益下方 DSP 核心旋钮控制区：
@@ -40,11 +39,13 @@ fun AdvancedDspControls(
     isEnabled: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val colors = OrbitTheme.colors
+
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(SurfaceCard)
+            .background(colors.surfaceCard)
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -77,14 +78,14 @@ fun AdvancedDspControls(
                 .width(72.dp)
                 .height(118.dp)
                 .clip(RoundedCornerShape(16.dp))
-                .background(if (compressorEnabled && isEnabled) AccentOrange.copy(alpha = 0.22f) else Color(0xFF1E212D))
+                .background(if (compressorEnabled && isEnabled) colors.tertiary.copy(alpha = 0.22f) else colors.surface)
                 .clickable(enabled = isEnabled) { onCompressorToggle(!compressorEnabled) }
                 .padding(8.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.Compress,
                 contentDescription = stringResource(R.string.compressor),
-                tint = if (compressorEnabled && isEnabled) AccentOrange else TextSecondary,
+                tint = if (compressorEnabled && isEnabled) colors.tertiary else colors.textSecondary,
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.height(6.dp))
@@ -92,14 +93,14 @@ fun AdvancedDspControls(
                 text = stringResource(R.string.compressor),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (compressorEnabled && isEnabled) TextPrimary else TextSecondary
+                color = if (compressorEnabled && isEnabled) colors.textPrimary else colors.textSecondary
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = if (compressorEnabled && isEnabled) "ON" else "OFF",
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (compressorEnabled && isEnabled) AccentOrange else TextSecondary
+                color = if (compressorEnabled && isEnabled) colors.tertiary else colors.textSecondary
             )
         }
     }

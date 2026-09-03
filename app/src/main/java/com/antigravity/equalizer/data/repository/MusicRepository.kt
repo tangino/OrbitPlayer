@@ -115,10 +115,28 @@ class MusicRepository private constructor(private val context: Context) {
         id
     }
 
+    suspend fun renamePlaylist(playlistId: Long, newName: String) = withContext(Dispatchers.IO) {
+        db.songDao.updatePlaylistName(playlistId, newName)
+        refreshPlaylists()
+    }
+
+    suspend fun deletePlaylist(playlistId: Long) = withContext(Dispatchers.IO) {
+        db.songDao.deletePlaylist(playlistId)
+        refreshPlaylists()
+    }
+
     suspend fun addSongToPlaylist(playlistId: Long, songId: Long) = withContext(Dispatchers.IO) {
-        val currentSongs = _allSongs.value
         db.songDao.insertSongToPlaylist(playlistId, songId, 0)
         refreshPlaylists()
+    }
+
+    suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long) = withContext(Dispatchers.IO) {
+        db.songDao.removeSongFromPlaylist(playlistId, songId)
+        refreshPlaylists()
+    }
+
+    suspend fun getSongsInPlaylist(playlistId: Long): List<Song> = withContext(Dispatchers.IO) {
+        db.songDao.getSongsInPlaylist(playlistId)
     }
 
     suspend fun getSongsInFolder(folderPath: String): List<Song> = withContext(Dispatchers.IO) {

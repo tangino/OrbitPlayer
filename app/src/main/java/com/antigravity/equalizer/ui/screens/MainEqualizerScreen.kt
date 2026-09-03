@@ -11,9 +11,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoGraph
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.antigravity.equalizer.R
 import com.antigravity.equalizer.ui.components.*
+import com.antigravity.equalizer.data.model.AppScreen
 import com.antigravity.equalizer.ui.theme.*
 import com.antigravity.equalizer.ui.viewmodel.EqualizerViewModel
 
@@ -55,7 +58,7 @@ fun MainEqualizerScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "返回",
-                            tint = TextPrimary
+                            tint = OrbitTheme.colors.textPrimary
                         )
                     }
                 },
@@ -67,18 +70,27 @@ fun MainEqualizerScreen(
                         Icon(
                             imageVector = Icons.Default.GraphicEq,
                             contentDescription = null,
-                            tint = if (uiState.isEnabled) PrimaryNeonCyan else TextSecondary,
+                            tint = if (uiState.isEnabled) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
                             modifier = Modifier.size(24.dp)
                         )
                         Text(
                             text = stringResource(R.string.app_name),
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
-                            color = TextPrimary
+                            color = OrbitTheme.colors.textPrimary
                         )
                     }
                 },
                 actions = {
+                    // 参数均衡器入口
+                    IconButton(onClick = { viewModel.navigateTo(AppScreen.PARAMETRIC) }) {
+                        Icon(
+                            imageVector = Icons.Default.AutoGraph,
+                            contentDescription = "参数均衡器",
+                            tint = OrbitTheme.colors.textPrimary
+                        )
+                    }
+
                     // 保存配置按钮
                     IconButton(onClick = {
                         val count = uiState.presets.count { it.isCustom }
@@ -88,7 +100,16 @@ fun MainEqualizerScreen(
                         Icon(
                             imageVector = Icons.Default.Save,
                             contentDescription = "保存配置",
-                            tint = PrimaryNeonCyan
+                            tint = OrbitTheme.colors.primary
+                        )
+                    }
+
+                    // 设置入口 (包含主题切换、导入导出等)
+                    IconButton(onClick = { viewModel.navigateTo(AppScreen.SETTINGS) }) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "设置",
+                            tint = OrbitTheme.colors.textPrimary
                         )
                     }
 
@@ -97,20 +118,20 @@ fun MainEqualizerScreen(
                         checked = uiState.isEnabled,
                         onCheckedChange = { viewModel.toggleEnabled(it) },
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = PrimaryNeonCyan,
-                            uncheckedThumbColor = TextSecondary,
-                            uncheckedTrackColor = SurfaceDark
+                            checkedThumbColor = OrbitTheme.colors.surface,
+                            checkedTrackColor = OrbitTheme.colors.primary,
+                            uncheckedThumbColor = OrbitTheme.colors.textSecondary,
+                            uncheckedTrackColor = OrbitTheme.colors.surface
                         ),
                         modifier = Modifier.padding(end = 8.dp)
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = DarkBackground
+                    containerColor = OrbitTheme.colors.background
                 )
             )
         },
-        containerColor = DarkBackground
+        containerColor = OrbitTheme.colors.background
     ) { innerPadding ->
         Column(
             modifier = modifier
@@ -138,7 +159,7 @@ fun MainEqualizerScreen(
                         Text(
                             text = "+ 保存配置",
                             fontWeight = FontWeight.Bold,
-                            color = PrimaryNeonCyan,
+                            color = OrbitTheme.colors.primary,
                             fontSize = 12.sp
                         )
                     },
@@ -146,16 +167,16 @@ fun MainEqualizerScreen(
                         Icon(
                             imageVector = Icons.Default.Add,
                             contentDescription = null,
-                            tint = PrimaryNeonCyan,
+                            tint = OrbitTheme.colors.primary,
                             modifier = Modifier.size(16.dp)
                         )
                     },
                     colors = SuggestionChipDefaults.suggestionChipColors(
-                        containerColor = PrimaryNeonCyan.copy(alpha = 0.15f)
+                        containerColor = OrbitTheme.colors.primary.copy(alpha = 0.15f)
                     ),
                     border = SuggestionChipDefaults.suggestionChipBorder(
                         enabled = true,
-                        borderColor = PrimaryNeonCyan.copy(alpha = 0.5f)
+                        borderColor = OrbitTheme.colors.primary.copy(alpha = 0.5f)
                     )
                 )
 
@@ -173,13 +194,13 @@ fun MainEqualizerScreen(
                                 Text(
                                     text = displayName,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) DarkBackground else TextPrimary
+                                    color = if (isSelected) (if (OrbitTheme.colors.isDark) DarkBackground else Color.White) else OrbitTheme.colors.textPrimary
                                 )
                                 if (preset.isCustom) {
                                     Icon(
                                         imageVector = Icons.Default.Close,
                                         contentDescription = "删除",
-                                        tint = if (isSelected) DarkBackground.copy(alpha = 0.7f) else TextSecondary,
+                                        tint = if (isSelected) (if (OrbitTheme.colors.isDark) DarkBackground.copy(alpha = 0.7f) else Color.White.copy(alpha = 0.7f)) else OrbitTheme.colors.textSecondary,
                                         modifier = Modifier
                                             .size(14.dp)
                                             .clip(CircleShape)
@@ -189,13 +210,13 @@ fun MainEqualizerScreen(
                             }
                         },
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = PrimaryNeonCyan,
-                            containerColor = SurfaceDark
+                            selectedContainerColor = OrbitTheme.colors.primary,
+                            containerColor = OrbitTheme.colors.surfaceCard
                         ),
                         border = FilterChipDefaults.filterChipBorder(
                             enabled = true,
                             selected = isSelected,
-                            borderColor = if (isSelected) PrimaryNeonCyan else GridLineColor
+                            borderColor = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.gridLine
                         )
                     )
                 }
@@ -207,7 +228,7 @@ fun MainEqualizerScreen(
                     .weight(1f)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(20.dp))
-                    .background(SurfaceCard)
+                    .background(OrbitTheme.colors.surfaceCard)
                     .padding(vertical = 16.dp, horizontal = 8.dp)
             ) {
                 LazyRow(
@@ -280,9 +301,9 @@ fun MainEqualizerScreen(
                             label = { Text("预设名称") },
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = PrimaryNeonCyan,
-                                focusedLabelColor = PrimaryNeonCyan,
-                                cursorColor = PrimaryNeonCyan
+                                focusedBorderColor = OrbitTheme.colors.primary,
+                                focusedLabelColor = OrbitTheme.colors.primary,
+                                cursorColor = OrbitTheme.colors.primary
                             ),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -294,17 +315,17 @@ fun MainEqualizerScreen(
                             viewModel.saveCurrentAsCustomPreset(presetNameInput)
                             showSaveDialog = false
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryNeonCyan)
+                        colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary)
                     ) {
-                        Text(text = "保存", color = DarkBackground, fontWeight = FontWeight.Bold)
+                        Text(text = "保存", color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White, fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showSaveDialog = false }) {
-                        Text(text = "取消", color = TextSecondary)
+                        Text(text = "取消", color = OrbitTheme.colors.textSecondary)
                     }
                 },
-                containerColor = SurfaceCard,
+                containerColor = OrbitTheme.colors.surfaceCard,
                 shape = RoundedCornerShape(16.dp)
             )
         }

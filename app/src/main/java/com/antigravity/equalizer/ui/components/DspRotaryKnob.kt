@@ -23,9 +23,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.antigravity.equalizer.ui.theme.PrimaryNeonCyan
-import com.antigravity.equalizer.ui.theme.TextPrimary
-import com.antigravity.equalizer.ui.theme.TextSecondary
+import com.antigravity.equalizer.ui.theme.OrbitTheme
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -43,6 +41,7 @@ fun DspRotaryKnob(
     onToggleEnabled: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val colors = OrbitTheme.colors
     val percentage = (strength * 100).toInt()
     val gainDb = strength * 12.0f // 0 ~ +12dB
     val gainLabel = if (strength > 0.01f) "+%.1f dB".format(gainDb) else "0.0 dB"
@@ -54,13 +53,12 @@ fun DspRotaryKnob(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFF1E212D))
+            .background(colors.surfaceCard)
             // 整个卡片区域均支持手势拖动：向上/向右增加，向下/向左减少
             .pointerInput(enabled, strength) {
                 if (!enabled) return@pointerInput
                 detectDragGestures { change, dragAmount ->
                     change.consume()
-                    // 向上/向右为正，向下/向左为负 (阻尼灵敏度适中，滑动约 140dp 跑满全程)
                     val delta = (-dragAmount.y + dragAmount.x) / 140f
                     val newStrength = (strength + delta).coerceIn(0f, 1f)
                     onStrengthChanged(newStrength)
@@ -82,13 +80,13 @@ fun DspRotaryKnob(
                 text = title,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (enabled) PrimaryNeonCyan else TextSecondary
+                color = if (enabled) colors.primary else colors.textSecondary
             )
             Box(
                 modifier = Modifier
                     .size(6.dp)
                     .clip(CircleShape)
-                    .background(if (enabled) PrimaryNeonCyan else Color.Gray)
+                    .background(if (enabled) colors.primary else colors.textSecondary.copy(alpha = 0.5f))
             )
         }
 
@@ -105,9 +103,9 @@ fun DspRotaryKnob(
                 val radius = (size.minDimension - strokeWidth - 4.dp.toPx()) / 2
                 val center = Offset(size.width / 2, size.height / 2)
 
-                // 背景灰色弧形轨道槽
+                // 背景弧形轨道槽
                 drawArc(
-                    color = Color(0xFF282B38),
+                    color = if (colors.isDark) Color(0xFF282B38) else Color(0xFFCBD5E1),
                     startAngle = startAngle,
                     sweepAngle = sweepAngle,
                     useCenter = false,
@@ -116,14 +114,14 @@ fun DspRotaryKnob(
                     style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                 )
 
-                // 活跃荧光青发光渐变进度弧
+                // 活跃发光渐变进度弧
                 if (enabled && strength > 0.005f) {
                     drawArc(
                         brush = Brush.sweepGradient(
                             listOf(
-                                PrimaryNeonCyan,
-                                Color(0xFF00B0FF),
-                                PrimaryNeonCyan
+                                colors.primary,
+                                colors.secondary,
+                                colors.primary
                             )
                         ),
                         startAngle = startAngle,
@@ -142,30 +140,40 @@ fun DspRotaryKnob(
                 val dotY = center.y + dotRadius * sin(currentRad).toFloat()
 
                 drawCircle(
-                    color = if (enabled) PrimaryNeonCyan else Color.Gray,
+                    color = if (enabled) colors.primary else colors.textSecondary.copy(alpha = 0.5f),
                     radius = 3.5.dp.toPx(),
                     center = Offset(dotX, dotY)
                 )
             }
 
-            // 中心立体金属发光旋钮圆盘
+            // 中心立体金属旋钮圆盘
             Box(
                 modifier = Modifier
                     .size(54.dp)
                     .shadow(
                         elevation = 8.dp,
                         shape = CircleShape,
-                        spotColor = if (enabled) PrimaryNeonCyan.copy(alpha = 0.45f) else Color.Black
+                        spotColor = if (enabled) colors.primary.copy(alpha = 0.4f) else Color.Black
                     )
                     .clip(CircleShape)
                     .background(
-                        Brush.radialGradient(
-                            listOf(
-                                Color(0xFF3C4358),
-                                Color(0xFF222634),
-                                Color(0xFF151722)
+                        if (colors.isDark) {
+                            Brush.radialGradient(
+                                listOf(
+                                    Color(0xFF3C4358),
+                                    Color(0xFF222634),
+                                    Color(0xFF151722)
+                                )
                             )
-                        )
+                        } else {
+                            Brush.radialGradient(
+                                listOf(
+                                    Color(0xFFFFFFFF),
+                                    Color(0xFFF1F5F9),
+                                    Color(0xFFE2E8F0)
+                                )
+                            )
+                        }
                     ),
                 contentAlignment = Alignment.Center
             ) {
@@ -174,14 +182,14 @@ fun DspRotaryKnob(
                         text = if (enabled) "$percentage%" else "OFF",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (enabled) PrimaryNeonCyan else TextSecondary
+                        color = if (enabled) colors.primary else colors.textSecondary
                     )
                     if (enabled && strength > 0.01f) {
                         Text(
                             text = gainLabel,
                             fontSize = 8.5.sp,
                             fontWeight = FontWeight.Medium,
-                            color = TextPrimary
+                            color = colors.textPrimary
                         )
                     }
                 }

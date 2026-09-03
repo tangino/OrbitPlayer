@@ -39,6 +39,12 @@
     <string name="language_chinese">简体中文 (Chinese)</string>
     <string name="language_english">English</string>
 
+    <string name="theme_title">Theme Mode</string>
+    <string name="theme_subtitle">Switch between dark and light appearance</string>
+    <string name="theme_system">Follow System</string>
+    <string name="theme_dark">Dark Theme</string>
+    <string name="theme_light">Light Theme</string>
+
     <string name="sample_rate_title">Sample Rate</string>
     <string name="sample_rate_subtitle">Target DSP processing rate</string>
     <string name="num_bands_title">Number of Bands</string>
@@ -59,7 +65,7 @@
     <string name="dsp_latency_title">DSP Latency</string>
     <string name="dsp_latency_value">&lt; 2.5 ms</string>
     <string name="version_title">Version</string>
-    <string name="version_value">1.0.0 Pro</string>
+    <string name="version_value">0.1.0</string>
 
     <!-- Import / Export Dialogs -->
     <string name="import_dialog_title">Import Preset / AutoEQ</string>
@@ -84,4 +90,20 @@
     <string name="preset_bass_boost">Bass Boost</string>
     <string name="preset_treble_boost">Treble Boost</string>
     <string name="preset_custom">Custom</string>
+
+    <!-- Playlists -->
+    <string name="create_new_playlist">Create New Playlist</string>
+    <string name="rename_playlist">Rename Playlist</string>
+    <string name="delete_playlist">Delete Playlist</string>
+    <string name="delete_playlist_confirm">Are you sure you want to delete playlist "%1$s"?</string>
+    <string name="playlist_name_hint">Playlist Name</string>
+    <string name="add_to_playlist">Add to Playlist</string>
+    <string name="remove_from_playlist">Remove from Playlist</string>
+    <string name="add_songs">Add Songs</string>
+    <string name="empty_playlist_hint">This playlist is empty. Tap Add Songs to get started!</string>
+    <string name="tracks_count">%1$d tracks</string>
+    <string name="btn_ok">OK</string>
+    <string name="btn_cancel">Cancel</string>
+    <string name="btn_play_all">Play All</string>
+    <string name="search_hint">Search songs or artists...</string>
 </resources>

@@ -46,11 +46,12 @@ fun AlbumItem(
             viewMode == LibraryViewMode.GRID_4_COL
 
     val isNoArt = viewMode == LibraryViewMode.LIST_NO_ART
+    val colors = OrbitTheme.colors
 
     val itemBg = if (isCurrent) {
-        PrimaryNeonCyan.copy(alpha = 0.14f)
+        colors.primary.copy(alpha = 0.14f)
     } else if (viewMode == LibraryViewMode.LIST_LARGE_ART || isGrid) {
-        SurfaceCard
+        colors.surfaceCard
     } else {
         Color.Transparent
     }
@@ -84,7 +85,7 @@ fun AlbumItem(
                         .fillMaxWidth()
                         .aspectRatio(1f)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(SurfaceDark),
+                        .background(colors.surfaceCard),
                     contentAlignment = Alignment.Center
                 ) {
                     if (album.albumArtUri != null) {
@@ -125,7 +126,7 @@ fun AlbumItem(
                         else -> 13.sp
                     },
                     fontWeight = FontWeight.Bold,
-                    color = if (isCurrent) PrimaryNeonCyan else TextPrimary,
+                    color = if (isCurrent) colors.primary else colors.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -135,7 +136,7 @@ fun AlbumItem(
                     Text(
                         text = "${album.artist} • ${album.songCount} tracks",
                         fontSize = if (viewMode == LibraryViewMode.GRID_3_COL) 10.sp else 11.sp,
-                        color = TextSecondary,
+                        color = colors.textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -163,7 +164,7 @@ fun AlbumItem(
                         modifier = Modifier
                             .size(coverSize)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(SurfaceDark),
+                            .background(colors.surfaceCard),
                         contentAlignment = Alignment.Center
                     ) {
                         if (album.albumArtUri != null) {
@@ -195,7 +196,7 @@ fun AlbumItem(
                         text = album.title,
                         fontSize = if (viewMode == LibraryViewMode.LIST_LARGE_ART) 15.sp else 14.sp,
                         fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold,
-                        color = if (isCurrent) PrimaryNeonCyan else TextPrimary,
+                        color = if (isCurrent) colors.primary else colors.textPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -203,7 +204,7 @@ fun AlbumItem(
                     Text(
                         text = "${album.artist} • ${album.songCount} tracks",
                         fontSize = 11.sp,
-                        color = TextSecondary,
+                        color = colors.textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -214,7 +215,7 @@ fun AlbumItem(
                 Icon(
                     imageVector = Icons.Default.ChevronRight,
                     contentDescription = null,
-                    tint = TextSecondary.copy(alpha = 0.6f),
+                    tint = colors.textSecondary.copy(alpha = 0.6f),
                     modifier = Modifier.size(18.dp)
                 )
             }

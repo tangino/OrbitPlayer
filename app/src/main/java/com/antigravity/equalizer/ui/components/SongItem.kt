@@ -1,8 +1,10 @@
 package com.antigravity.equalizer.ui.components
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -34,8 +36,10 @@ import com.antigravity.equalizer.ui.viewmodel.LibraryViewMode
  * 歌曲卡片组件：
  * 1. 列表正常滚动时：零多余开销，120 FPS 满帧无拖影
  * 2. 当前播放歌曲：采用高品质动态音频律动频谱指示器 (PlayingEqualizerIndicator)，彻底取代死板的静态图标
- * 3. Pinch 缩放切换视图时：触发尺寸位移形变与全 6 档自适应适配
+ * 3. 支持短按播放、长按弹出操作面板 (onLongClick)
+ * 4. Pinch 缩放切换视图时：触发尺寸位移形变与全 6 档自适应适配
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SongItem(
     song: Song,
@@ -43,7 +47,9 @@ fun SongItem(
     isCurrent: Boolean,
     viewMode: LibraryViewMode,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    trailingContent: (@Composable () -> Unit)? = null
 ) {
     val context = LocalContext.current
     val isGrid = viewMode == LibraryViewMode.GRID_2_COL ||
@@ -51,11 +57,12 @@ fun SongItem(
             viewMode == LibraryViewMode.GRID_4_COL
 
     val isNoArt = viewMode == LibraryViewMode.LIST_NO_ART
+    val colors = OrbitTheme.colors
 
     val itemBg = if (isCurrent) {
-        PrimaryNeonCyan.copy(alpha = 0.16f)
+        colors.primary.copy(alpha = 0.16f)
     } else if (viewMode == LibraryViewMode.LIST_LARGE_ART || isGrid) {
-        SurfaceCard
+        colors.surfaceCard
     } else {
         Color.Transparent
     }
@@ -75,7 +82,10 @@ fun SongItem(
             .fillMaxWidth()
             .clip(itemShape)
             .background(itemBg)
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
             .padding(itemPadding)
     ) {
         if (isGrid) {
@@ -89,7 +99,7 @@ fun SongItem(
                         .fillMaxWidth()
                         .aspectRatio(1f)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(SurfaceDark),
+                        .background(colors.surfaceCard),
                     contentAlignment = Alignment.Center
                 ) {
                     if (song.albumArtUri != null) {
@@ -134,14 +144,15 @@ fun SongItem(
                                     barCount = if (viewMode == LibraryViewMode.GRID_4_COL) 3 else 4,
                                     barWidth = if (viewMode == LibraryViewMode.GRID_4_COL) 2.4.dp else 3.2.dp,
                                     barSpacing = 2.2.dp,
-                                    modifier = Modifier.size(if (viewMode == LibraryViewMode.GRID_4_COL) 16.dp else 24.dp)
+                                    modifier = Modifier.size(if (viewMode == LibraryViewMode.GRID_4_COL) 16.dp else 24.dp),
+                                    color = colors.primary
                                 )
                             } else {
                                 // 暂停状态下显示静止的暂停指示
                                 Icon(
                                     imageVector = Icons.Default.Pause,
                                     contentDescription = "Paused",
-                                    tint = PrimaryNeonCyan.copy(alpha = 0.9f),
+                                    tint = colors.primary.copy(alpha = 0.9f),
                                     modifier = Modifier.size(if (viewMode == LibraryViewMode.GRID_4_COL) 16.dp else 22.dp)
                                 )
                             }
@@ -159,7 +170,7 @@ fun SongItem(
                         else -> 13.sp
                     },
                     fontWeight = FontWeight.Bold,
-                    color = if (isCurrent) PrimaryNeonCyan else TextPrimary,
+                    color = if (isCurrent) colors.primary else colors.textPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -168,8 +179,11 @@ fun SongItem(
                     Spacer(modifier = Modifier.height(1.dp))
                     Text(
                         text = song.artist,
-                        fontSize = if (viewMode == LibraryViewMode.GRID_3_COL) 10.sp else 11.sp,
-                        color = TextSecondary,
+                        fontSize = when (viewMode) {
+                            LibraryViewMode.GRID_3_COL -> 9.sp
+                            else -> 11.sp
+                        },
+                        color = colors.textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -188,7 +202,7 @@ fun SongItem(
                         modifier = Modifier
                             .size(coverSize)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(SurfaceDark),
+                            .background(colors.surface),
                         contentAlignment = Alignment.Center
                     ) {
                         if (song.albumArtUri != null) {
@@ -207,7 +221,7 @@ fun SongItem(
                             Icon(
                                 imageVector = Icons.Default.MusicNote,
                                 contentDescription = null,
-                                tint = TextSecondary,
+                                tint = colors.textSecondary,
                                 modifier = Modifier.size(if (viewMode == LibraryViewMode.LIST_LARGE_ART) 28.dp else 22.dp)
                             )
                         }
@@ -226,13 +240,14 @@ fun SongItem(
                                         barCount = 3,
                                         barWidth = 2.5.dp,
                                         barSpacing = 2.dp,
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(18.dp),
+                                        color = colors.primary
                                     )
                                 } else {
                                     Icon(
                                         imageVector = Icons.Default.Pause,
                                         contentDescription = "Paused",
-                                        tint = PrimaryNeonCyan.copy(alpha = 0.9f),
+                                        tint = colors.primary.copy(alpha = 0.9f),
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -245,17 +260,17 @@ fun SongItem(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = song.title,
+                        fontWeight = FontWeight.Bold,
                         fontSize = if (viewMode == LibraryViewMode.LIST_LARGE_ART) 15.sp else 14.sp,
-                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold,
-                        color = if (isCurrent) PrimaryNeonCyan else TextPrimary,
+                        color = if (isCurrent) colors.primary else colors.textPrimary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "${song.artist} • ${song.album}",
-                        fontSize = 11.sp,
-                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        color = colors.textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -263,21 +278,24 @@ fun SongItem(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // 右侧：当前播放歌曲展示实时跳动的音波律动柱，暂停时展示静止暂停标，普通曲目显示时长
-                if (isCurrent) {
+                // 右侧自定义操作内容或时长
+                if (trailingContent != null) {
+                    trailingContent()
+                } else if (isCurrent) {
                     if (isPlaying) {
                         PlayingEqualizerIndicator(
                             isPlaying = true,
                             barCount = 3,
                             barWidth = 2.2.dp,
                             barSpacing = 2.dp,
-                            modifier = Modifier.height(14.dp)
+                            modifier = Modifier.height(14.dp),
+                            color = colors.primary
                         )
                     } else {
                         Icon(
                             imageVector = Icons.Default.Pause,
                             contentDescription = "Paused",
-                            tint = PrimaryNeonCyan,
+                            tint = colors.primary,
                             modifier = Modifier.size(14.dp)
                         )
                     }
@@ -285,7 +303,7 @@ fun SongItem(
                     Text(
                         text = song.formattedDuration,
                         fontSize = 11.sp,
-                        color = TextSecondary
+                        color = colors.textSecondary
                     )
                 }
             }
@@ -301,7 +319,7 @@ fun SongItem(
 fun PlayingEqualizerIndicator(
     isPlaying: Boolean,
     modifier: Modifier = Modifier,
-    color: Color = PrimaryNeonCyan,
+    color: Color = OrbitTheme.colors.primary,
     barCount: Int = 4,
     barWidth: Dp = 2.5.dp,
     barSpacing: Dp = 2.dp,

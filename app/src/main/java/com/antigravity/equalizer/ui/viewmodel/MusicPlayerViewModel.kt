@@ -209,10 +209,32 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun renamePlaylist(playlistId: Long, newName: String) {
+        viewModelScope.launch {
+            repository.renamePlaylist(playlistId, newName)
+        }
+    }
+
+    fun deletePlaylist(playlistId: Long) {
+        viewModelScope.launch {
+            repository.deletePlaylist(playlistId)
+        }
+    }
+
     fun addSongToPlaylist(playlistId: Long, songId: Long) {
         viewModelScope.launch {
             repository.addSongToPlaylist(playlistId, songId)
         }
+    }
+
+    fun removeSongFromPlaylist(playlistId: Long, songId: Long) {
+        viewModelScope.launch {
+            repository.removeSongFromPlaylist(playlistId, songId)
+        }
+    }
+
+    suspend fun getSongsInPlaylist(playlistId: Long): List<Song> {
+        return repository.getSongsInPlaylist(playlistId)
     }
 
     companion object {

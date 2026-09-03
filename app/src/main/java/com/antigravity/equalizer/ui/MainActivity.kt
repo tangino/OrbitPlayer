@@ -88,20 +88,21 @@ class MainActivity : ComponentActivity() {
                 equalizerViewModel.navigateTo(AppScreen.MAIN)
             }
             BackHandler(enabled = uiState.currentScreen == AppScreen.SETTINGS) {
-                equalizerViewModel.navigateTo(AppScreen.MAIN)
+                equalizerViewModel.navigateTo(AppScreen.LIBRARY)
             }
 
             CompositionLocalProvider(
                 LocalConfiguration provides updatedConfig,
                 LocalContext provides localizedContext
             ) {
-                MusicEqualizerTheme {
+                MusicEqualizerTheme(themeMode = uiState.themeMode) {
                     when (uiState.currentScreen) {
                         AppScreen.LIBRARY -> {
                             MusicLibraryScreen(
                                 viewModel = musicPlayerViewModel,
                                 equalizerUiState = uiState,
-                                onOpenEqualizer = { equalizerViewModel.navigateTo(AppScreen.MAIN) }
+                                onOpenEqualizer = { equalizerViewModel.navigateTo(AppScreen.MAIN) },
+                                onOpenSettings = { equalizerViewModel.navigateTo(AppScreen.SETTINGS) }
                             )
                         }
                         AppScreen.MAIN -> {
@@ -119,7 +120,7 @@ class MainActivity : ComponentActivity() {
                         AppScreen.SETTINGS -> {
                             SettingsScreen(
                                 viewModel = equalizerViewModel,
-                                onBack = { equalizerViewModel.navigateTo(AppScreen.MAIN) }
+                                onBack = { equalizerViewModel.navigateTo(AppScreen.LIBRARY) }
                             )
                         }
                     }

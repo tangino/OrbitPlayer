@@ -14,9 +14,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
-import com.antigravity.equalizer.ui.theme.GridLineColor
-import com.antigravity.equalizer.ui.theme.PrimaryNeonCyan
-import com.antigravity.equalizer.ui.theme.SurfaceCard
+import com.antigravity.equalizer.ui.theme.OrbitTheme
 
 @Composable
 fun FrequencyCurveCanvas(
@@ -25,12 +23,14 @@ fun FrequencyCurveCanvas(
     isEnabled: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val colors = OrbitTheme.colors
+
     Canvas(
         modifier = modifier
             .fillMaxWidth()
             .height(180.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(SurfaceCard)
+            .background(colors.surfaceCard)
     ) {
         val width = size.width
         val height = size.height
@@ -43,7 +43,7 @@ fun FrequencyCurveCanvas(
         dbSteps.forEach { db ->
             val y = midY - (db / maxGain) * (height * 0.42f)
             drawLine(
-                color = if (db == 0f) GridLineColor.copy(alpha = 0.6f) else GridLineColor,
+                color = if (db == 0f) colors.gridLine.copy(alpha = 0.6f) else colors.gridLine,
                 start = Offset(0f, y),
                 end = Offset(width, y),
                 strokeWidth = if (db == 0f) 1.5f else 1.0f
@@ -103,7 +103,7 @@ fun FrequencyCurveCanvas(
             fillPath.close()
 
             // 4. 填充渐变发光区域
-            val activeCyan = if (isEnabled) PrimaryNeonCyan else Color.Gray
+            val activeCyan = if (isEnabled) colors.primary else colors.textSecondary.copy(alpha = 0.4f)
             drawPath(
                 path = fillPath,
                 brush = Brush.verticalGradient(
@@ -132,7 +132,7 @@ fun FrequencyCurveCanvas(
                     center = pt
                 )
                 drawCircle(
-                    color = SurfaceCard,
+                    color = colors.surfaceCard,
                     radius = 2.dp.toPx(),
                     center = pt
                 )

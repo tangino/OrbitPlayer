@@ -270,7 +270,7 @@ class MusicPlaybackService : MediaSessionService() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(isPlaying)
             .setShowWhen(false)
-            .setColor(0xFF00E5FF.toInt())
+            .setColor(0xFFFFEAA7.toInt())
             .setColorized(true)
             .addAction(R.drawable.ic_notif_prev, "Previous", prevPendingIntent)
             .addAction(playPauseIcon, if (isPlaying) "Pause" else "Play", playPausePendingIntent)

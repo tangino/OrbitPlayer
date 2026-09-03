@@ -329,6 +329,13 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
         db.delete("playlist_songs", "playlistId = ?", arrayOf(playlistId.toString()))
     }
 
+    fun updatePlaylistName(playlistId: Long, newName: String): Int {
+        val cv = ContentValues().apply {
+            put("name", newName)
+        }
+        return helper.writableDatabase.update("playlists", cv, "id = ?", arrayOf(playlistId.toString()))
+    }
+
     fun insertSongToPlaylist(playlistId: Long, songId: Long, orderIndex: Int) {
         val cv = ContentValues().apply {
             put("playlistId", playlistId)
@@ -336,5 +343,40 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
             put("orderIndex", orderIndex)
         }
         helper.writableDatabase.insertWithOnConflict("playlist_songs", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun removeSongFromPlaylist(playlistId: Long, songId: Long): Int {
+        return helper.writableDatabase.delete("playlist_songs", "playlistId = ? AND songId = ?", arrayOf(playlistId.toString(), songId.toString()))
+    }
+
+    fun getSongsInPlaylist(playlistId: Long): List<Song> {
+        val list = mutableListOf<Song>()
+        val sql = """
+            SELECT s.* FROM songs s
+            INNER JOIN playlist_songs ps ON s.id = ps.songId
+            WHERE ps.playlistId = ?
+            ORDER BY ps.orderIndex ASC, s.title COLLATE NOCASE ASC
+        """.trimIndent()
+        helper.readableDatabase.rawQuery(sql, arrayOf(playlistId.toString())).use { c ->
+            while (c.moveToNext()) {
+                list.add(
+                    Song(
+                        id = c.getLong(0),
+                        title = c.getString(1),
+                        artist = c.getString(2),
+                        album = c.getString(3),
+                        albumId = c.getLong(4),
+                        durationMs = c.getLong(5),
+                        path = c.getString(6),
+                        size = c.getLong(7),
+                        albumArtUri = c.getString(8),
+                        folderPath = c.getString(9),
+                        year = c.getInt(10),
+                        mimeType = c.getString(11)
+                    )
+                )
+            }
+        }
+        return list
     }
 }

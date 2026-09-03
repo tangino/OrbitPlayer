@@ -2,10 +2,9 @@
 setlocal enabledelayedexpansion
 
 echo ======================================================
-echo    Orbit Player - Windows Install and Debug
+echo    Orbit Player - Windows Install Release (v0.1.0)
 echo ======================================================
 
-:: 1. Detect Android SDK and adb
 if not defined ANDROID_HOME if exist "E:\softwares\Android\sdk" set "ANDROID_HOME=E:\softwares\Android\sdk"
 if not defined ANDROID_HOME if exist "C:\Program Files (x86)\Android\android-sdk" set "ANDROID_HOME=C:\Program Files (x86)\Android\android-sdk"
 if not defined ANDROID_HOME if exist "%LOCALAPPDATA%\Android\Sdk" set "ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk"
@@ -20,9 +19,8 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 
-:: 2. Check connected devices
 echo.
-echo [1/4] Checking connected Android devices...
+echo [1/3] Checking connected Android devices...
 set "DEVICE_FOUND="
 for /f "tokens=1,2" %%A in ('adb devices') do (
     if "%%B"=="device" (
@@ -40,51 +38,47 @@ if not defined DEVICE_FOUND (
 
 echo [SUCCESS] Target device identified: %DEVICE_FOUND%
 
-:: 3. Check or build APK
-set "APK_PATH=%~dp0app\build\outputs\apk\debug\app-debug.apk"
-echo.
-echo [2/4] Checking APK status...
+set "APK_PATH=%~dp0app\build\outputs\apk\release\OrbitPlayer.apk"
+if not exist "%APK_PATH%" set "APK_PATH=%~dp0OrbitPlayer.apk"
+if not exist "%APK_PATH%" set "APK_PATH=%~dp0app\build\outputs\apk\release\app-release.apk"
 
+echo.
+echo [2/3] Checking release APK file...
 if not exist "%APK_PATH%" (
-    echo APK not found. Building debug APK...
-    call "%~dp0build.bat"
+    echo [INFO] Release APK not found. Running build_release.bat...
+    call "%~dp0build_release.bat"
     if !ERRORLEVEL! neq 0 (
-        echo [ERROR] Build failed.
+        echo [ERROR] Release build failed.
         exit /b !ERRORLEVEL!
     )
+    set "APK_PATH=%~dp0app\build\outputs\apk\release\OrbitPlayer.apk"
+    if not exist "%APK_PATH%" set "APK_PATH=%~dp0OrbitPlayer.apk"
 ) else (
-    echo Found existing APK: %APK_PATH%
+    echo Found release APK: %APK_PATH%
 )
 
-:: 4. Install APK
 echo.
-echo [3/4] Installing APK via ADB...
-adb -s %DEVICE_FOUND% install -r -d -t "%APK_PATH%"
+echo [3/3] Installing release APK via ADB (%DEVICE_FOUND%)...
+adb -s %DEVICE_FOUND% install -r -d "%APK_PATH%"
 if !ERRORLEVEL! neq 0 (
     echo [INFO] Direct install failed, attempting push and pm install fallback...
-    adb -s %DEVICE_FOUND% push "%APK_PATH%" /data/local/tmp/orbit_debug.apk
-    adb -s %DEVICE_FOUND% shell pm install -r -d -t /data/local/tmp/orbit_debug.apk
-    adb -s %DEVICE_FOUND% shell rm /data/local/tmp/orbit_debug.apk
+    adb -s %DEVICE_FOUND% push "%APK_PATH%" /data/local/tmp/OrbitPlayer.apk
+    adb -s %DEVICE_FOUND% shell pm install -r -d /data/local/tmp/OrbitPlayer.apk
+    adb -s %DEVICE_FOUND% shell rm /data/local/tmp/OrbitPlayer.apk
     if !ERRORLEVEL! neq 0 (
         echo [ERROR] Installation failed.
         exit /b !ERRORLEVEL!
     )
 )
-echo [SUCCESS] App installed successfully!
 
-:: 5. Launch App and start logcat
 echo.
-echo [4/4] Launching application and streaming DSP logs...
+echo ======================================================
+echo [SUCCESS] OrbitPlayer release APK installed successfully!
+echo ======================================================
+
 set "PACKAGE_NAME=com.antigravity.equalizer"
 set "ACTIVITY_NAME=.ui.MainActivity"
-
-adb -s %DEVICE_FOUND% shell am start -n "%PACKAGE_NAME%/%ACTIVITY_NAME%"
-
 echo.
-echo ======================================================
-echo Application started!
-echo Streaming NativeDSP and EqualizerService logs (Press Ctrl+C to stop)...
-echo ======================================================
-echo.
-
-adb -s %DEVICE_FOUND% logcat -v color -s NativeDSP EqualizerService AudioEffectManager AudioSessionManager DeviceManager AndroidRuntime:E
+echo Launching application...
+adb -s %DEVICE_FOUND% shell am start -n "%PACKAGE_NAME%/%ACTIVITY_NAME%" >nul 2>&1
+echo [DONE] Application ready.

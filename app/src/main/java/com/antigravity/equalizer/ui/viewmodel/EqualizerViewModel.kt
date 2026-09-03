@@ -23,6 +23,7 @@ data class EqualizerUiState(
     val isEnabled: Boolean = true,
     val currentScreen: AppScreen = AppScreen.LIBRARY,
     val selectedLanguage: String = "system",
+    val themeMode: String = "system",
     val sampleRate: Float = 44100f,
     val autoGainEnabled: Boolean = true,
     val autoDeviceProfileEnabled: Boolean = true,
@@ -64,9 +65,10 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
     val uiState: StateFlow<EqualizerUiState> = _uiState.asStateFlow()
 
     init {
-        // 1. 加载已保存的语言配置
+        // 1. 加载已保存的语言与主题配置
         val currentLang = com.antigravity.equalizer.utils.LocaleHelper.getSelectedLanguage(application)
-        _uiState.update { it.copy(selectedLanguage = currentLang) }
+        val savedTheme = prefs.getString(KEY_THEME_MODE, "system") ?: "system"
+        _uiState.update { it.copy(selectedLanguage = currentLang, themeMode = savedTheme) }
 
         // 2. 自动恢复上次保存的 UI 状态与均衡器参数
         restoreEqualizerUiState()
@@ -190,6 +192,11 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
     fun setLanguage(langCode: String) {
         com.antigravity.equalizer.utils.LocaleHelper.setSelectedLanguage(getApplication(), langCode)
         _uiState.update { it.copy(selectedLanguage = langCode) }
+    }
+
+    fun setThemeMode(mode: String) {
+        prefs.edit().putString(KEY_THEME_MODE, mode).apply()
+        _uiState.update { it.copy(themeMode = mode) }
     }
 
     fun setSampleRate(sampleRate: Float) {
@@ -382,5 +389,6 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         private const val KEY_TREBLE_BOOST_STRENGTH = "key_treble_boost_strength"
         private const val KEY_COMPRESSOR_ENABLED = "key_compressor_enabled"
         private const val KEY_LIMITER_ENABLED = "key_limiter_enabled"
+        private const val KEY_THEME_MODE = "key_theme_mode"
     }
 }

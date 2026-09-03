@@ -17,16 +17,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.antigravity.equalizer.ui.theme.PrimaryNeonCyan
-import com.antigravity.equalizer.ui.theme.SurfaceCard
-import com.antigravity.equalizer.ui.theme.SurfaceDark
-import com.antigravity.equalizer.ui.theme.TextPrimary
-import com.antigravity.equalizer.ui.theme.TextSecondary
+import com.antigravity.equalizer.ui.theme.OrbitTheme
+import java.util.Locale
 
 /**
- * 专业混音台加长行程垂直推子 (Long-Throw Professional Fader)
- * 1. 按钮长度加长为 36dp 专业长方形推子头，带发光凹槽中线
- * 2. 全高垂直滑道，极大提升触控精度与视觉比例
+ * 混音台风格全高专业推子组件 (Professional Long-Throw Mixer Fader)
+ * 行程加大，阻尼感顺滑，直观展示频段与增益数值
  */
 @Composable
 fun BandSlider(
@@ -38,22 +34,27 @@ fun BandSlider(
     minGain: Float = -6f,
     maxGain: Float = 6f
 ) {
+    val colors = OrbitTheme.colors
     val freqLabel = formatFrequency(frequencyHz)
-    val gainLabel = if (gainDb > 0) "+%.1f".format(gainDb) else "%.1f".format(gainDb)
+    val gainLabel = when {
+        gainDb > 0 -> String.format(Locale.US, "+%.1f", gainDb)
+        gainDb == 0f -> "0.0"
+        else -> String.format(Locale.US, "%.1f", gainDb)
+    }
 
     Column(
         modifier = modifier
-            .width(46.dp)
-            .fillMaxHeight(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween
+            .fillMaxHeight()
+            .width(48.dp)
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // 顶部：增益数值
         Text(
             text = gainLabel,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
-            color = if (isEnabled && gainDb != 0f) PrimaryNeonCyan else TextSecondary
+            color = if (isEnabled && gainDb != 0f) colors.primary else colors.textSecondary
         )
 
         // 中间：高行程垂直滑块轨道
@@ -64,14 +65,14 @@ fun BandSlider(
                 .padding(vertical = 10.dp),
             contentAlignment = Alignment.Center
         ) {
-            // 背景滑轨槽 (深色带立体内凹)
+            // 背景滑轨槽
             Box(
                 modifier = Modifier
                     .width(6.dp)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(3.dp))
-                    .background(SurfaceDark)
-                    .border(0.5.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(3.dp))
+                    .background(colors.surface)
+                    .border(0.5.dp, colors.surfaceBorder, RoundedCornerShape(3.dp))
             )
 
             // 中间 0dB 基准刻度线
@@ -79,7 +80,7 @@ fun BandSlider(
                 modifier = Modifier
                     .width(18.dp)
                     .height(2.dp)
-                    .background(TextSecondary.copy(alpha = 0.4f))
+                    .background(colors.textSecondary.copy(alpha = 0.4f))
             )
 
             // 滑块交互区
@@ -101,7 +102,7 @@ fun BandSlider(
             ) {
                 val totalH = maxHeight
                 val fraction = ((gainDb - minGain) / (maxGain - minGain)).coerceIn(0f, 1f)
-                val thumbLength = 36.dp // 按钮长度加长为 36dp
+                val thumbLength = 36.dp
                 val thumbOffset = (totalH - thumbLength) * (1f - fraction)
 
                 // 专业加长推子按钮 (Long Professional Fader Knob)
@@ -113,52 +114,57 @@ fun BandSlider(
                         .shadow(
                             elevation = 8.dp,
                             shape = RoundedCornerShape(6.dp),
-                            spotColor = if (isEnabled) PrimaryNeonCyan.copy(alpha = 0.5f) else Color.Black
+                            spotColor = if (isEnabled) colors.primary.copy(alpha = 0.4f) else Color.Black
                         )
                         .clip(RoundedCornerShape(6.dp))
                         .background(
-                            if (isEnabled) {
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color(0xFF353C4E),
-                                        Color(0xFF1E222D),
-                                        Color(0xFF151820)
+                            if (colors.isDark) {
+                                if (isEnabled) {
+                                    Brush.verticalGradient(
+                                        listOf(Color(0xFF353C4E), Color(0xFF1E222D), Color(0xFF151820))
                                     )
-                                )
+                                } else {
+                                    Brush.verticalGradient(
+                                        listOf(Color(0xFF2A2D36), Color(0xFF1A1C22))
+                                    )
+                                }
                             } else {
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color(0xFF2A2D36),
-                                        Color(0xFF1A1C22)
+                                if (isEnabled) {
+                                    Brush.verticalGradient(
+                                        listOf(Color(0xFFFFFFFF), Color(0xFFF1F5F9), Color(0xFFE2E8F0))
                                     )
-                                )
+                                } else {
+                                    Brush.verticalGradient(
+                                        listOf(Color(0xFFE2E8F0), Color(0xFFCBD5E1))
+                                    )
+                                }
                             }
                         )
                         .border(
                             width = 1.dp,
-                            color = if (isEnabled) PrimaryNeonCyan.copy(alpha = 0.7f) else Color.White.copy(alpha = 0.1f),
+                            color = if (isEnabled) colors.primary.copy(alpha = 0.7f) else colors.surfaceBorder,
                             shape = RoundedCornerShape(6.dp)
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    // 推子中心高亮荧光青发光中线
+                    // 推子中心高亮荧光发光中线
                     Box(
                         modifier = Modifier
                             .width(14.dp)
                             .height(2.5.dp)
                             .clip(RoundedCornerShape(1.dp))
-                            .background(if (isEnabled) PrimaryNeonCyan else TextSecondary.copy(alpha = 0.5f))
+                            .background(if (isEnabled) colors.primary else colors.textSecondary.copy(alpha = 0.5f))
                     )
                 }
             }
         }
 
-        // 底部：频点名称 (如 31, 62, 125, 250, 500, 1k, 2k, 4k, 8k, 16k)
+        // 底部：频点名称
         Text(
             text = freqLabel,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
-            color = if (isEnabled) TextPrimary else TextSecondary
+            color = if (isEnabled) colors.textPrimary else colors.textSecondary
         )
     }
 }

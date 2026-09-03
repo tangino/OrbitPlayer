@@ -39,6 +39,12 @@
     <string name="language_chinese">简体中文 (Chinese)</string>
     <string name="language_english">English (英语)</string>
 
+    <string name="theme_title">外观主题 (Theme)</string>
+    <string name="theme_subtitle">选择深色、浅色或跟随系统外观</string>
+    <string name="theme_system">跟随系统 (System)</string>
+    <string name="theme_dark">深色模式 (Dark)</string>
+    <string name="theme_light">浅色模式 (Light)</string>
+
     <string name="sample_rate_title">DSP 采样率</string>
     <string name="sample_rate_subtitle">目标高保真音频处理采样率</string>
     <string name="num_bands_title">图示频段数量</string>
@@ -59,7 +65,7 @@
     <string name="dsp_latency_title">处理延迟</string>
     <string name="dsp_latency_value">&lt; 2.5 毫秒 (极低延迟)</string>
     <string name="version_title">软件版本</string>
-    <string name="version_value">1.0.0 专业版</string>
+    <string name="version_value">0.1.0</string>
 
     <!-- Import / Export Dialogs -->
     <string name="import_dialog_title">导入预设 / AutoEQ 调音</string>
@@ -84,4 +90,20 @@
     <string name="preset_bass_boost">重低音 (Bass Boost)</string>
     <string name="preset_treble_boost">高音提升 (Treble Boost)</string>
     <string name="preset_custom">自定义预设</string>
+
+    <!-- Playlists -->
+    <string name="create_new_playlist">新建播放列表</string>
+    <string name="rename_playlist">重命名播放列表</string>
+    <string name="delete_playlist">删除播放列表</string>
+    <string name="delete_playlist_confirm">确定要删除播放列表「%1$s」吗？</string>
+    <string name="playlist_name_hint">播放列表名称</string>
+    <string name="add_to_playlist">添加到播放列表</string>
+    <string name="remove_from_playlist">从播放列表中移除</string>
+    <string name="add_songs">添加歌曲</string>
+    <string name="empty_playlist_hint">该播放列表暂无歌曲，点击“添加歌曲”开始挑选吧！</string>
+    <string name="tracks_count">%1$d 首歌曲</string>
+    <string name="btn_ok">确定</string>
+    <string name="btn_cancel">取消</string>
+    <string name="btn_play_all">播放全部</string>
+    <string name="search_hint">搜索歌曲或艺术家...</string>
 </resources>

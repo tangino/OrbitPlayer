@@ -13,7 +13,6 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,11 +28,13 @@ fun SpectrumVisualizer(
     isEnabled: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val colors = OrbitTheme.colors
+
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(SurfaceCard)
+            .background(colors.surfaceCard)
             .padding(12.dp)
     ) {
         // 顶部电平指示
@@ -46,7 +47,7 @@ fun SpectrumVisualizer(
                 text = stringResource(R.string.realtime_spectrum),
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
-                color = TextSecondary,
+                color = colors.textSecondary,
                 letterSpacing = 1.sp
             )
 
@@ -85,9 +86,9 @@ fun SpectrumVisualizer(
                 drawRoundRect(
                     brush = Brush.verticalGradient(
                         colors = if (isEnabled) {
-                            listOf(PrimaryNeonCyan, AccentPurple)
+                            listOf(colors.primary, colors.secondary)
                         } else {
-                            listOf(Color.DarkGray, Color.Black)
+                            listOf(colors.textSecondary.copy(alpha = 0.3f), colors.textSecondary.copy(alpha = 0.1f))
                         },
                         startY = y,
                         endY = totalH
@@ -103,27 +104,28 @@ fun SpectrumVisualizer(
 
 @Composable
 private fun PeakMeterBar(label: String, peakDb: Float, isEnabled: Boolean) {
+    val colors = OrbitTheme.colors
     val normalized = if (isEnabled) ((peakDb + 60f) / 60f).coerceIn(0f, 1f) else 0f
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Text(text = label, fontSize = 9.sp, color = TextSecondary, fontWeight = FontWeight.Bold)
+        Text(text = label, fontSize = 9.sp, color = colors.textSecondary, fontWeight = FontWeight.Bold)
         Box(
             modifier = Modifier
                 .width(40.dp)
                 .height(6.dp)
                 .clip(RoundedCornerShape(3.dp))
-                .background(SurfaceDark)
+                .background(colors.surface)
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(normalized)
                     .background(
-                        if (normalized > 0.9f) DangerRed
-                        else if (normalized > 0.75f) AccentOrange
-                        else PrimaryNeonCyan
+                        if (normalized > 0.9f) colors.danger
+                        else if (normalized > 0.75f) colors.tertiary
+                        else colors.primary
                     )
             )
         }

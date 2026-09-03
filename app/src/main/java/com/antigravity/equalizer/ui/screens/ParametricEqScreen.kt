@@ -39,21 +39,21 @@ fun ParametricEqScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.parametric_eq), fontWeight = FontWeight.Bold, color = TextPrimary) },
+                title = { Text(stringResource(R.string.parametric_eq), fontWeight = FontWeight.Bold, color = OrbitTheme.colors.textPrimary) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cancel), tint = TextPrimary)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cancel), tint = OrbitTheme.colors.textPrimary)
                     }
                 },
                 actions = {
                     IconButton(onClick = { viewModel.addParametricBand() }) {
-                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_band), tint = PrimaryNeonCyan)
+                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_band), tint = OrbitTheme.colors.primary)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBackground)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = OrbitTheme.colors.background)
             )
         },
-        containerColor = DarkBackground
+        containerColor = OrbitTheme.colors.background
     ) { innerPadding ->
         Column(
             modifier = modifier
@@ -78,7 +78,7 @@ fun ParametricEqScreen(
                 text = "${stringResource(R.string.filter_bands)} (${uiState.parametricBands.size})",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
-                color = PrimaryNeonCyan,
+                color = OrbitTheme.colors.primary,
                 letterSpacing = 1.sp
             )
 
@@ -116,7 +116,7 @@ private fun ParametricBandCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(SurfaceCard)
+            .background(OrbitTheme.colors.surfaceCard)
             .padding(12.dp)
     ) {
         Row(
@@ -128,13 +128,13 @@ private fun ParametricBandCard(
                 Checkbox(
                     checked = band.enabled,
                     onCheckedChange = { onUpdate(band.copy(enabled = it)) },
-                    colors = CheckboxDefaults.colors(checkedColor = PrimaryNeonCyan, uncheckedColor = TextSecondary)
+                    colors = CheckboxDefaults.colors(checkedColor = OrbitTheme.colors.primary, uncheckedColor = OrbitTheme.colors.textSecondary)
                 )
                 Text(
                     text = stringResource(R.string.band_number, bandIndex + 1),
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
-                    color = if (band.enabled) TextPrimary else TextSecondary
+                    color = if (band.enabled) OrbitTheme.colors.textPrimary else OrbitTheme.colors.textSecondary
                 )
             }
 
@@ -144,10 +144,10 @@ private fun ParametricBandCard(
                     text = band.type.displayName,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = AccentOrange,
+                    color = OrbitTheme.colors.tertiary,
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .background(SurfaceDark)
+                        .background(OrbitTheme.colors.surface)
                         .clickable { typeMenuExpanded = true }
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 )
@@ -155,11 +155,11 @@ private fun ParametricBandCard(
                 DropdownMenu(
                     expanded = typeMenuExpanded,
                     onDismissRequest = { typeMenuExpanded = false },
-                    modifier = Modifier.background(SurfaceCard)
+                    modifier = Modifier.background(OrbitTheme.colors.surfaceCard)
                 ) {
                     FilterType.values().forEach { t ->
                         DropdownMenuItem(
-                            text = { Text(t.displayName, color = TextPrimary) },
+                            text = { Text(t.displayName, color = OrbitTheme.colors.textPrimary) },
                             onClick = {
                                 onUpdate(band.copy(type = t))
                                 typeMenuExpanded = false
@@ -170,7 +170,7 @@ private fun ParametricBandCard(
             }
 
             IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = DangerRed)
+                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = OrbitTheme.colors.danger)
             }
         }
 
