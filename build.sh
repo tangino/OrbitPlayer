@@ -65,14 +65,19 @@ fi
 
 echo -e "${GREEN}      使用 Gradle: ${GRADLE_BIN}${NC}"
 
+GRADLE_EXTRA_OPTS=()
+if [ -n "$FOUND_JDK" ]; then
+    GRADLE_EXTRA_OPTS+=("-Dorg.gradle.java.home=$FOUND_JDK")
+fi
+
 # 支持传入参数如 --clean
 if [[ "$*" == *"--clean"* ]]; then
     echo -e "${YELLOW}正在执行 clean 清理...${NC}"
-    $GRADLE_BIN clean
+    $GRADLE_BIN "${GRADLE_EXTRA_OPTS[@]}" clean
 fi
 
 # 执行完整编译任务
-$GRADLE_BIN assembleDebug
+$GRADLE_BIN "${GRADLE_EXTRA_OPTS[@]}" assembleDebug
 
 APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
 

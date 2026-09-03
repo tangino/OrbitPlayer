@@ -1,0 +1,9 @@
+## 跨平台 SDK 路径示例配置 (根据自身系统复制并重命名为 local.properties)
+#
+# Windows 示例:
+# sdk.dir=E\:\\softwares\\Android\\sdk
+# 或
+# sdk.dir=C\:\\Users\\YourUsername\\AppData\\Local\\Android\\Sdk
+#
+# macOS 示例:
+# sdk.dir=/Users/YourUsername/Library/Android/sdk
