@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -19,12 +20,9 @@ import com.antigravity.equalizer.ui.viewmodel.LibraryViewMode
 
 /**
  * Poweramp 电影级双指捏放 (Pinch) 视图切换转场容器：
- * 精确还原 1.mp4 与 2.mp4 视频中的标志性物理动效：
- * 1. 实时手势跟手：手指按住捏放滑动时，按双指 Focal Point 产生微缩放阻尼反馈
- * 2. 深度景深缩放 (Depth Zoom) & 交叉渐变 (Cross-Fade)：
- *    - Zoom In：旧视图向外继续放大 (1.20f) 并迅速淡出；新视图从深层 (0.74f) 伴随自然物理阻尼弹入推进至 1.0f
- *    - Zoom Out：旧视图向内收敛缩小 (0.82f) 并迅速淡出；新视图从外层 (1.26f) 向内收缩入场
- * 3. 弹性自然收敛：采用 spring(dampingRatio = 0.82f, stiffness = 380f)，触感饱满顺滑
+ * 1. 真正的 120 FPS 实时跟手：在 Draw 绘制阶段利用 GPU 硬件合成层 (RenderNode) 1:1 跟手无损缩放
+ * 2. 毫秒级交叉景深渐变：150ms 紧凑交叠，旧视图 110ms 极速退场，消除双列表同时绘制导致的掉帧
+ * 3. 零反弹与零跳变：切换瞬间平滑无缝收敛至 1.0f
  */
 @Composable
 fun PowerampViewModeTransitionContainer(
@@ -43,45 +41,37 @@ fun PowerampViewModeTransitionContainer(
                 val pivot = pinchState.lastTriggeredPivot
 
                 if (isZoomIn) {
-                    // Zoom In 转场：新视图从深层平滑放大推进至 1.0f (去除了回弹振荡，直接平滑到位)
-                    (scaleIn(
-                        initialScale = 0.74f,
+                    // Zoom In 转场：新视图伴随轻微景深淡入，旧视图微放迅速淡出
+                    (fadeIn(
+                        animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing)
+                    ) + scaleIn(
+                        initialScale = 0.93f,
                         transformOrigin = pivot,
-                        animationSpec = tween(
-                            durationMillis = 260,
-                            easing = FastOutSlowInEasing
-                        )
-                    ) + fadeIn(
-                        animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
+                        animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)
                     )).togetherWith(
-                        // 旧视图：向外继续扩张放大至 1.20f，并在 200ms 内迅速淡出
-                        scaleOut(
-                            targetScale = 1.20f,
+                        fadeOut(
+                            animationSpec = tween(durationMillis = 110, easing = FastOutLinearInEasing)
+                        ) + scaleOut(
+                            targetScale = 1.07f,
                             transformOrigin = pivot,
-                            animationSpec = tween(durationMillis = 220, easing = FastOutLinearInEasing)
-                        ) + fadeOut(
-                            animationSpec = tween(durationMillis = 200, easing = FastOutLinearInEasing)
+                            animationSpec = tween(durationMillis = 130, easing = FastOutLinearInEasing)
                         )
                     )
                 } else {
-                    // Zoom Out 转场：新视图从前景层平滑收缩进入至 1.0f (去除了回弹振荡，直接平滑到位)
-                    (scaleIn(
-                        initialScale = 1.26f,
+                    // Zoom Out 转场：新视图从微观外围淡入，旧视图微缩迅速淡出
+                    (fadeIn(
+                        animationSpec = tween(durationMillis = 150, easing = LinearOutSlowInEasing)
+                    ) + scaleIn(
+                        initialScale = 1.07f,
                         transformOrigin = pivot,
-                        animationSpec = tween(
-                            durationMillis = 260,
-                            easing = FastOutSlowInEasing
-                        )
-                    ) + fadeIn(
-                        animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
+                        animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing)
                     )).togetherWith(
-                        // 旧视图：向内收敛缩小至 0.82f，并在 200ms 内迅速淡出
-                        scaleOut(
-                            targetScale = 0.82f,
+                        fadeOut(
+                            animationSpec = tween(durationMillis = 110, easing = FastOutLinearInEasing)
+                        ) + scaleOut(
+                            targetScale = 0.93f,
                             transformOrigin = pivot,
-                            animationSpec = tween(durationMillis = 220, easing = FastOutLinearInEasing)
-                        ) + fadeOut(
-                            animationSpec = tween(durationMillis = 200, easing = FastOutLinearInEasing)
+                            animationSpec = tween(durationMillis = 130, easing = FastOutLinearInEasing)
                         )
                     )
                 }.using(

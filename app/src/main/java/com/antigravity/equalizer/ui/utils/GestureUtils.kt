@@ -1,6 +1,5 @@
 package com.antigravity.equalizer.ui.utils
 
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -9,7 +8,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -18,7 +16,6 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import com.antigravity.equalizer.ui.viewmodel.LibraryViewMode
-import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.sqrt
 
@@ -35,7 +32,6 @@ data class PinchTransformState(
 class PinchTransitionState(
     initialPivot: TransformOrigin = TransformOrigin.Center
 ) {
-    val liveScale = Animatable(1f)
     var livePivot by mutableStateOf(initialPivot)
     var isPinching by mutableStateOf(false)
     var lastTriggeredDirection by mutableStateOf(true) // true: Zoom In, false: Zoom Out
@@ -90,18 +86,17 @@ fun Modifier.pinchToZoomViewMode(
                     val currentDistance = (p1.position - p2.position).calcDistance()
                     val prevDistance = (p1.previousPosition - p2.previousPosition).calcDistance()
 
-                    if (prevDistance > 8f && currentDistance > 8f) {
-                        val zoom = (currentDistance / prevDistance).coerceIn(0.5f, 2.0f)
+                    if (prevDistance > 4f && currentDistance > 4f) {
+                        val zoom = (currentDistance / prevDistance).coerceIn(0.6f, 1.6f)
                         accumulatedZoom *= zoom
 
                         if (!hasTriggeredInCurrentGesture) {
-                            // 灵敏触发阈值与 350ms 防抖冷却
                             val now = System.currentTimeMillis()
-                            if (now - lastTriggerTime > 350L) {
+                            if (now - lastTriggerTime > 320L) {
                                 val activeMode = currentModeState
 
-                                // 双指张开（放大 / Zoom In）：列表 -> 网格大图 -> 网格
-                                if (accumulatedZoom > 1.15f) {
+                                // 双指张开（放大 / Zoom In）：列表 -> 网格大图 -> 网格 (灵敏阈值 1.10f)
+                                if (accumulatedZoom > 1.10f) {
                                     val nextMode = when (activeMode) {
                                         LibraryViewMode.LIST_NO_ART -> LibraryViewMode.LIST_SMALL_ART
                                         LibraryViewMode.LIST_SMALL_ART -> LibraryViewMode.LIST_LARGE_ART
@@ -113,13 +108,13 @@ fun Modifier.pinchToZoomViewMode(
                                     if (nextMode != activeMode) {
                                         pinchState.lastTriggeredDirection = true
                                         pinchState.lastTriggeredPivot = pivotOrigin
-                                        onModeChangeState(nextMode)
                                         hasTriggeredInCurrentGesture = true
                                         lastTriggerTime = now
+                                        onModeChangeState(nextMode)
                                     }
                                 }
-                                // 双指捏合（缩小 / Zoom Out）：多列网格 -> 大图列表 -> 小图列表 -> 无图列表
-                                else if (accumulatedZoom < 0.85f) {
+                                // 双指捏合（缩小 / Zoom Out）：多列网格 -> 大图列表 -> 小图列表 -> 无图列表 (灵敏阈值 0.90f)
+                                else if (accumulatedZoom < 0.90f) {
                                     val prevMode = when (activeMode) {
                                         LibraryViewMode.GRID_4_COL -> LibraryViewMode.GRID_3_COL
                                         LibraryViewMode.GRID_3_COL -> LibraryViewMode.GRID_2_COL
@@ -131,9 +126,9 @@ fun Modifier.pinchToZoomViewMode(
                                     if (prevMode != activeMode) {
                                         pinchState.lastTriggeredDirection = false
                                         pinchState.lastTriggeredPivot = pivotOrigin
-                                        onModeChangeState(prevMode)
                                         hasTriggeredInCurrentGesture = true
                                         lastTriggerTime = now
+                                        onModeChangeState(prevMode)
                                     }
                                 }
                             }

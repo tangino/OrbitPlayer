@@ -505,7 +505,7 @@ fun MusicLibraryScreen(
                         ) {
                             itemsIndexed(
                                 items = folderSongs,
-                                key = { index, song -> "${song.id}_$index" }
+                                key = { _, song -> song.id }
                             ) { index, song ->
                                 SongItem(
                                     song = song,
@@ -536,7 +536,7 @@ fun MusicLibraryScreen(
                         ) {
                             itemsIndexed(
                                 items = albumSongs,
-                                key = { index, song -> "${song.id}_$index" }
+                                key = { _, song -> song.id }
                             ) { index, song ->
                                 SongItem(
                                     song = song,
@@ -567,7 +567,7 @@ fun MusicLibraryScreen(
                         ) {
                             itemsIndexed(
                                 items = artistSongs,
-                                key = { index, song -> "${song.id}_$index" }
+                                key = { _, song -> song.id }
                             ) { index, song ->
                                 SongItem(
                                     song = song,
@@ -599,7 +599,7 @@ fun MusicLibraryScreen(
                                 ) {
                                     itemsIndexed(
                                         items = filteredSongs,
-                                        key = { index, song -> "${song.id}_$index" }
+                                        key = { _, song -> song.id }
                                     ) { index, song ->
                                         SongItem(
                                             song = song,
@@ -667,7 +667,7 @@ fun MusicLibraryScreen(
                                     verticalArrangement = Arrangement.spacedBy(vSpacing),
                                     modifier = Modifier.fillMaxSize()
                                 ) {
-                                    itemsIndexed(albums, key = { index, album -> "${album.title}_${album.id}_$index" }) { _, album ->
+                                    itemsIndexed(albums, key = { _, album -> album.id }) { _, album ->
                                         val isAlbumPlaying = playbackState.currentSong?.album == album.title
 
                                         AlbumItem(
