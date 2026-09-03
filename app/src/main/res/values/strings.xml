@@ -26,6 +26,13 @@
     <string name="import_text">Import</string>
     <string name="export_text">Export</string>
 
+    <!-- Library Tabs -->
+    <string name="tab_songs">Songs</string>
+    <string name="tab_folders">Folders</string>
+    <string name="tab_albums">Albums</string>
+    <string name="tab_artists">Artists</string>
+    <string name="tab_playlists">Playlists</string>
+
     <!-- Settings Sections -->
     <string name="section_startup_mode">STARTUP PREFERENCE</string>
     <string name="section_audio_engine">AUDIO ENGINE</string>
@@ -68,7 +75,7 @@
     <string name="dsp_latency_title">DSP Latency</string>
     <string name="dsp_latency_value">&lt; 2.5 ms</string>
     <string name="version_title">Version</string>
-    <string name="version_value">0.1.0</string>
+    <string name="version_value">0.1.1</string>
 
     <!-- Import / Export Dialogs -->
     <string name="import_dialog_title">Import Preset / AutoEQ</string>
@@ -109,4 +116,87 @@
     <string name="btn_cancel">Cancel</string>
     <string name="btn_play_all">Play All</string>
     <string name="search_hint">Search songs or artists...</string>
+
+    <!-- Favorites & Likes -->
+    <string name="favorite_songs">Favorite Songs</string>
+    <string name="add_to_favorites">Add to Favorites</string>
+    <string name="remove_from_favorites">Remove from Favorites</string>
+    <string name="favorites_empty_hint">No favorite songs yet. Tap the heart icon on any song to add it!</string>
+    <string name="play_count_label">%1$d plays</string>
+
+    <!-- Shuffle Strategies -->
+    <string name="section_playback_pref">PLAYBACK PREFERENCES</string>
+    <string name="shuffle_strategy_title">Shuffle Strategy</string>
+    <string name="shuffle_strategy_subtitle">Control how tracks are selected in shuffle mode</string>
+    <string name="shuffle_standard">Standard Shuffle</string>
+    <string name="shuffle_standard_desc">Random shuffle across all songs uniformly</string>
+    <string name="shuffle_favorite_first">Favorite First</string>
+    <string name="shuffle_favorite_first_desc">Prioritize liked songs before other tracks</string>
+    <string name="shuffle_least_played">Least Played First</string>
+    <string name="shuffle_off">Shuffle Off</string>
+    <string name="attitude_favorite">Added to Favorites</string>
+    <string name="attitude_disliked">Marked as Disliked (Will be skipped in shuffle)</string>
+    <string name="attitude_none">Removed preference mark</string>
+
+    <!-- Library Scan Settings -->
+    <string name="section_library_scan">LIBRARY FOLDER SCAN</string>
+    <string name="playback_preferences">PLAYBACK PREFERENCES</string>
+    <string name="scan_settings_title">Library Folder Scan Settings</string>
+    <string name="scan_included_folders">Scan Specific Folders (Whitelist)</string>
+    <string name="scan_included_folders_desc">Only scan audio inside these folders. Scans all by default if unset.</string>
+    <string name="scan_all_folders_default">No folders configured (Default: all folders scanned)</string>
+    <string name="scan_excluded_folders">Exclude Specific Folders (Blacklist)</string>
+    <string name="scan_excluded_folders_desc">Skip all audio files located in these folders</string>
+    <string name="scan_no_excluded_folders">No excluded folders configured</string>
+    <string name="rescan_library_now">Rescan Library Now</string>
+    <string name="quick_select_discovered_folder">Quick select from discovered folders:</string>
+    <string name="syncing_audio_library">Syncing audio library...</string>
+    <string name="scan_included_title">Scan Specific Folders (Whitelist)</string>
+    <string name="scan_included_subtitle">Only scan audio inside these folders. Scans all by default if unset.</string>
+    <string name="scan_excluded_title">Exclude Specific Folders (Blacklist)</string>
+    <string name="scan_excluded_subtitle">Skip all audio files located in these folders</string>
+    <string name="add_included_folder">Add Scan Folder</string>
+    <string name="add_excluded_folder">Add Exclude Folder</string>
+    <string name="no_folders_configured">No folders configured (Default: all folders scanned)</string>
+    <string name="rescan_library">Rescan Library Now</string>
+    <string name="rescan_library_desc">Re-index local media with current folder rules</string>
+    <string name="select_folder_title">Select Folder</string>
+    <string name="folder_path_hint">Folder Path (e.g. /storage/emulated/0/Music)</string>
+    <string name="choose_from_existing">Choose from discovered folders:</string>
+    <string name="custom_path">Custom Path</string>
+
+    <!-- Equalizer Preset Grouping & Dialogs -->
+    <string name="preset_group_builtin">Built-in Presets</string>
+    <string name="preset_group_custom">User Presets</string>
+    <string name="preset_save_dialog_title">Save Current Equalizer Preset</string>
+    <string name="preset_save_dialog_desc">Save current 10-band gains and preamp as a custom preset:</string>
+    <string name="preset_name_label">Preset Name</string>
+    <string name="preset_delete_dialog_title">Delete Preset</string>
+    <string name="preset_delete_dialog_desc">Are you sure you want to delete preset \"%1$s\"?</string>
+    <string name="preset_save_button">Save Preset</string>
+    <string name="preset_save_button_short">+ Save</string>
+    <string name="btn_save">Save</string>
+    <string name="btn_delete">Delete</string>
+    <string name="my_preset_default_name">My Preset %1$d</string>
+    <string name="no_custom_presets_hint">No user presets yet</string>
+
+    <!-- Library Empty States & Hints -->
+    <string name="empty_album_title">Empty Album</string>
+    <string name="empty_album_desc">No playable audio tracks found in this album.</string>
+    <string name="no_albums_found">No albums found</string>
+    <string name="empty_albums_desc">Your music albums will appear here.</string>
+    <string name="empty_artist_title">Empty Artist</string>
+    <string name="empty_artist_desc">No playable audio tracks found for this artist.</string>
+    <string name="no_artists_found">No artists found</string>
+    <string name="empty_artists_desc">Artists from your music library will appear here.</string>
+    <string name="empty_folder_title">Empty Folder</string>
+    <string name="empty_folder_desc">No playable audio tracks found in this directory.</string>
+    <string name="empty_songs_title">No songs found</string>
+    <string name="empty_songs_desc">Tap the sync icon above to scan your device storage.</string>
+    <string name="scanning_library_title">Scanning local music...</string>
+    <string name="search_no_results_title">No results found</string>
+    <string name="search_no_results_desc">Try searching for another song title or artist</string>
+    <string name="added_to_playlist_success">Added to %1$s</string>
+    <string name="queue_search_hint">Search in queue...</string>
+    <string name="back">Back</string>
 </resources>

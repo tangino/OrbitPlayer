@@ -134,6 +134,7 @@ class MainActivity : ComponentActivity() {
                         AppScreen.SETTINGS -> {
                             SettingsScreen(
                                 viewModel = equalizerViewModel,
+                                musicViewModel = musicPlayerViewModel,
                                 onBack = {
                                     if (uiState.launchAsEqualizerOnly) {
                                         equalizerViewModel.navigateTo(AppScreen.MAIN)

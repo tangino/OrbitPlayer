@@ -7,11 +7,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.antigravity.equalizer.audio.MusicPlayerManager
 import com.antigravity.equalizer.audio.PlaybackState
+import com.antigravity.equalizer.audio.ShuffleStrategy
 import com.antigravity.equalizer.data.model.AlbumItem
 import com.antigravity.equalizer.data.model.ArtistItem
 import com.antigravity.equalizer.data.model.FolderItem
 import com.antigravity.equalizer.data.model.Playlist
 import com.antigravity.equalizer.data.model.Song
+import com.antigravity.equalizer.data.model.SongAttitude
 import com.antigravity.equalizer.data.repository.MusicRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -60,10 +62,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val isScanning: StateFlow<Boolean> = repository.isScanning
 
     val allSongs: StateFlow<List<Song>> = repository.allSongs
+    val favoriteSongs: StateFlow<List<Song>> = repository.favoriteSongs
     val folders: StateFlow<List<FolderItem>> = repository.folders
     val albums: StateFlow<List<AlbumItem>> = repository.albums
     val artists: StateFlow<List<ArtistItem>> = repository.artists
     val playlists: StateFlow<List<Playlist>> = repository.playlists
+    val includedFolders: StateFlow<Set<String>> = repository.includedFolders
+    val excludedFolders: StateFlow<Set<String>> = repository.excludedFolders
 
     // 搜索过滤后的歌曲列表
     val filteredSongs: StateFlow<List<Song>> = combine(allSongs, _libraryUiState) { songs, state ->
@@ -200,7 +205,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun playNext() = playerManager.playNext()
     fun playPrevious() = playerManager.playPrevious()
     fun seekTo(positionMs: Long) = playerManager.seekTo(positionMs)
-    fun toggleShuffle() = playerManager.toggleShuffle()
+    fun toggleShuffle(): Int = playerManager.toggleShuffle()
     fun toggleRepeatMode() = playerManager.toggleRepeatMode()
 
     fun createPlaylist(name: String) {
@@ -235,6 +240,39 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     suspend fun getSongsInPlaylist(playlistId: Long): List<Song> {
         return repository.getSongsInPlaylist(playlistId)
+    }
+
+    fun cycleSongAttitude(song: Song, onResult: ((SongAttitude) -> Unit)? = null) {
+        viewModelScope.launch {
+            val next = repository.cycleSongAttitude(song)
+            onResult?.invoke(next)
+        }
+    }
+
+    fun toggleFavorite(song: Song) {
+        viewModelScope.launch {
+            repository.toggleFavorite(song)
+        }
+    }
+
+    fun setShuffleStrategy(strategy: ShuffleStrategy) {
+        playerManager.setShuffleStrategy(strategy)
+    }
+
+    fun addIncludedFolder(folderPath: String) {
+        repository.addIncludedFolder(folderPath)
+    }
+
+    fun removeIncludedFolder(folderPath: String) {
+        repository.removeIncludedFolder(folderPath)
+    }
+
+    fun addExcludedFolder(folderPath: String) {
+        repository.addExcludedFolder(folderPath)
+    }
+
+    fun removeExcludedFolder(folderPath: String) {
+        repository.removeExcludedFolder(folderPath)
     }
 
     companion object {

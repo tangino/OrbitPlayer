@@ -2,6 +2,12 @@ package com.antigravity.equalizer.data.model
 
 import android.net.Uri
 
+enum class SongAttitude {
+    NONE,
+    FAVORITE,
+    DISLIKED
+}
+
 /**
  * 音乐曲目数据模型
  */
@@ -17,8 +23,17 @@ data class Song(
     val albumArtUri: String? = null,
     val folderPath: String = "",
     val year: Int = 0,
-    val mimeType: String = ""
+    val mimeType: String = "",
+    val isFavorite: Boolean = false,
+    val isDisliked: Boolean = false,
+    val playCount: Int = 0
 ) {
+    val attitude: SongAttitude
+        get() = when {
+            isFavorite -> SongAttitude.FAVORITE
+            isDisliked -> SongAttitude.DISLIKED
+            else -> SongAttitude.NONE
+        }
     val formattedDuration: String
         get() {
             val totalSeconds = durationMs / 1000

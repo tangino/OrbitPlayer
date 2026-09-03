@@ -32,7 +32,7 @@ data class AppProfileEntity(
 )
 
 class AppDatabase private constructor(context: Context) :
-    SQLiteOpenHelper(context, "equalizer_music_v2.db", null, 2) {
+    SQLiteOpenHelper(context, "equalizer_music_v2.db", null, 4) {
 
     val equalizerDao = EqualizerDaoImpl(this)
     val songDao = SongDaoImpl(this)
@@ -100,6 +100,18 @@ class AppDatabase private constructor(context: Context) :
 
         db.execSQL(
             """
+            CREATE TABLE IF NOT EXISTS song_stats (
+                path TEXT PRIMARY KEY,
+                isFavorite INTEGER NOT NULL DEFAULT 0,
+                isDisliked INTEGER NOT NULL DEFAULT 0,
+                playCount INTEGER NOT NULL DEFAULT 0,
+                lastPlayedTimestamp INTEGER NOT NULL DEFAULT 0
+            )
+            """.trimIndent()
+        )
+
+        db.execSQL(
+            """
             CREATE TABLE IF NOT EXISTS playlists (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -121,13 +133,24 @@ class AppDatabase private constructor(context: Context) :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS presets")
-        db.execSQL("DROP TABLE IF EXISTS device_profiles")
-        db.execSQL("DROP TABLE IF EXISTS app_profiles")
-        db.execSQL("DROP TABLE IF EXISTS songs")
-        db.execSQL("DROP TABLE IF EXISTS playlists")
-        db.execSQL("DROP TABLE IF EXISTS playlist_songs")
-        onCreate(db)
+        if (oldVersion < 3) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS song_stats (
+                    path TEXT PRIMARY KEY,
+                    isFavorite INTEGER NOT NULL DEFAULT 0,
+                    isDisliked INTEGER NOT NULL DEFAULT 0,
+                    playCount INTEGER NOT NULL DEFAULT 0,
+                    lastPlayedTimestamp INTEGER NOT NULL DEFAULT 0
+                )
+                """.trimIndent()
+            )
+        }
+        if (oldVersion < 4) {
+            try {
+                db.execSQL("ALTER TABLE song_stats ADD COLUMN isDisliked INTEGER NOT NULL DEFAULT 0")
+            } catch (_: Exception) {}
+        }
     }
 
     companion object {
@@ -242,7 +265,16 @@ class EqualizerDaoImpl(private val helper: SQLiteOpenHelper) {
 class SongDaoImpl(private val helper: SQLiteOpenHelper) {
     fun getAllSongs(): List<Song> {
         val list = mutableListOf<Song>()
-        helper.readableDatabase.rawQuery("SELECT * FROM songs ORDER BY title COLLATE NOCASE ASC", null).use { c ->
+        val sql = """
+            SELECT s.id, s.title, s.artist, s.album, s.albumId, s.durationMs, s.path, s.size, s.albumArtUri, s.folderPath, s.year, s.mimeType,
+                   COALESCE(st.isFavorite, 0) AS isFavorite,
+                   COALESCE(st.isDisliked, 0) AS isDisliked,
+                   COALESCE(st.playCount, 0) AS playCount
+            FROM songs s
+            LEFT JOIN song_stats st ON s.path = st.path
+            ORDER BY s.title COLLATE NOCASE ASC
+        """.trimIndent()
+        helper.readableDatabase.rawQuery(sql, null).use { c ->
             while (c.moveToNext()) {
                 list.add(
                     Song(
@@ -257,7 +289,88 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
                         albumArtUri = c.getString(8),
                         folderPath = c.getString(9),
                         year = c.getInt(10),
-                        mimeType = c.getString(11)
+                        mimeType = c.getString(11),
+                        isFavorite = c.getInt(12) == 1,
+                        isDisliked = c.getInt(13) == 1,
+                        playCount = c.getInt(14)
+                    )
+                )
+            }
+        }
+        return list
+    }
+
+    fun updateSongAttitude(path: String, isFavorite: Boolean, isDisliked: Boolean) {
+        val db = helper.writableDatabase
+        val cv = ContentValues().apply {
+            put("path", path)
+            put("isFavorite", if (isFavorite) 1 else 0)
+            put("isDisliked", if (isDisliked) 1 else 0)
+        }
+        val rows = db.update("song_stats", cv, "path = ?", arrayOf(path))
+        if (rows == 0) {
+            cv.put("playCount", 0)
+            cv.put("lastPlayedTimestamp", 0L)
+            db.insertWithOnConflict("song_stats", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+        }
+    }
+
+    fun toggleFavorite(path: String, isFavorite: Boolean) {
+        updateSongAttitude(path, isFavorite = isFavorite, isDisliked = false)
+    }
+
+    fun incrementPlayCount(path: String) {
+        val db = helper.writableDatabase
+        val now = System.currentTimeMillis()
+        var currentCount = 0
+        var currentFav = 0
+        var currentDisliked = 0
+        db.rawQuery("SELECT isFavorite, isDisliked, playCount FROM song_stats WHERE path = ?", arrayOf(path)).use { cursor ->
+            if (cursor.moveToFirst()) {
+                currentFav = cursor.getInt(0)
+                currentDisliked = cursor.getInt(1)
+                currentCount = cursor.getInt(2)
+            }
+        }
+        val cv = ContentValues().apply {
+            put("path", path)
+            put("isFavorite", currentFav)
+            put("isDisliked", currentDisliked)
+            put("playCount", currentCount + 1)
+            put("lastPlayedTimestamp", now)
+        }
+        db.insertWithOnConflict("song_stats", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun getFavoriteSongs(): List<Song> {
+        val list = mutableListOf<Song>()
+        val sql = """
+            SELECT s.id, s.title, s.artist, s.album, s.albumId, s.durationMs, s.path, s.size, s.albumArtUri, s.folderPath, s.year, s.mimeType,
+                   1 AS isFavorite, 0 AS isDisliked, COALESCE(st.playCount, 0) AS playCount
+            FROM songs s
+            INNER JOIN song_stats st ON s.path = st.path
+            WHERE st.isFavorite = 1 AND COALESCE(st.isDisliked, 0) = 0
+            ORDER BY s.title COLLATE NOCASE ASC
+        """.trimIndent()
+        helper.readableDatabase.rawQuery(sql, null).use { c ->
+            while (c.moveToNext()) {
+                list.add(
+                    Song(
+                        id = c.getLong(0),
+                        title = c.getString(1),
+                        artist = c.getString(2),
+                        album = c.getString(3),
+                        albumId = c.getLong(4),
+                        durationMs = c.getLong(5),
+                        path = c.getString(6),
+                        size = c.getLong(7),
+                        albumArtUri = c.getString(8),
+                        folderPath = c.getString(9),
+                        year = c.getInt(10),
+                        mimeType = c.getString(11),
+                        isFavorite = true,
+                        isDisliked = false,
+                        playCount = c.getInt(14)
                     )
                 )
             }
@@ -352,8 +465,11 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
     fun getSongsInPlaylist(playlistId: Long): List<Song> {
         val list = mutableListOf<Song>()
         val sql = """
-            SELECT s.* FROM songs s
+            SELECT s.id, s.title, s.artist, s.album, s.albumId, s.durationMs, s.path, s.size, s.albumArtUri, s.folderPath, s.year, s.mimeType,
+                   COALESCE(st.isFavorite, 0) AS isFavorite, COALESCE(st.playCount, 0) AS playCount
+            FROM songs s
             INNER JOIN playlist_songs ps ON s.id = ps.songId
+            LEFT JOIN song_stats st ON s.path = st.path
             WHERE ps.playlistId = ?
             ORDER BY ps.orderIndex ASC, s.title COLLATE NOCASE ASC
         """.trimIndent()
@@ -372,7 +488,9 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
                         albumArtUri = c.getString(8),
                         folderPath = c.getString(9),
                         year = c.getInt(10),
-                        mimeType = c.getString(11)
+                        mimeType = c.getString(11),
+                        isFavorite = c.getInt(12) == 1,
+                        playCount = c.getInt(13)
                     )
                 )
             }

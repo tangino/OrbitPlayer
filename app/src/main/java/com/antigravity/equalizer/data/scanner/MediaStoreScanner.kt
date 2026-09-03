@@ -17,7 +17,10 @@ class MediaStoreScanner(private val context: Context) {
 
     private val db = AppDatabase.getInstance(context)
 
-    suspend fun scanLocalMedia(): List<Song> = withContext(Dispatchers.IO) {
+    suspend fun scanLocalMedia(
+        includedFolders: Set<String> = emptySet(),
+        excludedFolders: Set<String> = emptySet()
+    ): List<Song> = withContext(Dispatchers.IO) {
         val songMap = mutableMapOf<String, Song>()
 
         // 1. 通过 MediaStore 进行系统级扫描 (放宽过滤条件)
@@ -62,6 +65,11 @@ class MediaStoreScanner(private val context: Context) {
                     val file = File(path)
                     if (!file.exists() || !isAudioFile(path)) continue
 
+                    val folderPath = file.parent ?: ""
+                    // 文件夹过滤规则校验
+                    if (isFolderExcluded(folderPath, excludedFolders)) continue
+                    if (!isFolderIncluded(folderPath, includedFolders)) continue
+
                     val id = cursor.getLong(idCol)
                     val rawTitle = cursor.getString(titleCol)
                     val title = if (!rawTitle.isNullOrBlank() && rawTitle != "<unknown>") rawTitle else file.nameWithoutExtension
@@ -79,8 +87,6 @@ class MediaStoreScanner(private val context: Context) {
                         Uri.parse("content://media/external/audio/albumart"),
                         albumId
                     ).toString()
-
-                    val folderPath = file.parent ?: ""
 
                     val song = Song(
                         id = id,
@@ -104,9 +110,9 @@ class MediaStoreScanner(private val context: Context) {
             Log.e(TAG, "MediaStore query error", e)
         }
 
-        // 2. 深度直接文件系统扫描（覆盖 Music / Download / 常用目录）
+        // 2. 深度直接文件系统扫描（覆盖指定目录或 Music / Download / 常用目录）
         try {
-            scanCommonDirectories(songMap)
+            scanCommonDirectories(songMap, includedFolders, excludedFolders)
         } catch (e: Exception) {
             Log.e(TAG, "Direct directory scan error", e)
         }
@@ -114,31 +120,66 @@ class MediaStoreScanner(private val context: Context) {
         val resultList = songMap.values.toList().sortedBy { it.title.lowercase() }
 
         // 持久化存入原生 SQLite
+        db.songDao.clearAll()
         if (resultList.isNotEmpty()) {
-            db.songDao.clearAll()
             db.songDao.insertAll(resultList)
             Log.i(TAG, "Successfully scanned and indexed ${resultList.size} audio tracks.")
         }
 
-        resultList
+        // 返回包含统计数据 (isFavorite, playCount) 的完整曲库列表
+        db.songDao.getAllSongs()
     }
 
-    private fun scanCommonDirectories(songMap: MutableMap<String, Song>) {
+    private fun isFolderExcluded(folderPath: String, excludedFolders: Set<String>): Boolean {
+        if (excludedFolders.isEmpty()) return false
+        val normalized = folderPath.trimEnd('/')
+        return excludedFolders.any { excl ->
+            val exNorm = excl.trimEnd('/')
+            exNorm.isNotBlank() && (normalized == exNorm || normalized.startsWith("$exNorm/"))
+        }
+    }
+
+    private fun isFolderIncluded(folderPath: String, includedFolders: Set<String>): Boolean {
+        if (includedFolders.isEmpty()) return true
+        val normalized = folderPath.trimEnd('/')
+        return includedFolders.any { inc ->
+            val incNorm = inc.trimEnd('/')
+            incNorm.isNotBlank() && (normalized == incNorm || normalized.startsWith("$incNorm/"))
+        }
+    }
+
+    private fun scanCommonDirectories(
+        songMap: MutableMap<String, Song>,
+        includedFolders: Set<String>,
+        excludedFolders: Set<String>
+    ) {
         val rootDirs = mutableListOf<File>()
-        val externalStorage = Environment.getExternalStorageDirectory()
-        if (externalStorage != null && externalStorage.exists()) {
-            rootDirs.add(File(externalStorage, "Music"))
-            rootDirs.add(File(externalStorage, "Download"))
-            rootDirs.add(File(externalStorage, "netease/cloudmusic/Music"))
-            rootDirs.add(File(externalStorage, "qqmusic/song"))
-            rootDirs.add(File(externalStorage, "KuGou/Song"))
-            rootDirs.add(externalStorage) // 全局扫描
+
+        if (includedFolders.isNotEmpty()) {
+            // 若用户指定了特定文件夹，则仅扫描指定的文件夹
+            for (folderPath in includedFolders) {
+                val dir = File(folderPath)
+                if (dir.exists() && dir.isDirectory) {
+                    rootDirs.add(dir)
+                }
+            }
+        } else {
+            // 未指定时默认全量扫描
+            val externalStorage = Environment.getExternalStorageDirectory()
+            if (externalStorage != null && externalStorage.exists()) {
+                rootDirs.add(File(externalStorage, "Music"))
+                rootDirs.add(File(externalStorage, "Download"))
+                rootDirs.add(File(externalStorage, "netease/cloudmusic/Music"))
+                rootDirs.add(File(externalStorage, "qqmusic/song"))
+                rootDirs.add(File(externalStorage, "KuGou/Song"))
+                rootDirs.add(externalStorage) // 全局扫描
+            }
         }
 
         val retriever = MediaMetadataRetriever()
         for (dir in rootDirs) {
-            if (dir.exists()) {
-                scanDirRecursive(dir, songMap, retriever, maxDepth = 4)
+            if (dir.exists() && !isFolderExcluded(dir.absolutePath, excludedFolders)) {
+                scanDirRecursive(dir, songMap, retriever, maxDepth = 4, excludedFolders = excludedFolders)
             }
         }
         try {
@@ -150,15 +191,18 @@ class MediaStoreScanner(private val context: Context) {
         dir: File,
         songMap: MutableMap<String, Song>,
         retriever: MediaMetadataRetriever,
-        maxDepth: Int
+        maxDepth: Int,
+        excludedFolders: Set<String>
     ) {
         if (maxDepth <= 0 || !dir.exists() || !dir.isDirectory) return
+        if (isFolderExcluded(dir.absolutePath, excludedFolders)) return
+
         val files = dir.listFiles() ?: return
 
         for (f in files) {
             if (f.isDirectory) {
                 if (!f.name.startsWith(".")) {
-                    scanDirRecursive(f, songMap, retriever, maxDepth - 1)
+                    scanDirRecursive(f, songMap, retriever, maxDepth - 1, excludedFolders = excludedFolders)
                 }
             } else if (f.isFile && isAudioFile(f.name) && f.length() > 50000) {
                 val path = f.absolutePath

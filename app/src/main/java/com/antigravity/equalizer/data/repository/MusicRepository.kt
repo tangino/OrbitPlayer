@@ -1,12 +1,14 @@
 package com.antigravity.equalizer.data.repository
 
 import android.content.Context
+import com.antigravity.equalizer.audio.MusicPlayerManager
 import com.antigravity.equalizer.data.db.AppDatabase
 import com.antigravity.equalizer.data.model.AlbumItem
 import com.antigravity.equalizer.data.model.ArtistItem
 import com.antigravity.equalizer.data.model.FolderItem
 import com.antigravity.equalizer.data.model.Playlist
 import com.antigravity.equalizer.data.model.Song
+import com.antigravity.equalizer.data.model.SongAttitude
 import com.antigravity.equalizer.data.scanner.MediaStoreScanner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,8 +25,23 @@ class MusicRepository private constructor(private val context: Context) {
     private val scanner = MediaStoreScanner(context)
     private val repositoryScope = CoroutineScope(Dispatchers.IO)
 
+    private val scanPrefs = context.getSharedPreferences(PREFS_SCAN, Context.MODE_PRIVATE)
+
+    private val _includedFolders = MutableStateFlow<Set<String>>(
+        scanPrefs.getStringSet(KEY_INCLUDED_FOLDERS, emptySet()) ?: emptySet()
+    )
+    val includedFolders: StateFlow<Set<String>> = _includedFolders.asStateFlow()
+
+    private val _excludedFolders = MutableStateFlow<Set<String>>(
+        scanPrefs.getStringSet(KEY_EXCLUDED_FOLDERS, emptySet()) ?: emptySet()
+    )
+    val excludedFolders: StateFlow<Set<String>> = _excludedFolders.asStateFlow()
+
     private val _allSongs = MutableStateFlow<List<Song>>(emptyList())
     val allSongs: StateFlow<List<Song>> = _allSongs.asStateFlow()
+
+    private val _favoriteSongs = MutableStateFlow<List<Song>>(emptyList())
+    val favoriteSongs: StateFlow<List<Song>> = _favoriteSongs.asStateFlow()
 
     private val _folders = MutableStateFlow<List<FolderItem>>(emptyList())
     val folders: StateFlow<List<FolderItem>> = _folders.asStateFlow()
@@ -61,15 +78,87 @@ class MusicRepository private constructor(private val context: Context) {
     suspend fun refreshMedia() = withContext(Dispatchers.IO) {
         _isScanning.value = true
         try {
-            val scannedSongs = scanner.scanLocalMedia()
+            val scannedSongs = scanner.scanLocalMedia(
+                includedFolders = _includedFolders.value,
+                excludedFolders = _excludedFolders.value
+            )
             updateCollections(scannedSongs)
         } finally {
             _isScanning.value = false
         }
     }
 
+    fun addIncludedFolder(folderPath: String) {
+        val current = _includedFolders.value.toMutableSet()
+        if (current.add(folderPath.trim())) {
+            _includedFolders.value = current
+            scanPrefs.edit().putStringSet(KEY_INCLUDED_FOLDERS, current).apply()
+        }
+    }
+
+    fun removeIncludedFolder(folderPath: String) {
+        val current = _includedFolders.value.toMutableSet()
+        if (current.remove(folderPath.trim())) {
+            _includedFolders.value = current
+            scanPrefs.edit().putStringSet(KEY_INCLUDED_FOLDERS, current).apply()
+        }
+    }
+
+    fun addExcludedFolder(folderPath: String) {
+        val current = _excludedFolders.value.toMutableSet()
+        if (current.add(folderPath.trim())) {
+            _excludedFolders.value = current
+            scanPrefs.edit().putStringSet(KEY_EXCLUDED_FOLDERS, current).apply()
+        }
+    }
+
+    fun removeExcludedFolder(folderPath: String) {
+        val current = _excludedFolders.value.toMutableSet()
+        if (current.remove(folderPath.trim())) {
+            _excludedFolders.value = current
+            scanPrefs.edit().putStringSet(KEY_EXCLUDED_FOLDERS, current).apply()
+        }
+    }
+
+    suspend fun cycleSongAttitude(song: Song): SongAttitude = withContext(Dispatchers.IO) {
+        val nextAttitude = when (song.attitude) {
+            SongAttitude.NONE -> SongAttitude.FAVORITE
+            SongAttitude.FAVORITE -> SongAttitude.DISLIKED
+            SongAttitude.DISLIKED -> SongAttitude.NONE
+        }
+        val isFav = nextAttitude == SongAttitude.FAVORITE
+        val isDisliked = nextAttitude == SongAttitude.DISLIKED
+
+        db.songDao.updateSongAttitude(song.path, isFavorite = isFav, isDisliked = isDisliked)
+        val updatedList = _allSongs.value.map {
+            if (it.path == song.path) it.copy(isFavorite = isFav, isDisliked = isDisliked) else it
+        }
+        updateCollections(updatedList)
+        MusicPlayerManager.getInstance(context).updateSongAttitude(song.path, isFav, isDisliked)
+        nextAttitude
+    }
+
+    suspend fun toggleFavorite(song: Song) = withContext(Dispatchers.IO) {
+        val newFavorite = !song.isFavorite
+        db.songDao.toggleFavorite(song.path, newFavorite)
+        val updatedList = _allSongs.value.map {
+            if (it.path == song.path) it.copy(isFavorite = newFavorite, isDisliked = false) else it
+        }
+        updateCollections(updatedList)
+        MusicPlayerManager.getInstance(context).updateSongFavorite(song.path, newFavorite)
+    }
+
+    suspend fun recordSongPlay(song: Song) = withContext(Dispatchers.IO) {
+        db.songDao.incrementPlayCount(song.path)
+        val updatedList = _allSongs.value.map {
+            if (it.path == song.path) it.copy(playCount = it.playCount + 1) else it
+        }
+        updateCollections(updatedList)
+    }
+
     private fun updateCollections(songs: List<Song>) {
         _allSongs.value = songs
+        _favoriteSongs.value = songs.filter { it.isFavorite && !it.isDisliked }
 
         // 1. 构建文件夹树 (Folders)
         val folderMap = songs.groupBy { it.folderPath }
@@ -152,6 +241,10 @@ class MusicRepository private constructor(private val context: Context) {
     }
 
     companion object {
+        const val PREFS_SCAN = "music_scan_prefs"
+        const val KEY_INCLUDED_FOLDERS = "scan_included_folders"
+        const val KEY_EXCLUDED_FOLDERS = "scan_excluded_folders"
+
         @Volatile
         private var INSTANCE: MusicRepository? = null
 

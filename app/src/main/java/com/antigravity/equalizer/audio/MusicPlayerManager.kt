@@ -27,6 +27,12 @@ enum class RepeatMode {
     OFF, ALL, ONE
 }
 
+enum class ShuffleStrategy {
+    STANDARD,
+    FAVORITE_FIRST,
+    LEAST_PLAYED
+}
+
 data class PlaybackState(
     val currentSong: Song? = null,
     val isPlaying: Boolean = false,
@@ -35,6 +41,7 @@ data class PlaybackState(
     val progress: Float = 0f,
     val repeatMode: RepeatMode = RepeatMode.ALL,
     val isShuffleEnabled: Boolean = false,
+    val shuffleStrategy: ShuffleStrategy = ShuffleStrategy.STANDARD,
     val currentPlaylist: List<Song> = emptyList(),
     val currentIndex: Int = -1
 )
@@ -49,9 +56,12 @@ class MusicPlayerManager private constructor(private val context: Context) {
     private val savedRepeatOrdinal = prefs.getInt(KEY_REPEAT_MODE, RepeatMode.ALL.ordinal)
     private val initialRepeatMode = RepeatMode.values().getOrElse(savedRepeatOrdinal) { RepeatMode.ALL }
     private val initialShuffle = prefs.getBoolean(KEY_SHUFFLE_ENABLED, false)
+    private val savedStrategyOrdinal = prefs.getInt(KEY_SHUFFLE_STRATEGY, ShuffleStrategy.STANDARD.ordinal)
+    private val initialStrategy = ShuffleStrategy.values().getOrElse(savedStrategyOrdinal) { ShuffleStrategy.STANDARD }
 
     private val playHistory = ArrayDeque<Int>()
     private val MAX_HISTORY_SIZE = 50
+    private var hasRecordedPlayForCurrentSong = false
 
     private val player: ExoPlayer = ExoPlayer.Builder(context)
         .setAudioAttributes(
@@ -69,7 +79,8 @@ class MusicPlayerManager private constructor(private val context: Context) {
     private val _playbackState = MutableStateFlow(
         PlaybackState(
             repeatMode = initialRepeatMode,
-            isShuffleEnabled = initialShuffle
+            isShuffleEnabled = initialShuffle,
+            shuffleStrategy = initialStrategy
         )
     )
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
@@ -246,6 +257,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
                         0L
                     }
 
+                    hasRecordedPlayForCurrentSong = false
                     _playbackState.update {
                         val dur = song.durationMs.coerceAtLeast(1L)
                         it.copy(
@@ -280,6 +292,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
     fun playSongList(songs: List<Song>, startIndex: Int = 0) {
         if (songs.isEmpty()) return
         playHistory.clear()
+        hasRecordedPlayForCurrentSong = false
 
         val mediaItems = songs.map { createMediaItem(it) }
 
@@ -317,6 +330,39 @@ class MusicPlayerManager private constructor(private val context: Context) {
         }
     }
 
+    private fun pickNextShuffleIndex(playlist: List<Song>, currentIndex: Int): Int {
+        if (playlist.size <= 1) return 0
+        val historySet = playHistory.toSet()
+        // 严格排除标记为不喜欢的歌曲
+        var candidates = playlist.indices.filter { it != currentIndex && it !in historySet && !playlist[it].isDisliked }
+        if (candidates.isEmpty()) {
+            candidates = playlist.indices.filter { it != currentIndex && !playlist[it].isDisliked }
+            if (candidates.isEmpty()) {
+                candidates = playlist.indices.filter { it != currentIndex }
+                if (candidates.isEmpty()) return 0
+            }
+        }
+
+        return when (_playbackState.value.shuffleStrategy) {
+            ShuffleStrategy.FAVORITE_FIRST -> {
+                val favCandidates = candidates.filter { playlist[it].isFavorite }
+                if (favCandidates.isNotEmpty()) {
+                    favCandidates.random()
+                } else {
+                    candidates.random()
+                }
+            }
+            ShuffleStrategy.LEAST_PLAYED -> {
+                val minPlays = candidates.minOfOrNull { playlist[it].playCount } ?: 0
+                val leastCandidates = candidates.filter { playlist[it].playCount <= minPlays }
+                leastCandidates.random()
+            }
+            ShuffleStrategy.STANDARD -> {
+                candidates.random()
+            }
+        }
+    }
+
     fun playNext() {
         val playlist = _playbackState.value.currentPlaylist
         if (playlist.isEmpty()) return
@@ -331,25 +377,22 @@ class MusicPlayerManager private constructor(private val context: Context) {
             }
         }
 
+        // 自定义智能随机策略调度
+        if (_playbackState.value.isShuffleEnabled && playlist.size > 1) {
+            val nextIndex = pickNextShuffleIndex(playlist, currentIndex)
+            player.seekTo(nextIndex, 0L)
+            if (!player.isPlaying) player.play()
+            return
+        }
+
         if (player.hasNextMediaItem()) {
             player.seekToNextMediaItem()
             if (!player.isPlaying) player.play()
         } else {
-            // 当到达播放队列末尾：
-            val isShuffle = _playbackState.value.isShuffleEnabled
             val repeatMode = _playbackState.value.repeatMode
-
             if (repeatMode == RepeatMode.ALL && playlist.isNotEmpty()) {
-                if (isShuffle && playlist.size > 1) {
-                    // 随机播放模式下一轮播完，自动重新洗牌（挑选不同于当前歌曲的索引开始新一轮，防止死循环）
-                    val remaining = playlist.indices.filter { it != currentIndex }
-                    val nextIndex = remaining.randomOrNull() ?: 0
-                    player.seekTo(nextIndex, 0L)
-                    player.play()
-                } else {
-                    player.seekTo(0, 0L)
-                    player.play()
-                }
+                player.seekTo(0, 0L)
+                player.play()
             } else if (repeatMode != RepeatMode.OFF && playlist.size > 1) {
                 val nextIndex = (currentIndex + 1) % playlist.size
                 player.seekTo(nextIndex, 0L)
@@ -400,11 +443,35 @@ class MusicPlayerManager private constructor(private val context: Context) {
         saveLastPlayedSong(_playbackState.value.currentSong, positionMs)
     }
 
-    fun toggleShuffle() {
-        val newShuffle = !_playbackState.value.isShuffleEnabled
-        player.shuffleModeEnabled = newShuffle
-        _playbackState.update { it.copy(isShuffleEnabled = newShuffle) }
-        prefs.edit().putBoolean(KEY_SHUFFLE_ENABLED, newShuffle).apply()
+    fun toggleShuffle(): Int {
+        val currentShuffle = _playbackState.value.isShuffleEnabled
+        val currentStrategy = _playbackState.value.shuffleStrategy
+
+        val (nextShuffle, nextStrategy, toastResId) = when {
+            !currentShuffle -> Triple(true, ShuffleStrategy.STANDARD, com.antigravity.equalizer.R.string.shuffle_standard)
+            currentStrategy == ShuffleStrategy.STANDARD -> Triple(true, ShuffleStrategy.FAVORITE_FIRST, com.antigravity.equalizer.R.string.shuffle_favorite_first)
+            currentStrategy == ShuffleStrategy.FAVORITE_FIRST -> Triple(true, ShuffleStrategy.LEAST_PLAYED, com.antigravity.equalizer.R.string.shuffle_least_played)
+            else -> Triple(false, ShuffleStrategy.STANDARD, com.antigravity.equalizer.R.string.shuffle_off)
+        }
+
+        player.shuffleModeEnabled = nextShuffle
+        _playbackState.update {
+            it.copy(
+                isShuffleEnabled = nextShuffle,
+                shuffleStrategy = nextStrategy
+            )
+        }
+        prefs.edit()
+            .putBoolean(KEY_SHUFFLE_ENABLED, nextShuffle)
+            .putInt(KEY_SHUFFLE_STRATEGY, nextStrategy.ordinal)
+            .apply()
+
+        return toastResId
+    }
+
+    fun setShuffleStrategy(strategy: ShuffleStrategy) {
+        _playbackState.update { it.copy(shuffleStrategy = strategy) }
+        prefs.edit().putInt(KEY_SHUFFLE_STRATEGY, strategy.ordinal).apply()
     }
 
     fun toggleRepeatMode() {
@@ -423,6 +490,15 @@ class MusicPlayerManager private constructor(private val context: Context) {
     }
 
     private fun handlePlaybackEnded() {
+        if (!hasRecordedPlayForCurrentSong) {
+            hasRecordedPlayForCurrentSong = true
+            _playbackState.value.currentSong?.let { song ->
+                scope.launch {
+                    com.antigravity.equalizer.data.repository.MusicRepository.getInstance(context).recordSongPlay(song)
+                }
+            }
+        }
+
         if (_playbackState.value.repeatMode == RepeatMode.ONE) {
             player.seekTo(0L)
             player.play()
@@ -440,6 +516,16 @@ class MusicPlayerManager private constructor(private val context: Context) {
                 val currentPos = player.currentPosition
                 val duration = player.duration.coerceAtLeast(1L)
                 val progress = (currentPos.toFloat() / duration).coerceIn(0f, 1f)
+
+                // 播放超过 20 秒视为有效播放，累计播放计数
+                if (currentPos >= 20000L && !hasRecordedPlayForCurrentSong) {
+                    hasRecordedPlayForCurrentSong = true
+                    _playbackState.value.currentSong?.let { song ->
+                        scope.launch {
+                            com.antigravity.equalizer.data.repository.MusicRepository.getInstance(context).recordSongPlay(song)
+                        }
+                    }
+                }
 
                 _playbackState.update {
                     it.copy(
@@ -468,6 +554,27 @@ class MusicPlayerManager private constructor(private val context: Context) {
         saveCurrentPosition(player.currentPosition, syncImmediately = true)
     }
 
+    fun updateSongAttitude(songPath: String, isFavorite: Boolean, isDisliked: Boolean) {
+        _playbackState.update { current ->
+            val updatedSong = if (current.currentSong?.path == songPath) {
+                current.currentSong.copy(isFavorite = isFavorite, isDisliked = isDisliked)
+            } else current.currentSong
+
+            val updatedPlaylist = current.currentPlaylist.map {
+                if (it.path == songPath) it.copy(isFavorite = isFavorite, isDisliked = isDisliked) else it
+            }
+
+            current.copy(
+                currentSong = updatedSong,
+                currentPlaylist = updatedPlaylist
+            )
+        }
+    }
+
+    fun updateSongFavorite(songPath: String, isFavorite: Boolean) {
+        updateSongAttitude(songPath, isFavorite = isFavorite, isDisliked = false)
+    }
+
     fun release() {
         stopProgressTracker()
         saveLastPlayedSong(_playbackState.value.currentSong, player.currentPosition, syncImmediately = true)
@@ -489,6 +596,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
         private const val KEY_LAST_POS = "key_last_position_ms"
         private const val KEY_REPEAT_MODE = "key_repeat_mode"
         private const val KEY_SHUFFLE_ENABLED = "key_shuffle_enabled"
+        private const val KEY_SHUFFLE_STRATEGY = "key_shuffle_strategy"
 
         @Volatile
         private var INSTANCE: MusicPlayerManager? = null

@@ -14,7 +14,7 @@
     <string name="filter_bands">滤波频段列表</string>
     <string name="reset_flat">重置为平直</string>
     <string name="settings">设置中心</string>
-    <string name="parametric_eq">参数均衡器 (Parametric EQ)</string>
+    <string name="parametric_eq">参数均衡器</string>
     <string name="add_band">新增频段</string>
     <string name="band_number">频段 #%1$d</string>
     <string name="freq_label">频率: %1$dHz</string>
@@ -26,6 +26,13 @@
     <string name="import_text">导入</string>
     <string name="export_text">导出</string>
 
+    <!-- Library Tabs -->
+    <string name="tab_songs">单曲</string>
+    <string name="tab_folders">文件夹</string>
+    <string name="tab_albums">专辑</string>
+    <string name="tab_artists">艺术家</string>
+    <string name="tab_playlists">歌单</string>
+
     <!-- Settings Sections -->
     <string name="section_startup_mode">启动偏好与模式</string>
     <string name="section_audio_engine">音频处理引擎</string>
@@ -36,30 +43,30 @@
     <!-- Settings Items -->
     <string name="launch_as_equalizer_only_title">仅作为均衡器启动</string>
     <string name="launch_as_equalizer_only_subtitle">启动程序时直接进入均衡器配置界面，隐藏音乐库主界面</string>
-    <string name="language_title">显示语言 (Language)</string>
+    <string name="language_title">显示语言</string>
     <string name="language_subtitle">自定义切换应用界面的语言</string>
-    <string name="language_system">跟随系统 (System)</string>
-    <string name="language_chinese">简体中文 (Chinese)</string>
+    <string name="language_system">跟随系统</string>
+    <string name="language_chinese">简体中文</string>
     <string name="language_english">English (英语)</string>
 
-    <string name="theme_title">外观主题 (Theme)</string>
+    <string name="theme_title">外观主题</string>
     <string name="theme_subtitle">选择深色、浅色或跟随系统外观</string>
-    <string name="theme_system">跟随系统 (System)</string>
-    <string name="theme_dark">深色模式 (Dark)</string>
-    <string name="theme_light">浅色模式 (Light)</string>
+    <string name="theme_system">跟随系统</string>
+    <string name="theme_dark">深色模式</string>
+    <string name="theme_light">浅色模式</string>
 
     <string name="sample_rate_title">DSP 采样率</string>
     <string name="sample_rate_subtitle">目标高保真音频处理采样率</string>
     <string name="num_bands_title">图示频段数量</string>
     <string name="num_bands_subtitle">图示均衡器频点分辨率</string>
-    <string name="auto_gain_title">自动增益控制 (Auto Gain)</string>
+    <string name="auto_gain_title">自动增益控制</string>
     <string name="auto_gain_subtitle">根据 EQ 提升自动缩减前级，防止数字削波失真</string>
     <string name="import_preset_title">导入预设 / AutoEQ</string>
     <string name="import_preset_subtitle">支持从 JSON 字符串或 AutoEQ 文本格式导入</string>
     <string name="export_preset_title">导出预设为 JSON</string>
     <string name="export_preset_subtitle">备份所有用户自定义均衡器预设</string>
     <string name="per_app_eq_title">Per-App 应用专属 EQ</string>
-    <string name="per_app_eq_subtitle">为 Spotify、QQ音乐、网易云等分别设置独立音效</string>
+    <string name="per_app_eq_subtitle">为各应用分别设置独立音效</string>
     <string name="auto_device_preset_title">设备专属预设自动切换</string>
     <string name="auto_device_preset_subtitle">连接蓝牙耳机或外部 DAC 时自动加载专属音效</string>
     <string name="current_audio_device">当前音频输出设备</string>
@@ -68,7 +75,7 @@
     <string name="dsp_latency_title">处理延迟</string>
     <string name="dsp_latency_value">&lt; 2.5 毫秒 (极低延迟)</string>
     <string name="version_title">软件版本</string>
-    <string name="version_value">0.1.0</string>
+    <string name="version_value">0.1.1</string>
 
     <!-- Import / Export Dialogs -->
     <string name="import_dialog_title">导入预设 / AutoEQ 调音</string>
@@ -84,15 +91,15 @@
     <string name="service_active_device">当前生效设备: %1$s</string>
 
     <!-- Presets -->
-    <string name="preset_flat">平直 (Flat)</string>
-    <string name="preset_rock">摇滚 (Rock)</string>
-    <string name="preset_pop">流行 (Pop)</string>
-    <string name="preset_classical">古典 (Classical)</string>
-    <string name="preset_jazz">爵士 (Jazz)</string>
-    <string name="preset_vocal">人声清澈 (Vocal)</string>
-    <string name="preset_bass_boost">重低音 (Bass Boost)</string>
-    <string name="preset_treble_boost">高音提升 (Treble Boost)</string>
-    <string name="preset_custom">自定义预设</string>
+    <string name="preset_flat">平直</string>
+    <string name="preset_rock">摇滚</string>
+    <string name="preset_pop">流行</string>
+    <string name="preset_classical">古典</string>
+    <string name="preset_jazz">爵士</string>
+    <string name="preset_vocal">人声</string>
+    <string name="preset_bass_boost">低音增强</string>
+    <string name="preset_treble_boost">高音增强</string>
+    <string name="preset_custom">自定义</string>
 
     <!-- Playlists -->
     <string name="create_new_playlist">新建播放列表</string>
@@ -109,4 +116,87 @@
     <string name="btn_cancel">取消</string>
     <string name="btn_play_all">播放全部</string>
     <string name="search_hint">搜索歌曲或艺术家...</string>
+
+    <!-- Favorites & Likes -->
+    <string name="favorite_songs">我喜欢的音乐</string>
+    <string name="add_to_favorites">添加到喜欢</string>
+    <string name="remove_from_favorites">取消喜欢</string>
+    <string name="favorites_empty_hint">还没有红心歌曲，点击歌曲上的爱心图标即可添加！</string>
+    <string name="play_count_label">播放 %1$d 次</string>
+
+    <!-- Shuffle Strategies -->
+    <string name="section_playback_pref">播放偏好设置</string>
+    <string name="shuffle_strategy_title">随机播放规则</string>
+    <string name="shuffle_strategy_subtitle">选择随机播放模式下的曲目选取算法</string>
+    <string name="shuffle_standard">标准随机</string>
+    <string name="shuffle_standard_desc">在播放列表中完全随机平均挑选歌曲</string>
+    <string name="shuffle_favorite_first">优先播放红心歌曲</string>
+    <string name="shuffle_favorite_first_desc">优先随机播放红心歌曲，播完后随机播放其余歌曲</string>
+    <string name="shuffle_least_played">优先播放播放次数较少歌曲</string>
+    <string name="shuffle_off">关闭随机</string>
+    <string name="attitude_favorite">已添加到喜欢</string>
+    <string name="attitude_disliked">已标记为不喜欢 (随机播放将跳过)</string>
+    <string name="attitude_none">已取消标记</string>
+
+    <!-- Library Scan Settings -->
+    <string name="section_library_scan">媒体库文件夹扫描</string>
+    <string name="playback_preferences">播放偏好设置</string>
+    <string name="scan_settings_title">媒体库文件夹扫描设置</string>
+    <string name="scan_included_folders">仅扫描特定文件夹</string>
+    <string name="scan_included_folders_desc">设置后仅扫描指定目录，不设置默认扫描全盘音频</string>
+    <string name="scan_all_folders_default">当前未设置 (默认扫描全盘所有可用音频)</string>
+    <string name="scan_excluded_folders">排除特定文件夹</string>
+    <string name="scan_excluded_folders_desc">扫描时自动跳过指定目录下的所有音频</string>
+    <string name="scan_no_excluded_folders">未配置排除文件夹</string>
+    <string name="rescan_library_now">立即重新扫描媒体库</string>
+    <string name="quick_select_discovered_folder">从当前已发现的文件夹快捷挑选：</string>
+    <string name="syncing_audio_library">正在检索媒体库音频...</string>
+    <string name="scan_included_title">仅扫描特定文件夹</string>
+    <string name="scan_included_subtitle">设置后仅扫描指定目录，不设置默认扫描全盘音频</string>
+    <string name="scan_excluded_title">排除特定文件夹</string>
+    <string name="scan_excluded_subtitle">扫描时自动跳过指定目录下的所有音频</string>
+    <string name="add_included_folder">添加扫描文件夹</string>
+    <string name="add_excluded_folder">添加排除文件夹</string>
+    <string name="no_folders_configured">当前未设置 (默认扫描全盘所有可用音频)</string>
+    <string name="rescan_library">立即重新扫描媒体库</string>
+    <string name="rescan_library_desc">应用最新的文件夹过滤规则重新检索曲库</string>
+    <string name="select_folder_title">选择文件夹</string>
+    <string name="folder_path_hint">文件夹完整路径 (如 /storage/emulated/0/Music)</string>
+    <string name="choose_from_existing">从当前已发现的文件夹挑选：</string>
+    <string name="custom_path">自定义路径</string>
+
+    <!-- 均衡器预设分组与弹窗 -->
+    <string name="preset_group_builtin">内置预设</string>
+    <string name="preset_group_custom">用户保存配置</string>
+    <string name="preset_save_dialog_title">保存当前均衡器配置</string>
+    <string name="preset_save_dialog_desc">将当前的频段增益与前级参数保存为专属配置：</string>
+    <string name="preset_name_label">配置名称</string>
+    <string name="preset_delete_dialog_title">删除配置</string>
+    <string name="preset_delete_dialog_desc">确定要删除配置“%1$s”吗？</string>
+    <string name="preset_save_button">保存配置</string>
+    <string name="preset_save_button_short">+ 保存</string>
+    <string name="btn_save">保存</string>
+    <string name="btn_delete">删除</string>
+    <string name="my_preset_default_name">我的配置 %1$d</string>
+    <string name="no_custom_presets_hint">暂无保存的配置</string>
+
+    <!-- 媒体库空状态与提示 -->
+    <string name="empty_album_title">专辑为空</string>
+    <string name="empty_album_desc">该专辑下未找到可播放的音频曲目</string>
+    <string name="no_albums_found">未找到专辑</string>
+    <string name="empty_albums_desc">本地音乐专辑将显示在此处</string>
+    <string name="empty_artist_title">暂无艺术家曲目</string>
+    <string name="empty_artist_desc">该艺术家下未找到可播放的音频曲目</string>
+    <string name="no_artists_found">未找到艺术家</string>
+    <string name="empty_artists_desc">本地音乐艺术家将显示在此处</string>
+    <string name="empty_folder_title">文件夹为空</string>
+    <string name="empty_folder_desc">该目录下未找到可播放的音频曲目</string>
+    <string name="empty_songs_title">曲库暂无歌曲</string>
+    <string name="empty_songs_desc">点击上方同步图标扫描设备中的音频文件</string>
+    <string name="scanning_library_title">正在扫描本地音频...</string>
+    <string name="search_no_results_title">无搜索结果</string>
+    <string name="search_no_results_desc">请尝试搜索其他歌曲名称或艺术家</string>
+    <string name="added_to_playlist_success">已添加到 %1$s</string>
+    <string name="queue_search_hint">在队列中搜索...</string>
+    <string name="back">返回</string>
 </resources>

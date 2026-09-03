@@ -18,18 +18,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.antigravity.equalizer.R
+import com.antigravity.equalizer.audio.ShuffleStrategy
 import com.antigravity.equalizer.data.repository.AppProfile
 import com.antigravity.equalizer.data.repository.AppProfileRepository
 import com.antigravity.equalizer.ui.theme.*
 import com.antigravity.equalizer.ui.viewmodel.EqualizerViewModel
+import com.antigravity.equalizer.ui.viewmodel.MusicPlayerViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     viewModel: EqualizerViewModel,
+    musicViewModel: MusicPlayerViewModel? = null,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -39,6 +43,14 @@ fun SettingsScreen(
     var showAppProfileDialog by remember { mutableStateOf(false) }
     var importText by remember { mutableStateOf("") }
     var exportedJson by remember { mutableStateOf("") }
+
+    var showAddFolderDialog by remember { mutableStateOf(false) }
+    var isAddingIncludedFolder by remember { mutableStateOf(true) }
+    var customFolderPath by remember { mutableStateOf("") }
+
+    val includedFolders by musicViewModel?.includedFolders?.collectAsState() ?: remember { mutableStateOf(emptySet()) }
+    val excludedFolders by musicViewModel?.excludedFolders?.collectAsState() ?: remember { mutableStateOf(emptySet()) }
+    val isScanning by musicViewModel?.isScanning?.collectAsState() ?: remember { mutableStateOf(false) }
 
     val appProfiles by AppProfileRepository.instance.appProfiles.collectAsState()
 
@@ -171,6 +183,229 @@ fun SettingsScreen(
                         checked = uiState.autoGainEnabled,
                         onCheckedChange = { viewModel.toggleAutoGain(it) }
                     )
+                }
+            }
+
+            // 媒体库文件夹扫描过滤设置 (仅当接入 musicViewModel 时呈现)
+            if (musicViewModel != null) {
+                // 媒体库文件夹扫描过滤设置
+                item {
+                    SettingsSectionHeader(stringResource(R.string.scan_settings_title))
+                    SettingsCard {
+                        // 1. 扫描特定文件夹 (白名单)
+                        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(R.string.scan_included_folders),
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 14.sp,
+                                        color = OrbitTheme.colors.textPrimary
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.scan_included_folders_desc),
+                                        fontSize = 11.sp,
+                                        color = OrbitTheme.colors.textSecondary
+                                    )
+                                }
+                                IconButton(onClick = {
+                                    isAddingIncludedFolder = true
+                                    customFolderPath = ""
+                                    showAddFolderDialog = true
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.AddCircleOutline,
+                                        contentDescription = "Add included folder",
+                                        tint = OrbitTheme.colors.primary
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            if (includedFolders.isEmpty()) {
+                                Text(
+                                    text = stringResource(R.string.scan_all_folders_default),
+                                    fontSize = 12.sp,
+                                    color = OrbitTheme.colors.textSecondary.copy(alpha = 0.8f),
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                            } else {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    includedFolders.forEach { folder ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(OrbitTheme.colors.surface)
+                                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Folder,
+                                                contentDescription = null,
+                                                tint = OrbitTheme.colors.primary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = folder,
+                                                fontSize = 12.sp,
+                                                color = OrbitTheme.colors.textPrimary,
+                                                modifier = Modifier.weight(1f),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            IconButton(
+                                                onClick = { musicViewModel.removeIncludedFolder(folder) },
+                                                modifier = Modifier.size(24.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Close,
+                                                    contentDescription = "Remove",
+                                                    tint = OrbitTheme.colors.textSecondary,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = GridLineColor)
+
+                        // 2. 排除特定文件夹 (黑名单)
+                        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(R.string.scan_excluded_folders),
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 14.sp,
+                                        color = OrbitTheme.colors.textPrimary
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.scan_excluded_folders_desc),
+                                        fontSize = 11.sp,
+                                        color = OrbitTheme.colors.textSecondary
+                                    )
+                                }
+                                IconButton(onClick = {
+                                    isAddingIncludedFolder = false
+                                    customFolderPath = ""
+                                    showAddFolderDialog = true
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.AddCircleOutline,
+                                        contentDescription = "Add excluded folder",
+                                        tint = OrbitTheme.colors.primary
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            if (excludedFolders.isEmpty()) {
+                                Text(
+                                    text = stringResource(R.string.scan_no_excluded_folders),
+                                    fontSize = 12.sp,
+                                    color = OrbitTheme.colors.textSecondary.copy(alpha = 0.8f),
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                            } else {
+                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    excludedFolders.forEach { folder ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(OrbitTheme.colors.surface)
+                                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.FolderOff,
+                                                contentDescription = null,
+                                                tint = Color(0xFFFF5252),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = folder,
+                                                fontSize = 12.sp,
+                                                color = OrbitTheme.colors.textPrimary,
+                                                modifier = Modifier.weight(1f),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            IconButton(
+                                                onClick = { musicViewModel.removeExcludedFolder(folder) },
+                                                modifier = Modifier.size(24.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Close,
+                                                    contentDescription = "Remove",
+                                                    tint = OrbitTheme.colors.textSecondary,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = GridLineColor)
+
+                        // 3. 立即触发重新扫描
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = !isScanning) {
+                                    musicViewModel.scanMedia()
+                                }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.rescan_library_now),
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 14.sp,
+                                    color = OrbitTheme.colors.primary
+                                )
+                                Text(
+                                    text = if (isScanning) stringResource(R.string.syncing_audio_library) else stringResource(R.string.rescan_library_desc),
+                                    fontSize = 11.sp,
+                                    color = OrbitTheme.colors.textSecondary
+                                )
+                            }
+                            if (isScanning) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = OrbitTheme.colors.primary,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Rescan",
+                                    tint = OrbitTheme.colors.primary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -377,6 +612,100 @@ fun SettingsScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary)
                 ) {
                     Text(stringResource(R.string.done), color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White)
+                }
+            },
+            containerColor = OrbitTheme.colors.surfaceCard
+        )
+    }
+
+    // 添加扫描/排除文件夹弹窗
+    if (showAddFolderDialog && musicViewModel != null) {
+        val discoveredFolders by musicViewModel.folders.collectAsState()
+        AlertDialog(
+            onDismissRequest = { showAddFolderDialog = false },
+            title = {
+                Text(
+                    text = if (isAddingIncludedFolder) stringResource(R.string.add_included_folder) else stringResource(R.string.add_excluded_folder),
+                    fontWeight = FontWeight.Bold,
+                    color = OrbitTheme.colors.textPrimary
+                )
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = stringResource(R.string.folder_path_hint),
+                        fontSize = 12.sp,
+                        color = OrbitTheme.colors.textSecondary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = customFolderPath,
+                        onValueChange = { customFolderPath = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("/storage/emulated/0/Music...", fontSize = 12.sp, color = OrbitTheme.colors.textSecondary) },
+                        singleLine = true
+                    )
+
+                    if (discoveredFolders.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = stringResource(R.string.quick_select_discovered_folder),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = OrbitTheme.colors.textPrimary
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        LazyColumn(modifier = Modifier.heightIn(max = 160.dp)) {
+                            items(discoveredFolders) { f ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .clickable { customFolderPath = f.folderPath }
+                                        .padding(vertical = 6.dp, horizontal = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Folder,
+                                        contentDescription = null,
+                                        tint = OrbitTheme.colors.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "${f.folderName} (${f.songCount})",
+                                        fontSize = 12.sp,
+                                        color = OrbitTheme.colors.textPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val path = customFolderPath.trim()
+                        if (path.isNotEmpty()) {
+                            if (isAddingIncludedFolder) {
+                                musicViewModel.addIncludedFolder(path)
+                            } else {
+                                musicViewModel.addExcludedFolder(path)
+                            }
+                        }
+                        showAddFolderDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary)
+                ) {
+                    Text(stringResource(R.string.done), color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddFolderDialog = false }) {
+                    Text(stringResource(R.string.cancel), color = OrbitTheme.colors.textSecondary)
                 }
             },
             containerColor = OrbitTheme.colors.surfaceCard

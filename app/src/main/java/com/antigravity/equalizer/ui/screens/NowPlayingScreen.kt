@@ -12,11 +12,13 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -34,6 +36,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -43,7 +47,9 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.antigravity.equalizer.R
 import com.antigravity.equalizer.audio.RepeatMode
+import com.antigravity.equalizer.audio.ShuffleStrategy
 import com.antigravity.equalizer.data.model.Song
+import com.antigravity.equalizer.data.model.SongAttitude
 import com.antigravity.equalizer.ui.theme.*
 import com.antigravity.equalizer.ui.utils.swipeToChangeSong
 import com.antigravity.equalizer.ui.viewmodel.EqualizerUiState
@@ -62,12 +68,28 @@ fun NowPlayingScreen(
     onOpenEqualizer: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val playbackState by viewModel.playbackState.collectAsState()
-    val song = playbackState.currentSong
+    val allSongs by viewModel.allSongs.collectAsState()
+    val favoriteSongs by viewModel.favoriteSongs.collectAsState()
+    val rawSong = playbackState.currentSong
+    val song = remember(rawSong, allSongs, favoriteSongs) {
+        if (rawSong == null) null
+        else {
+            val fromLib = allSongs.find { it.path == rawSong.path }
+            val isFavorite = favoriteSongs.any { it.path == rawSong.path }
+            (fromLib ?: rawSong).copy(isFavorite = isFavorite)
+        }
+    }
 
     // 播放进度拖拽控制
     var isDraggingSlider by remember { mutableStateOf(false) }
     var draggingProgress by remember { mutableFloatStateOf(0f) }
+
+    val playlists by viewModel.playlists.collectAsState()
+    var showAddToPlaylistDialog by remember { mutableStateOf(false) }
+    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
+    var newPlaylistName by remember { mutableStateOf("") }
 
     // 当前播放队列弹层
     var showQueueBottomSheet by remember { mutableStateOf(false) }
@@ -162,7 +184,7 @@ fun NowPlayingScreen(
             modifier = modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 24.dp, vertical = 6.dp)
+                .padding(horizontal = 24.dp, vertical = 4.dp)
                 .swipeToChangeSong(
                     onSwipeNext = { viewModel.playNext() },
                     onSwipePrevious = { viewModel.playPrevious() }
@@ -170,106 +192,16 @@ fun NowPlayingScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // 0. 顶部均衡器当前生效配置条 (移至封面上方，点击进入完整均衡器界面)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(OrbitTheme.colors.surfaceCard)
-                    .clickable(onClick = onOpenEqualizer)
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                // 左侧：均衡器图标 + 状态药丸
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Equalizer,
-                        contentDescription = null,
-                        tint = if (equalizerUiState.isEnabled) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = "Equalizer DSP",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = OrbitTheme.colors.textPrimary
-                    )
-                    // 运行状态小药丸徽章
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(
-                                if (equalizerUiState.isEnabled) OrbitTheme.colors.primary.copy(alpha = 0.2f) else OrbitTheme.colors.surface
-                            )
-                            .padding(horizontal = 5.dp, vertical = 1.dp)
-                    ) {
-                        Text(
-                            text = if (equalizerUiState.isEnabled) "ACTIVE" else "BYPASS",
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (equalizerUiState.isEnabled) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary
-                        )
-                    }
-                }
-
-                // 右侧：当前预设名称 + 增益柱 + 箭头
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = currentPresetName,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (equalizerUiState.isEnabled) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    // 8 频段微缩增益柱
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(1.5.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        val gains = equalizerUiState.bandGains
-                        for (i in 0 until minOf(8, gains.size)) {
-                            val gain = gains[i].coerceIn(-6f, 6f)
-                            val barHeight = (7 + (gain / 6f) * 5).coerceIn(3f, 12f).dp
-                            Box(
-                                modifier = Modifier
-                                    .width(2.dp)
-                                    .height(barHeight)
-                                    .clip(RoundedCornerShape(1.dp))
-                                    .background(
-                                        if (equalizerUiState.isEnabled) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary.copy(alpha = 0.4f)
-                                    )
-                            )
-                        }
-                    }
-                    Icon(
-                        imageVector = Icons.Default.ChevronRight,
-                        contentDescription = null,
-                        tint = OrbitTheme.colors.textSecondary,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            // 1. 高清圆角大封面 (整体向上移动，尺寸精致紧凑，腾出充裕空间展示多行歌词)
+            // 1. 高清圆角大封面 (整体置顶并上移，视觉中心更加突出)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 2.dp, bottom = 4.dp),
+                    .padding(top = 0.dp, bottom = 2.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Box(
                     modifier = Modifier
-                        .size(175.dp)
+                        .size(190.dp)
                         .scale(coverScale)
                         .shadow(
                             elevation = 18.dp,
@@ -363,10 +295,12 @@ fun NowPlayingScreen(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // 2. 歌曲与艺术家标题 (带平滑切换动效)
+            // 2. 歌曲与艺术家标题 (纯粹居中排列，优雅沉浸)
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
             ) {
                 AnimatedContent(
                     targetState = song?.title ?: "No Track Selected",
@@ -375,7 +309,7 @@ fun NowPlayingScreen(
                 ) { title ->
                     Text(
                         text = title,
-                        fontSize = 22.sp,
+                        fontSize = 21.sp,
                         fontWeight = FontWeight.Bold,
                         color = OrbitTheme.colors.textPrimary,
                         textAlign = TextAlign.Center,
@@ -391,7 +325,7 @@ fun NowPlayingScreen(
                 ) { artist ->
                     Text(
                         text = artist,
-                        fontSize = 15.sp,
+                        fontSize = 14.5.sp,
                         fontWeight = FontWeight.Medium,
                         color = OrbitTheme.colors.textSecondary,
                         textAlign = TextAlign.Center,
@@ -401,7 +335,106 @@ fun NowPlayingScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 2.5 进度条上方快捷功能行：红心/态度图标、均衡器图标与更多菜单图标并排居中显示
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(32.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 1. 红心/态度图标 (三态循环：喜欢 -> 不喜欢 -> 取消)
+                val currentAttitude = song?.attitude ?: SongAttitude.NONE
+                IconButton(
+                    onClick = {
+                        val target = song ?: rawSong
+                        if (target != null) {
+                            viewModel.cycleSongAttitude(target) { nextAttitude ->
+                                val msgRes = when (nextAttitude) {
+                                    SongAttitude.FAVORITE -> R.string.attitude_favorite
+                                    SongAttitude.DISLIKED -> R.string.attitude_disliked
+                                    SongAttitude.NONE -> R.string.attitude_none
+                                }
+                                Toast.makeText(context, context.getString(msgRes) as CharSequence, Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    val favScale by animateFloatAsState(
+                        targetValue = if (currentAttitude == SongAttitude.FAVORITE) 1.25f else 1.0f,
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                        label = "FavoriteBounceAnim"
+                    )
+                    when (currentAttitude) {
+                        SongAttitude.FAVORITE -> {
+                            Icon(
+                                imageVector = Icons.Default.Favorite,
+                                contentDescription = "Favorite",
+                                tint = Color(0xFFFF3366),
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .scale(favScale)
+                            )
+                        }
+                        SongAttitude.DISLIKED -> {
+                            Icon(
+                                imageVector = Icons.Default.ThumbDown,
+                                contentDescription = "Disliked",
+                                tint = Color(0xFFE57373),
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                        SongAttitude.NONE -> {
+                            Icon(
+                                imageVector = Icons.Default.FavoriteBorder,
+                                contentDescription = "Neutral",
+                                tint = OrbitTheme.colors.textSecondary,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    }
+                }
+
+                // 2. 均衡器入口 (Equalizer Icon)
+                IconButton(
+                    onClick = onOpenEqualizer,
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Equalizer,
+                            contentDescription = "Equalizer ($currentPresetName)",
+                            tint = if (equalizerUiState.isEnabled) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                            modifier = Modifier.size(26.dp)
+                        )
+                        if (equalizerUiState.isEnabled) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(OrbitTheme.colors.primary)
+                            )
+                        }
+                    }
+                }
+
+                // 3. 三点菜单 (点击弹出添加到播放列表弹窗)
+                IconButton(
+                    onClick = { showAddToPlaylistDialog = true },
+                    modifier = Modifier.size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "More Options",
+                        tint = OrbitTheme.colors.textSecondary,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
 
             // 3. 进度条与时间指示 (播放条同款流光星芒光晕进度条)
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -438,14 +471,45 @@ fun NowPlayingScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 随机播放
-                IconButton(onClick = { viewModel.toggleShuffle() }) {
-                    Icon(
-                        imageVector = Icons.Default.Shuffle,
-                        contentDescription = "Shuffle",
-                        tint = if (playbackState.isShuffleEnabled) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                        modifier = Modifier.size(24.dp)
-                    )
+                // 随机播放 (单击在关闭随机、标准随机、优先红心、优先较少播放中循环切换)
+                Box(contentAlignment = Alignment.Center) {
+                    IconButton(
+                        onClick = {
+                            val toastResId = viewModel.toggleShuffle()
+                            Toast.makeText(context, context.getString(toastResId) as CharSequence, Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Shuffle,
+                                contentDescription = "Shuffle",
+                                tint = if (playbackState.isShuffleEnabled) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+
+                    // 开启随机播放且非标准策略时，右上角浮现微标提示 (♥ / ★)
+                    if (playbackState.isShuffleEnabled && playbackState.shuffleStrategy != ShuffleStrategy.STANDARD) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = 2.dp, y = 4.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (playbackState.shuffleStrategy == ShuffleStrategy.FAVORITE_FIRST) Color(0xFFFF3366)
+                                    else OrbitTheme.colors.primary
+                                )
+                                .padding(horizontal = 3.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = if (playbackState.shuffleStrategy == ShuffleStrategy.FAVORITE_FIRST) "♥" else "★",
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
                 }
 
                 // 上一曲
@@ -775,6 +839,24 @@ fun NowPlayingScreen(
 
                                 Spacer(modifier = Modifier.width(8.dp))
 
+                                if (qSong.isFavorite) {
+                                    Icon(
+                                        imageVector = Icons.Default.Favorite,
+                                        contentDescription = "Favorite",
+                                        tint = Color(0xFFFF3366),
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                } else if (qSong.isDisliked) {
+                                    Icon(
+                                        imageVector = Icons.Default.ThumbDown,
+                                        contentDescription = "Disliked",
+                                        tint = Color(0xFFE57373),
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                }
+
                                 Text(
                                     text = qSong.formattedDuration,
                                     fontSize = 11.sp,
@@ -786,6 +868,166 @@ fun NowPlayingScreen(
                 }
             }
         }
+    }
+
+    // 添加到播放列表对话框
+    if (showAddToPlaylistDialog && song != null) {
+        AlertDialog(
+            onDismissRequest = { showAddToPlaylistDialog = false },
+            title = {
+                Text(
+                    text = stringResource(R.string.add_to_playlist),
+                    color = OrbitTheme.colors.textPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth().heightIn(max = 380.dp)) {
+                    Text(
+                        text = song.title,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = OrbitTheme.colors.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+
+                    // 快速新建播放列表入口
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                newPlaylistName = ""
+                                showCreatePlaylistDialog = true
+                            }
+                            .padding(vertical = 10.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, tint = OrbitTheme.colors.primary, modifier = Modifier.size(22.dp))
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = stringResource(R.string.create_new_playlist),
+                            color = OrbitTheme.colors.primary,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp
+                        )
+                    }
+
+                    HorizontalDivider(
+                        color = OrbitTheme.colors.textSecondary.copy(alpha = 0.15f),
+                        modifier = Modifier.padding(vertical = 6.dp)
+                    )
+
+                    if (playlists.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.empty_playlist_hint),
+                            fontSize = 12.sp,
+                            color = OrbitTheme.colors.textSecondary,
+                            modifier = Modifier.padding(vertical = 12.dp)
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            items(playlists, key = { it.id }) { pl ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            viewModel.addSongToPlaylist(pl.id, song.id)
+                                            showAddToPlaylistDialog = false
+                                            Toast.makeText(context, context.getString(R.string.added_to_playlist_success, pl.name), Toast.LENGTH_SHORT).show()
+                                        }
+                                        .padding(vertical = 10.dp, horizontal = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.PlaylistPlay,
+                                        contentDescription = null,
+                                        tint = OrbitTheme.colors.primary,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = pl.name,
+                                            fontWeight = FontWeight.Medium,
+                                            fontSize = 14.sp,
+                                            color = OrbitTheme.colors.textPrimary
+                                        )
+                                        Text(
+                                            text = stringResource(R.string.tracks_count, pl.songCount),
+                                            fontSize = 11.sp,
+                                            color = OrbitTheme.colors.textSecondary
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showAddToPlaylistDialog = false }) {
+                    Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
+                }
+            },
+            containerColor = OrbitTheme.colors.surfaceCard
+        )
+    }
+
+    // 新建播放列表弹窗
+    if (showCreatePlaylistDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreatePlaylistDialog = false },
+            title = {
+                Text(
+                    text = stringResource(R.string.create_new_playlist),
+                    color = OrbitTheme.colors.textPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                OutlinedTextField(
+                    value = newPlaylistName,
+                    onValueChange = { newPlaylistName = it },
+                    label = { Text(stringResource(R.string.playlist_name_hint)) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = OrbitTheme.colors.primary,
+                        unfocusedBorderColor = OrbitTheme.colors.textSecondary.copy(alpha = 0.5f),
+                        focusedLabelColor = OrbitTheme.colors.primary,
+                        cursorColor = OrbitTheme.colors.primary
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val name = newPlaylistName.trim()
+                        if (name.isNotEmpty()) {
+                            viewModel.createPlaylist(name)
+                            showCreatePlaylistDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary)
+                ) {
+                    Text(stringResource(R.string.btn_ok), color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreatePlaylistDialog = false }) {
+                    Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
+                }
+            },
+            containerColor = OrbitTheme.colors.surfaceCard
+        )
     }
 }
 

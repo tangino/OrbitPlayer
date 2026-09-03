@@ -8,8 +8,11 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,6 +52,7 @@ fun SongItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
+    onFavoriteClick: (() -> Unit)? = null,
     trailingContent: (@Composable () -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -154,6 +158,35 @@ fun SongItem(
                                     contentDescription = "Paused",
                                     tint = colors.primary.copy(alpha = 0.9f),
                                     modifier = Modifier.size(if (viewMode == LibraryViewMode.GRID_4_COL) 16.dp else 22.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // 喜欢/不喜欢标记微标 (如果是grid列表则在专辑封边右下角标记)
+                    if (song.isFavorite || song.isDisliked) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(4.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.Black.copy(alpha = 0.65f))
+                                .clickable { onFavoriteClick?.invoke() }
+                                .padding(horizontal = 3.dp, vertical = 2.dp)
+                        ) {
+                            if (song.isFavorite) {
+                                Icon(
+                                    imageVector = Icons.Default.Favorite,
+                                    contentDescription = "Favorite",
+                                    tint = Color(0xFFFF3366),
+                                    modifier = Modifier.size(11.dp)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.ThumbDown,
+                                    contentDescription = "Disliked",
+                                    tint = Color(0xFFE57373),
+                                    modifier = Modifier.size(11.dp)
                                 )
                             }
                         }
@@ -281,30 +314,57 @@ fun SongItem(
                 // 右侧自定义操作内容或时长
                 if (trailingContent != null) {
                     trailingContent()
-                } else if (isCurrent) {
-                    if (isPlaying) {
-                        PlayingEqualizerIndicator(
-                            isPlaying = true,
-                            barCount = 3,
-                            barWidth = 2.2.dp,
-                            barSpacing = 2.dp,
-                            modifier = Modifier.height(14.dp),
-                            color = colors.primary
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Pause,
-                            contentDescription = "Paused",
-                            tint = colors.primary,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
                 } else {
-                    Text(
-                        text = song.formattedDuration,
-                        fontSize = 11.sp,
-                        color = colors.textSecondary
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (song.isFavorite) {
+                            Icon(
+                                imageVector = Icons.Default.Favorite,
+                                contentDescription = "Favorite",
+                                tint = Color(0xFFFF3366),
+                                modifier = Modifier
+                                    .size(15.dp)
+                                    .clickable { onFavoriteClick?.invoke() }
+                            )
+                        } else if (song.isDisliked) {
+                            Icon(
+                                imageVector = Icons.Default.ThumbDown,
+                                contentDescription = "Disliked",
+                                tint = Color(0xFFE57373),
+                                modifier = Modifier
+                                    .size(15.dp)
+                                    .clickable { onFavoriteClick?.invoke() }
+                            )
+                        }
+
+                        if (isCurrent) {
+                            if (isPlaying) {
+                                PlayingEqualizerIndicator(
+                                    isPlaying = true,
+                                    barCount = 3,
+                                    barWidth = 2.2.dp,
+                                    barSpacing = 2.dp,
+                                    modifier = Modifier.height(14.dp),
+                                    color = colors.primary
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Pause,
+                                    contentDescription = "Paused",
+                                    tint = colors.primary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        } else {
+                            Text(
+                                text = song.formattedDuration,
+                                fontSize = 11.sp,
+                                color = colors.textSecondary
+                            )
+                        }
+                    }
                 }
             }
         }
