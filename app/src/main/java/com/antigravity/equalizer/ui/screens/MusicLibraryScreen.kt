@@ -48,10 +48,55 @@ import androidx.compose.ui.res.stringResource
 import com.antigravity.equalizer.R
 import com.antigravity.equalizer.data.model.Playlist
 import com.antigravity.equalizer.data.model.Song
+import com.antigravity.equalizer.ui.components.PowerampViewModeTransitionContainer
 import com.antigravity.equalizer.ui.theme.*
 import com.antigravity.equalizer.ui.utils.pinchToZoomViewMode
+import com.antigravity.equalizer.ui.utils.rememberPinchTransitionState
 import com.antigravity.equalizer.ui.viewmodel.*
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.lazy.grid.LazyGridState
+
+/**
+ * 跨 ViewMode 视图模式的同步滚动状态管理器：
+ * 为每个 LibraryViewMode 维护独立的 LazyGridState，彻底杜绝 AnimatedContent 交叉淡入淡出期间
+ * 两个并发布局共享同一 State 导致的 IllegalStateException，同时无缝延续切换前后的滚动位置。
+ */
+class SynchronizedGridStateHolder {
+    val stateMap = mutableMapOf<LibraryViewMode, LazyGridState>()
+    var lastKnownIndex by mutableStateOf(0)
+    var lastKnownOffset by mutableStateOf(0)
+
+    @Composable
+    fun getOrCreate(mode: LibraryViewMode): LazyGridState {
+        val state = remember(mode) {
+            stateMap.getOrPut(mode) {
+                LazyGridState(lastKnownIndex, lastKnownOffset)
+            }
+        }
+        LaunchedEffect(state) {
+            snapshotFlow { Pair(state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset) }
+                .collect { (idx, off) ->
+                    lastKnownIndex = idx
+                    lastKnownOffset = off
+                }
+        }
+        return state
+    }
+
+    val isScrollInProgress: Boolean
+        get() = stateMap.values.any { it.isScrollInProgress }
+
+    suspend fun animateScrollToItem(index: Int, mode: LibraryViewMode) {
+        lastKnownIndex = index
+        lastKnownOffset = 0
+        stateMap[mode]?.animateScrollToItem(index)
+    }
+}
+
+@Composable
+fun rememberSynchronizedGridStateHolder(): SynchronizedGridStateHolder {
+    return remember { SynchronizedGridStateHolder() }
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -112,25 +157,26 @@ fun MusicLibraryScreen(
     }
 
     val coroutineScope = rememberCoroutineScope()
-    val songsGridState = rememberLazyGridState()
+    val songsGridHolder = rememberSynchronizedGridStateHolder()
+    val folderSongsGridHolder = rememberSynchronizedGridStateHolder()
+    val albumSongsGridHolder = rememberSynchronizedGridStateHolder()
+    val artistSongsGridHolder = rememberSynchronizedGridStateHolder()
+    val albumsGridHolder = rememberSynchronizedGridStateHolder()
+
     val foldersListState = rememberLazyListState()
-    val folderSongsGridState = rememberLazyGridState()
-    val albumsGridState = rememberLazyGridState()
-    val albumSongsGridState = rememberLazyGridState()
     val artistsListState = rememberLazyListState()
-    val artistSongsGridState = rememberLazyGridState()
     val playlistsListState = rememberLazyListState()
 
     // 监听列表滚动状态：滚动时自动隐藏下方播放 Dock，停止时自动浮现
     val isAnyScrolling by remember {
         derivedStateOf {
-            songsGridState.isScrollInProgress ||
+            songsGridHolder.isScrollInProgress ||
                     foldersListState.isScrollInProgress ||
-                    folderSongsGridState.isScrollInProgress ||
-                    albumsGridState.isScrollInProgress ||
-                    albumSongsGridState.isScrollInProgress ||
+                    folderSongsGridHolder.isScrollInProgress ||
+                    albumsGridHolder.isScrollInProgress ||
+                    albumSongsGridHolder.isScrollInProgress ||
                     artistsListState.isScrollInProgress ||
-                    artistSongsGridState.isScrollInProgress ||
+                    artistSongsGridHolder.isScrollInProgress ||
                     playlistsListState.isScrollInProgress ||
                     playlistSongsListState.isScrollInProgress
         }
@@ -178,16 +224,17 @@ fun MusicLibraryScreen(
             openedAlbum = null
             openedArtist = null
             coroutineScope.launch {
-                songsGridState.animateScrollToItem(targetIndex)
+                songsGridHolder.animateScrollToItem(targetIndex, libraryState.viewMode)
             }
         }
     }
 
-    // 全 Tab 通用 Pinch 手势修饰符
+    // 全 Tab 通用 Pinch 手势控制器与修饰符
+    val pinchTransitionState = rememberPinchTransitionState()
     val pinchGestureModifier = Modifier.pinchToZoomViewMode(
         currentViewMode = libraryState.viewMode,
-        onViewModeChange = { viewModel.setViewMode(it) },
-        onTransformChange = {}
+        pinchState = pinchTransitionState,
+        onViewModeChange = { viewModel.setViewMode(it) }
     )
 
     Scaffold(
@@ -405,235 +452,236 @@ fun MusicLibraryScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            val columnsCount = when (libraryState.viewMode) {
-                LibraryViewMode.LIST_NO_ART,
-                LibraryViewMode.LIST_SMALL_ART,
-                LibraryViewMode.LIST_LARGE_ART -> 1
-                LibraryViewMode.GRID_2_COL -> 2
-                LibraryViewMode.GRID_3_COL -> 3
-                LibraryViewMode.GRID_4_COL -> 4
-            }
+            PowerampViewModeTransitionContainer(
+                viewMode = libraryState.viewMode,
+                pinchState = pinchTransitionState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(pinchGestureModifier)
+            ) { currentViewMode ->
+                val columnsCount = when (currentViewMode) {
+                    LibraryViewMode.LIST_NO_ART,
+                    LibraryViewMode.LIST_SMALL_ART,
+                    LibraryViewMode.LIST_LARGE_ART -> 1
+                    LibraryViewMode.GRID_2_COL -> 2
+                    LibraryViewMode.GRID_3_COL -> 3
+                    LibraryViewMode.GRID_4_COL -> 4
+                }
 
-            val hSpacing = when (libraryState.viewMode) {
-                LibraryViewMode.GRID_4_COL -> 6.dp
-                LibraryViewMode.GRID_3_COL -> 8.dp
-                LibraryViewMode.GRID_2_COL -> 10.dp
-                else -> 0.dp
-            }
+                val hSpacing = when (currentViewMode) {
+                    LibraryViewMode.GRID_4_COL -> 6.dp
+                    LibraryViewMode.GRID_3_COL -> 8.dp
+                    LibraryViewMode.GRID_2_COL -> 10.dp
+                    else -> 0.dp
+                }
 
-            val vSpacing = when (libraryState.viewMode) {
-                LibraryViewMode.GRID_4_COL -> 6.dp
-                LibraryViewMode.GRID_3_COL -> 8.dp
-                LibraryViewMode.GRID_2_COL -> 10.dp
-                LibraryViewMode.LIST_LARGE_ART -> 6.dp
-                else -> 3.dp
-            }
+                val vSpacing = when (currentViewMode) {
+                    LibraryViewMode.GRID_4_COL -> 6.dp
+                    LibraryViewMode.GRID_3_COL -> 8.dp
+                    LibraryViewMode.GRID_2_COL -> 10.dp
+                    LibraryViewMode.LIST_LARGE_ART -> 6.dp
+                    else -> 3.dp
+                }
 
-            // ========== 如果处于文件夹下钻内部，展示该文件夹的歌曲 ==========
-            if (openedFolderPath != null) {
-                val folderSongs = filteredSongs.filter { it.folderPath == openedFolderPath }
-                if (folderSongs.isEmpty()) {
-                    EmptyStateView(title = "Empty Folder", subtitle = "No playable audio tracks found in this directory.")
-                } else {
-                    LazyVerticalGrid(
-                        state = folderSongsGridState,
-                        columns = GridCells.Fixed(columnsCount),
-                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 98.dp),
-                        horizontalArrangement = Arrangement.spacedBy(hSpacing),
-                        verticalArrangement = Arrangement.spacedBy(vSpacing),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .then(pinchGestureModifier)
-                    ) {
-                        itemsIndexed(
-                            items = folderSongs,
-                            key = { index, song -> "${song.id}_$index" }
-                        ) { index, song ->
-                            SongItem(
-                                song = song,
-                                isPlaying = playbackState.isPlaying,
-                                isCurrent = playbackState.currentSong?.id == song.id,
-                                viewMode = libraryState.viewMode,
-                                onClick = { viewModel.playSong(folderSongs, index) }
-                            )
-                        }
-                    }
-                }
-            } else if (openedAlbum != null) {
-                // ========== 如果处于专辑下钻内部，展示该专辑的歌曲 ==========
-                val currentAlbum = openedAlbum!!
-                val albumSongs = remember(currentAlbum, filteredSongs) {
-                    filteredSongs.filter { it.album == currentAlbum.title }
-                }
-                if (albumSongs.isEmpty()) {
-                    EmptyStateView(title = "Empty Album", subtitle = "No playable audio tracks found in this album.")
-                } else {
-                    LazyVerticalGrid(
-                        state = albumSongsGridState,
-                        columns = GridCells.Fixed(columnsCount),
-                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 98.dp),
-                        horizontalArrangement = Arrangement.spacedBy(hSpacing),
-                        verticalArrangement = Arrangement.spacedBy(vSpacing),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .then(pinchGestureModifier)
-                    ) {
-                        itemsIndexed(
-                            items = albumSongs,
-                            key = { index, song -> "${song.id}_$index" }
-                        ) { index, song ->
-                            SongItem(
-                                song = song,
-                                isPlaying = playbackState.isPlaying,
-                                isCurrent = playbackState.currentSong?.id == song.id,
-                                viewMode = libraryState.viewMode,
-                                onClick = { viewModel.playSong(albumSongs, index) }
-                            )
-                        }
-                    }
-                }
-            } else if (openedArtist != null) {
-                // ========== 如果处于艺术家下钻内部，展示该艺术家的歌曲 ==========
-                val currentArtist = openedArtist!!
-                val artistSongs = remember(currentArtist, filteredSongs) {
-                    filteredSongs.filter { it.artist == currentArtist.name }
-                }
-                if (artistSongs.isEmpty()) {
-                    EmptyStateView(title = "Empty Artist", subtitle = "No playable audio tracks found for this artist.")
-                } else {
-                    LazyVerticalGrid(
-                        state = artistSongsGridState,
-                        columns = GridCells.Fixed(columnsCount),
-                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 98.dp),
-                        horizontalArrangement = Arrangement.spacedBy(hSpacing),
-                        verticalArrangement = Arrangement.spacedBy(vSpacing),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .then(pinchGestureModifier)
-                    ) {
-                        itemsIndexed(
-                            items = artistSongs,
-                            key = { index, song -> "${song.id}_$index" }
-                        ) { index, song ->
-                            SongItem(
-                                song = song,
-                                isPlaying = playbackState.isPlaying,
-                                isCurrent = playbackState.currentSong?.id == song.id,
-                                viewMode = libraryState.viewMode,
-                                onClick = { viewModel.playSong(artistSongs, index) }
-                            )
-                        }
-                    }
-                }
-            } else {
-                when (libraryState.currentTab) {
-                    LibraryTab.SONGS -> {
-                        // 1. 全部歌曲列表 (全 6 档 Pinch 手势与物理位移形变动效)
-                        if (filteredSongs.isEmpty()) {
-                            EmptyStateView(
-                                title = if (isScanning) "Scanning local music..." else "No songs found",
-                                subtitle = "Tap the sync icon above to scan your device storage."
-                            )
-                        } else {
-                            LazyVerticalGrid(
-                                state = songsGridState,
-                                columns = GridCells.Fixed(columnsCount),
-                                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 98.dp),
-                                horizontalArrangement = Arrangement.spacedBy(hSpacing),
-                                verticalArrangement = Arrangement.spacedBy(vSpacing),
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .then(pinchGestureModifier)
-                            ) {
-                                itemsIndexed(
-                                    items = filteredSongs,
-                                    key = { index, song -> "${song.id}_$index" }
-                                ) { index, song ->
-                                    SongItem(
-                                        song = song,
-                                        isPlaying = playbackState.isPlaying,
-                                        isCurrent = playbackState.currentSong?.id == song.id,
-                                        viewMode = libraryState.viewMode,
-                                        onClick = { viewModel.playSong(filteredSongs, index) },
-                                        onLongClick = { activeSongForLongClickMenu = song }
-                                    )
-                                }
-                            }
-                        }
-                    }
+                val folderSongsGridState = folderSongsGridHolder.getOrCreate(currentViewMode)
+                val albumSongsGridState = albumSongsGridHolder.getOrCreate(currentViewMode)
+                val artistSongsGridState = artistSongsGridHolder.getOrCreate(currentViewMode)
+                val songsGridState = songsGridHolder.getOrCreate(currentViewMode)
+                val albumsGridState = albumsGridHolder.getOrCreate(currentViewMode)
 
-                    LibraryTab.FOLDERS -> {
-                        // 2. 文件夹目录树 (支持点击进入下钻歌曲列表，支持 Pinch 手势)
-                        LazyColumn(
-                            state = foldersListState,
-                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 86.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .then(pinchGestureModifier)
+                // ========== 如果处于文件夹下钻内部，展示该文件夹的歌曲 ==========
+                if (openedFolderPath != null) {
+                    val folderSongs = filteredSongs.filter { it.folderPath == openedFolderPath }
+                    if (folderSongs.isEmpty()) {
+                        EmptyStateView(title = "Empty Folder", subtitle = "No playable audio tracks found in this directory.")
+                    } else {
+                        LazyVerticalGrid(
+                            state = folderSongsGridState,
+                            columns = GridCells.Fixed(columnsCount),
+                            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 98.dp),
+                            horizontalArrangement = Arrangement.spacedBy(hSpacing),
+                            verticalArrangement = Arrangement.spacedBy(vSpacing),
+                            modifier = Modifier.fillMaxSize()
                         ) {
-                            itemsIndexed(folders, key = { index, folder -> "${folder.folderPath}_$index" }) { _, folder ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(OrbitTheme.colors.surfaceCard)
-                                        .clickable {
-                                            // 点击进入该文件夹展示歌曲
-                                            openedFolderPath = folder.folderPath
-                                        }
-                                        .padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                            itemsIndexed(
+                                items = folderSongs,
+                                key = { index, song -> "${song.id}_$index" }
+                            ) { index, song ->
+                                SongItem(
+                                    song = song,
+                                    isPlaying = playbackState.isPlaying,
+                                    isCurrent = playbackState.currentSong?.id == song.id,
+                                    viewMode = currentViewMode,
+                                    onClick = { viewModel.playSong(folderSongs, index) }
+                                )
+                            }
+                        }
+                    }
+                } else if (openedAlbum != null) {
+                    // ========== 如果处于专辑下钻内部，展示该专辑的歌曲 ==========
+                    val currentAlbum = openedAlbum!!
+                    val albumSongs = remember(currentAlbum, filteredSongs) {
+                        filteredSongs.filter { it.album == currentAlbum.title }
+                    }
+                    if (albumSongs.isEmpty()) {
+                        EmptyStateView(title = "Empty Album", subtitle = "No playable audio tracks found in this album.")
+                    } else {
+                        LazyVerticalGrid(
+                            state = albumSongsGridState,
+                            columns = GridCells.Fixed(columnsCount),
+                            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 98.dp),
+                            horizontalArrangement = Arrangement.spacedBy(hSpacing),
+                            verticalArrangement = Arrangement.spacedBy(vSpacing),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            itemsIndexed(
+                                items = albumSongs,
+                                key = { index, song -> "${song.id}_$index" }
+                            ) { index, song ->
+                                SongItem(
+                                    song = song,
+                                    isPlaying = playbackState.isPlaying,
+                                    isCurrent = playbackState.currentSong?.id == song.id,
+                                    viewMode = currentViewMode,
+                                    onClick = { viewModel.playSong(albumSongs, index) }
+                                )
+                            }
+                        }
+                    }
+                } else if (openedArtist != null) {
+                    // ========== 如果处于艺术家下钻内部，展示该艺术家的歌曲 ==========
+                    val currentArtist = openedArtist!!
+                    val artistSongs = remember(currentArtist, filteredSongs) {
+                        filteredSongs.filter { it.artist == currentArtist.name }
+                    }
+                    if (artistSongs.isEmpty()) {
+                        EmptyStateView(title = "Empty Artist", subtitle = "No playable audio tracks found for this artist.")
+                    } else {
+                        LazyVerticalGrid(
+                            state = artistSongsGridState,
+                            columns = GridCells.Fixed(columnsCount),
+                            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 98.dp),
+                            horizontalArrangement = Arrangement.spacedBy(hSpacing),
+                            verticalArrangement = Arrangement.spacedBy(vSpacing),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            itemsIndexed(
+                                items = artistSongs,
+                                key = { index, song -> "${song.id}_$index" }
+                            ) { index, song ->
+                                SongItem(
+                                    song = song,
+                                    isPlaying = playbackState.isPlaying,
+                                    isCurrent = playbackState.currentSong?.id == song.id,
+                                    viewMode = currentViewMode,
+                                    onClick = { viewModel.playSong(artistSongs, index) }
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    when (libraryState.currentTab) {
+                        LibraryTab.SONGS -> {
+                            // 1. 全部歌曲列表 (全 6 档 Pinch 手势与物理位移形变动效)
+                            if (filteredSongs.isEmpty()) {
+                                EmptyStateView(
+                                    title = if (isScanning) "Scanning local music..." else "No songs found",
+                                    subtitle = "Tap the sync icon above to scan your device storage."
+                                )
+                            } else {
+                                LazyVerticalGrid(
+                                    state = songsGridState,
+                                    columns = GridCells.Fixed(columnsCount),
+                                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 98.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(hSpacing),
+                                    verticalArrangement = Arrangement.spacedBy(vSpacing),
+                                    modifier = Modifier.fillMaxSize()
                                 ) {
-                                    Icon(Icons.Default.Folder, contentDescription = null, tint = OrbitTheme.colors.tertiary, modifier = Modifier.size(28.dp))
-                                    Spacer(modifier = Modifier.width(14.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(folder.folderName, fontWeight = FontWeight.Bold, color = OrbitTheme.colors.textPrimary, fontSize = 14.sp)
-                                        Text(folder.folderPath, color = OrbitTheme.colors.textSecondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text("${folder.songCount} tracks", fontSize = 12.sp, color = OrbitTheme.colors.primary, fontWeight = FontWeight.SemiBold)
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = OrbitTheme.colors.textSecondary, modifier = Modifier.size(18.dp))
+                                    itemsIndexed(
+                                        items = filteredSongs,
+                                        key = { index, song -> "${song.id}_$index" }
+                                    ) { index, song ->
+                                        SongItem(
+                                            song = song,
+                                            isPlaying = playbackState.isPlaying,
+                                            isCurrent = playbackState.currentSong?.id == song.id,
+                                            viewMode = currentViewMode,
+                                            onClick = { viewModel.playSong(filteredSongs, index) },
+                                            onLongClick = { activeSongForLongClickMenu = song }
+                                        )
                                     }
                                 }
                             }
                         }
-                    }
 
-                    LibraryTab.ALBUMS -> {
-                        // 3. 专辑库 (支持全 6 档自适应 Pinch 手势与点击下钻)
-                        if (albums.isEmpty()) {
-                            EmptyStateView(
-                                title = if (isScanning) "Scanning local music..." else "No albums found",
-                                subtitle = "Your music albums will appear here."
-                            )
-                        } else {
-                            LazyVerticalGrid(
-                                state = albumsGridState,
-                                columns = GridCells.Fixed(columnsCount),
-                                contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 98.dp),
-                                horizontalArrangement = Arrangement.spacedBy(hSpacing),
-                                verticalArrangement = Arrangement.spacedBy(vSpacing),
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .then(pinchGestureModifier)
+                        LibraryTab.FOLDERS -> {
+                            // 2. 文件夹目录树 (支持点击进入下钻歌曲列表，支持 Pinch 手势)
+                            LazyColumn(
+                                state = foldersListState,
+                                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 86.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxSize()
                             ) {
-                                itemsIndexed(albums, key = { index, album -> "${album.title}_${album.id}_$index" }) { _, album ->
-                                    val isAlbumPlaying = playbackState.currentSong?.album == album.title
-
-                                    AlbumItem(
-                                        album = album,
-                                        viewMode = libraryState.viewMode,
-                                        isCurrent = isAlbumPlaying,
-                                        onClick = {
-                                            openedAlbum = album
+                                itemsIndexed(folders, key = { index, folder -> "${folder.folderPath}_$index" }) { _, folder ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(OrbitTheme.colors.surfaceCard)
+                                            .clickable {
+                                                // 点击进入该文件夹展示歌曲
+                                                openedFolderPath = folder.folderPath
+                                            }
+                                            .padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Folder, contentDescription = null, tint = OrbitTheme.colors.tertiary, modifier = Modifier.size(28.dp))
+                                        Spacer(modifier = Modifier.width(14.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(folder.folderName, fontWeight = FontWeight.Bold, color = OrbitTheme.colors.textPrimary, fontSize = 14.sp)
+                                            Text(folder.folderPath, color = OrbitTheme.colors.textSecondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }
-                                    )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("${folder.songCount} tracks", fontSize = 12.sp, color = OrbitTheme.colors.primary, fontWeight = FontWeight.SemiBold)
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = OrbitTheme.colors.textSecondary, modifier = Modifier.size(18.dp))
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
+
+                        LibraryTab.ALBUMS -> {
+                            // 3. 专辑库 (支持全 6 档自适应 Pinch 手势与点击下钻)
+                            if (albums.isEmpty()) {
+                                EmptyStateView(
+                                    title = if (isScanning) "Scanning local music..." else "No albums found",
+                                    subtitle = "Your music albums will appear here."
+                                )
+                            } else {
+                                LazyVerticalGrid(
+                                    state = albumsGridState,
+                                    columns = GridCells.Fixed(columnsCount),
+                                    contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 98.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(hSpacing),
+                                    verticalArrangement = Arrangement.spacedBy(vSpacing),
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    itemsIndexed(albums, key = { index, album -> "${album.title}_${album.id}_$index" }) { _, album ->
+                                        val isAlbumPlaying = playbackState.currentSong?.album == album.title
+
+                                        AlbumItem(
+                                            album = album,
+                                            viewMode = currentViewMode,
+                                            isCurrent = isAlbumPlaying,
+                                            onClick = {
+                                                openedAlbum = album
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
 
                     LibraryTab.ARTISTS -> {
                         // 4. 艺术家列表 (支持 Pinch 手势与点击下钻展示全部歌曲)
@@ -977,6 +1025,7 @@ fun MusicLibraryScreen(
                     }
                 }
             }
+        }
 
             // 底部常驻 macOS Dock 播放条：列表滑动时自动平滑隐藏，停止时自动浮现
             if (playbackState.currentSong != null) {

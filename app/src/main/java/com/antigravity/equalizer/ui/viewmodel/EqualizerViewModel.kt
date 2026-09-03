@@ -50,7 +50,8 @@ data class EqualizerUiState(
     val spectrumBars: FloatArray = FloatArray(32) { 0f },
     val peakLeftDb: Float = -60f,
     val peakRightDb: Float = -60f,
-    val activeDeviceName: String = "Phone Speaker"
+    val activeDeviceName: String = "Phone Speaker",
+    val launchAsEqualizerOnly: Boolean = false
 )
 
 class EqualizerViewModel(application: Application) : AndroidViewModel(application) {
@@ -130,9 +131,14 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
+        val launchAsEqualizerOnly = prefs.getBoolean(KEY_LAUNCH_AS_EQUALIZER_ONLY, false)
+        val initialScreen = if (launchAsEqualizerOnly) AppScreen.MAIN else AppScreen.LIBRARY
+
         _uiState.update {
             it.copy(
                 isEnabled = isEqEnabled,
+                currentScreen = initialScreen,
+                launchAsEqualizerOnly = launchAsEqualizerOnly,
                 selectedPresetId = selectedPreset,
                 preampGainDb = preamp,
                 bandGains = restoredGains,
@@ -377,6 +383,11 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         selectPreset("flat")
     }
 
+    fun toggleLaunchAsEqualizerOnly(enabled: Boolean) {
+        _uiState.update { it.copy(launchAsEqualizerOnly = enabled) }
+        prefs.edit().putBoolean(KEY_LAUNCH_AS_EQUALIZER_ONLY, enabled).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "equalizer_ui_state_prefs"
         private const val KEY_EQ_ENABLED = "key_eq_enabled"
@@ -390,5 +401,6 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         private const val KEY_COMPRESSOR_ENABLED = "key_compressor_enabled"
         private const val KEY_LIMITER_ENABLED = "key_limiter_enabled"
         private const val KEY_THEME_MODE = "key_theme_mode"
+        private const val KEY_LAUNCH_AS_EQUALIZER_ONLY = "key_launch_as_equalizer_only"
     }
 }

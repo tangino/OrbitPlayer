@@ -82,13 +82,21 @@ class MainActivity : ComponentActivity() {
 
             // 全局各级页面系统返回手势（BackHandler）精准拦截
             BackHandler(enabled = uiState.currentScreen == AppScreen.MAIN) {
-                equalizerViewModel.navigateTo(AppScreen.LIBRARY)
+                if (uiState.launchAsEqualizerOnly) {
+                    finish()
+                } else {
+                    equalizerViewModel.navigateTo(AppScreen.LIBRARY)
+                }
             }
             BackHandler(enabled = uiState.currentScreen == AppScreen.PARAMETRIC) {
                 equalizerViewModel.navigateTo(AppScreen.MAIN)
             }
             BackHandler(enabled = uiState.currentScreen == AppScreen.SETTINGS) {
-                equalizerViewModel.navigateTo(AppScreen.LIBRARY)
+                if (uiState.launchAsEqualizerOnly) {
+                    equalizerViewModel.navigateTo(AppScreen.MAIN)
+                } else {
+                    equalizerViewModel.navigateTo(AppScreen.LIBRARY)
+                }
             }
 
             CompositionLocalProvider(
@@ -108,7 +116,13 @@ class MainActivity : ComponentActivity() {
                         AppScreen.MAIN -> {
                             MainEqualizerScreen(
                                 viewModel = equalizerViewModel,
-                                onBackToLibrary = { equalizerViewModel.navigateTo(AppScreen.LIBRARY) }
+                                onBackToLibrary = {
+                                    if (uiState.launchAsEqualizerOnly) {
+                                        finish()
+                                    } else {
+                                        equalizerViewModel.navigateTo(AppScreen.LIBRARY)
+                                    }
+                                }
                             )
                         }
                         AppScreen.PARAMETRIC -> {
@@ -120,7 +134,13 @@ class MainActivity : ComponentActivity() {
                         AppScreen.SETTINGS -> {
                             SettingsScreen(
                                 viewModel = equalizerViewModel,
-                                onBack = { equalizerViewModel.navigateTo(AppScreen.LIBRARY) }
+                                onBack = {
+                                    if (uiState.launchAsEqualizerOnly) {
+                                        equalizerViewModel.navigateTo(AppScreen.MAIN)
+                                    } else {
+                                        equalizerViewModel.navigateTo(AppScreen.LIBRARY)
+                                    }
+                                }
                             )
                         }
                     }

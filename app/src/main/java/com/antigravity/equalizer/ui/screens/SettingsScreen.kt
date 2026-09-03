@@ -115,6 +115,20 @@ fun SettingsScreen(
                 }
             }
 
+            // 0.3 启动偏好设置 (仅作为均衡器启动)
+            item {
+                SettingsSectionHeader(stringResource(R.string.section_startup_mode))
+                SettingsCard {
+                    SettingsSwitchItem(
+                        icon = Icons.Default.Tune,
+                        title = stringResource(R.string.launch_as_equalizer_only_title),
+                        subtitle = stringResource(R.string.launch_as_equalizer_only_subtitle),
+                        checked = uiState.launchAsEqualizerOnly,
+                        onCheckedChange = { viewModel.toggleLaunchAsEqualizerOnly(it) }
+                    )
+                }
+            }
+
             // 1. Audio Engine 选项
             item {
                 SettingsSectionHeader(stringResource(R.string.section_audio_engine))

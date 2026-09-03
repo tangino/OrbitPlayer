@@ -27,12 +27,15 @@
     <string name="export_text">Export</string>
 
     <!-- Settings Sections -->
+    <string name="section_startup_mode">STARTUP PREFERENCE</string>
     <string name="section_audio_engine">AUDIO ENGINE</string>
     <string name="section_presets_backup">PRESETS &amp; BACKUP</string>
     <string name="section_per_app_device">PER-APP &amp; DEVICE PROFILES</string>
     <string name="section_system_diagnostics">SYSTEM &amp; DIAGNOSTICS</string>
 
     <!-- Settings Items -->
+    <string name="launch_as_equalizer_only_title">Launch as Equalizer Only</string>
+    <string name="launch_as_equalizer_only_subtitle">Directly open the equalizer configuration screen when starting the application</string>
     <string name="language_title">Display Language</string>
     <string name="language_subtitle">Change application display language</string>
     <string name="language_system">Follow System</string>

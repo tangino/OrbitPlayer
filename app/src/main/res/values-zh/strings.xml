@@ -27,12 +27,15 @@
     <string name="export_text">导出</string>
 
     <!-- Settings Sections -->
+    <string name="section_startup_mode">启动偏好与模式</string>
     <string name="section_audio_engine">音频处理引擎</string>
     <string name="section_presets_backup">预设管理与备份</string>
     <string name="section_per_app_device">应用与设备专属配置</string>
     <string name="section_system_diagnostics">系统与性能诊断</string>
 
     <!-- Settings Items -->
+    <string name="launch_as_equalizer_only_title">仅作为均衡器启动</string>
+    <string name="launch_as_equalizer_only_subtitle">启动程序时直接进入均衡器配置界面，隐藏音乐库主界面</string>
     <string name="language_title">显示语言 (Language)</string>
     <string name="language_subtitle">自定义切换应用界面的语言</string>
     <string name="language_system">跟随系统 (System)</string>
