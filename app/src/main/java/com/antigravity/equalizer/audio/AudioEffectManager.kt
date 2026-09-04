@@ -38,13 +38,16 @@ class AudioEffectManager private constructor(private val context: Context) {
     private var limiterReleaseMs = 60.0f
     private var limiterRatio = 10.0f
 
-    // 动态压缩器参数
+    // 动态压缩器黄金参数：
+    // 门限 -15dB 深度覆盖人声与中高动态区；压缩比 3.0:1 紧致有力；
+    // Attack 20ms 完整保留高频与打击瞬态；Release 60ms 快速平滑消除低音抽吸；
+    // Makeup Gain 4.0dB 强力补偿，弱音细节浮现，整体声场饱满厚实，听感对比显著。
     private var isCompressorEnabled = false
-    private var compressorThresholdDb = -18.0f
-    private var compressorRatio = 4.0f
-    private var compressorAttackMs = 10.0f
-    private var compressorReleaseMs = 100.0f
-    private var compressorMakeupGainDb = 2.0f
+    private var compressorThresholdDb = -15.0f
+    private var compressorRatio = 3.0f
+    private var compressorAttackMs = 20.0f
+    private var compressorReleaseMs = 60.0f
+    private var compressorMakeupGainDb = 4.0f
 
     data class SessionEffects(
         val sessionId: Int,
@@ -93,6 +96,7 @@ class AudioEffectManager private constructor(private val context: Context) {
                 syncAllGainsToDynamicsProcessing(dp)
                 syncCompressorToDynamicsProcessing(dp)
                 syncLimiterToDynamicsProcessing(dp)
+                dp.setInputGainAllChannelsTo(currentPreampDb)
                 effects.dynamicsProcessing = dp
                 isDynamicsProcessingAttached = true
                 Log.i(TAG, "Attached Pure DynamicsProcessing to session $sessionId (EQ + Compressor + Limiter)")
@@ -345,8 +349,8 @@ class AudioEffectManager private constructor(private val context: Context) {
 
     /**
      * 将动态压缩器参数同步至 DynamicsProcessing 的 MBC (Multi-Band Compressor)
-     * 开启时：-18dB 门限 + 4:1 压缩比 + 3dB 增益补偿，弱音饱满浮现，效果极其显著！
-     * 关闭时：完全 1:1 直通旁路，补偿 0dB，绝不损耗声音动态！
+     * 关键修复：除了配置具体的 MbcBand 外，必须显式构建 Mbc Stage 并设置其 enabled 属性！
+     * 否则底层 AudioDynamicsProcessing 的 channel->mbc->isEnabled() 始终处于未激活状态，导致压缩器被完全旁路！
      */
     private fun syncCompressorToDynamicsProcessing(dp: DynamicsProcessing) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -354,17 +358,27 @@ class AudioEffectManager private constructor(private val context: Context) {
                 val shouldEnable = this.isEnabled && this.isCompressorEnabled
                 val mbcBand = DynamicsProcessing.MbcBand(
                     shouldEnable,                                 // 仅在开关开启时启用
-                    20000.0f,                                     // 覆盖人耳全频段
-                    compressorAttackMs,                           // 10ms 快速启控
-                    compressorReleaseMs,                          // 100ms 平滑释放
+                    22000.0f,                                     // 22kHz 截止频率，确保 20kHz 人耳全高频完全畅通无阻无滚降
+                    compressorAttackMs,                           // 20ms 瞬态通透起控
+                    compressorReleaseMs,                          // 60ms 快速平滑释放
                     if (shouldEnable) compressorRatio else 1.0f,  // 关闭时 1:1 无压缩
                     if (shouldEnable) compressorThresholdDb else 0.0f, // 关闭时 0dB 门限
-                    6.0f,                                         // 6dB 软拐点
+                    8.0f,                                         // 8dB 宽软拐点 (Soft Knee) 平滑渐进
                     -90.0f,                                       // 噪声门
                     1.0f,                                         // 扩展比 1:1
                     0.0f,                                         // preGain 0dB
-                    if (shouldEnable) compressorMakeupGainDb else 0.0f // 开启补偿 2.5dB~3dB，关闭严格 0dB
+                    if (shouldEnable) compressorMakeupGainDb else 0.0f // 开启时补偿 4.0dB，关闭严格 0dB
                 )
+
+                // 核心：显式构建包含 enabled 状态的 Mbc Stage 对象，彻底唤醒底层 DSP 压缩算法管线！
+                val mbc = DynamicsProcessing.Mbc(
+                    true,         // inUse
+                    shouldEnable, // enabled: 整个 Stage 的激活总开关
+                    1             // 1 band
+                )
+                mbc.setBand(0, mbcBand)
+
+                dp.setMbcAllChannelsTo(mbc)
                 dp.setMbcBandAllChannelsTo(0, mbcBand)
             } catch (e: Exception) {
                 Log.e(TAG, "Error in syncCompressorToDynamicsProcessing", e)
@@ -374,22 +388,29 @@ class AudioEffectManager private constructor(private val context: Context) {
 
     /**
      * 将限幅器参数同步至 DynamicsProcessing 的 Limiter
-     * 开启时：-2.5dB 门限 + 10:1 砖墙比率，有效压平过载毛刺防爆音，听感显著！
-     * 关闭时：1:1 直通，绝不对音频进行任何限制与压缩！
+     * 核心设计：只要音效总开关开启，底层 Limiter 始终保持启用，充当真峰值防硬削波安全砖墙，
+     * 彻底解决前级增益 (Preamp) 调高后突破 0dBFS 导致的尖锐破音和严重数字硬削波失真！
+     * - 用户界面 Limiter 按钮开启：-2.5dB 门限 + 20:1 砖墙，深度压制毛刺，带来温润模拟感；
+     * - 用户界面 Limiter 按钮关闭：-0.5dB 门限 + 100:1 终极砖墙防削波安全防护，普通音量 100% 直通无损，高增益时无痕保护！
      */
     private fun syncLimiterToDynamicsProcessing(dp: DynamicsProcessing) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             try {
-                val shouldEnable = this.isEnabled && this.isLimiterEnabled
+                val userLimiterActive = this.isEnabled && this.isLimiterEnabled
+                val targetThreshold = if (userLimiterActive) -2.5f else -0.5f
+                val targetRatio = if (userLimiterActive) 20.0f else 100.0f
+                val targetAttack = if (userLimiterActive) 1.0f else 0.5f
+                val targetRelease = if (userLimiterActive) 50.0f else 30.0f
+
                 val limiter = DynamicsProcessing.Limiter(
-                    true,                                         // inUse 必须为 true 保持底层管线激活
-                    shouldEnable,                                 // enabled 随开关切换
-                    0,                                            // linkGroup
-                    limiterAttackMs,                              // 1ms 瞬态压制
-                    limiterReleaseMs,                             // 60ms 释放
-                    if (shouldEnable) limiterRatio else 1.0f,     // 开启 10:1 砖墙，关闭 1:1 直通
-                    if (shouldEnable) limiterThresholdDb else 0.0f, // 开启 -2.5dB 门限，关闭 0dB
-                    0.0f                                          // postGain 0dB
+                    true,            // inUse
+                    this.isEnabled,  // 只要总音效开启即全程守护数字输出天花板
+                    0,               // linkGroup
+                    targetAttack,    // 快速拦截
+                    targetRelease,   // 平滑释放
+                    targetRatio,     // 砖墙拦截比率
+                    targetThreshold, // 门限
+                    0.0f             // postGain
                 )
                 dp.setLimiterAllChannelsTo(limiter)
             } catch (e: Exception) {
@@ -411,6 +432,7 @@ class AudioEffectManager private constructor(private val context: Context) {
                 session.dynamicsProcessing?.let { dp ->
                     try {
                         dp.setInputGainAllChannelsTo(gainDb)
+                        syncLimiterToDynamicsProcessing(dp)
                     } catch (e: Exception) {
                         Log.e(TAG, "Failed to set DynamicsProcessing input gain", e)
                     }
@@ -425,11 +447,11 @@ class AudioEffectManager private constructor(private val context: Context) {
     @Synchronized
     fun setCompressorEnabled(
         enabled: Boolean,
-        thresholdDb: Float = -18f,
-        ratio: Float = 4f,
-        attackMs: Float = 10f,
-        releaseMs: Float = 100f,
-        makeupGainDb: Float = 3f
+        thresholdDb: Float = -15f,
+        ratio: Float = 3f,
+        attackMs: Float = 20f,
+        releaseMs: Float = 60f,
+        makeupGainDb: Float = 4f
     ) {
         this.isCompressorEnabled = enabled
         this.compressorThresholdDb = thresholdDb

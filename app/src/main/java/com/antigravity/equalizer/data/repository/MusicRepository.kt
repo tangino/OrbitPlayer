@@ -174,8 +174,13 @@ class MusicRepository private constructor(private val context: Context) {
         val albumMap = songs.groupBy { it.album }
         _albums.value = albumMap.map { (albumTitle, songList) ->
             val firstSong = songList.first()
+            val albumId = if (firstSong.albumId > 0) {
+                firstSong.albumId
+            } else {
+                (albumTitle.hashCode().toLong() xor (firstSong.artist.hashCode().toLong() shl 16)) and 0x7FFFFFFFFFFFFFFFL
+            }
             AlbumItem(
-                id = firstSong.albumId,
+                id = albumId,
                 title = albumTitle,
                 artist = firstSong.artist,
                 albumArtUri = firstSong.albumArtUri,

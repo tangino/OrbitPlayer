@@ -3,7 +3,7 @@
 namespace dsp {
 
 Compressor::Compressor(float sampleRate) : sampleRate_(sampleRate) {
-    setMakeupGainDb(0.0f);
+    setMakeupGainDb(4.0f);
     updateCoefficients();
 }
 

@@ -489,26 +489,22 @@ fun NowPlayingScreen(
                         }
                     }
 
-                    // 开启随机播放且非标准策略时，右上角浮现微标提示 (♥ / ★)
+                    // 开启随机播放且非标准策略时，右上角浮现微标提示 (♥ / ★)，无背景色
                     if (playbackState.isShuffleEnabled && playbackState.shuffleStrategy != ShuffleStrategy.STANDARD) {
-                        Box(
+                        val badgeColor = if (playbackState.shuffleStrategy == ShuffleStrategy.FAVORITE_FIRST) {
+                            Color(0xFFFF3366)
+                        } else {
+                            OrbitTheme.colors.primary
+                        }
+                        Text(
+                            text = if (playbackState.shuffleStrategy == ShuffleStrategy.FAVORITE_FIRST) "♥" else "★",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = badgeColor,
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
-                                .offset(x = 2.dp, y = 4.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (playbackState.shuffleStrategy == ShuffleStrategy.FAVORITE_FIRST) Color(0xFFFF3366)
-                                    else OrbitTheme.colors.primary
-                                )
-                                .padding(horizontal = 3.dp, vertical = 1.dp)
-                        ) {
-                            Text(
-                                text = if (playbackState.shuffleStrategy == ShuffleStrategy.FAVORITE_FIRST) "♥" else "★",
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
+                                .offset(x = 1.dp, y = 2.dp)
+                        )
                     }
                 }
 

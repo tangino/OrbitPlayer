@@ -66,6 +66,7 @@ void testCompressor() {
     comp.setRatio(4.0f);
     comp.setAttackTimeMs(1.0f);
     comp.setReleaseTimeMs(50.0f);
+    comp.setMakeupGainDb(0.0f);
 
     // 0dB 大信号 (1.0f) 经过 -12dB 阈值和 4:1 压缩
     std::vector<float> buffer(1024 * 2, 1.0f);
