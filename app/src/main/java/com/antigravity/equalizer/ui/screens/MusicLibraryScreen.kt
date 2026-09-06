@@ -29,6 +29,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -108,6 +110,9 @@ fun MusicLibraryScreen(
     onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     val libraryState by viewModel.libraryUiState.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
@@ -470,9 +475,9 @@ fun MusicLibraryScreen(
                     LibraryViewMode.LIST_NO_ART,
                     LibraryViewMode.LIST_SMALL_ART,
                     LibraryViewMode.LIST_LARGE_ART -> 1
-                    LibraryViewMode.GRID_2_COL -> 2
-                    LibraryViewMode.GRID_3_COL -> 3
-                    LibraryViewMode.GRID_4_COL -> 4
+                    LibraryViewMode.GRID_2_COL -> if (isLandscape) 4 else 2
+                    LibraryViewMode.GRID_3_COL -> if (isLandscape) 5 else 3
+                    LibraryViewMode.GRID_4_COL -> if (isLandscape) 6 else 4
                 }
 
                 val hSpacing = when (currentViewMode) {
@@ -1147,7 +1152,9 @@ fun MusicLibraryScreen(
                         targetOffsetY = { it },
                         animationSpec = tween(200)
                     ) + fadeOut(animationSpec = tween(160)),
-                    modifier = Modifier.align(Alignment.BottomCenter)
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .widthIn(max = 680.dp)
                 ) {
                     MiniPlayerBar(
                         playbackState = playbackState,

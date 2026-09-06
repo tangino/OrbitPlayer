@@ -88,7 +88,7 @@ fun PreampAndLimiterControl(
             Slider(
                 value = preampGainDb,
                 onValueChange = onPreampGainChanged,
-                valueRange = -12f..12f,
+                valueRange = -7f..7f,
                 enabled = isEnabled,
                 colors = SliderDefaults.colors(
                     thumbColor = colors.tertiary,

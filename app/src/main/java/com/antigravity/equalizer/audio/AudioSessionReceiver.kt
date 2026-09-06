@@ -25,6 +25,8 @@ class AudioSessionReceiver : BroadcastReceiver() {
         when (action) {
             AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION -> {
                 Log.i(TAG, "Opening audio effect control session: $sessionId from $packageName")
+                // 关键保活：确保 EqualizerService 处于前台运行，防止广播接收完成后进程被系统 LMK 瞬杀
+                com.antigravity.equalizer.service.EqualizerService.start(context)
                 effectManager.attachSession(sessionId)
             }
             AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION -> {

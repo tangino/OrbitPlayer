@@ -1,5 +1,6 @@
 package com.antigravity.equalizer.ui.screens
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -16,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -38,6 +40,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
     var showImportDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showAppProfileDialog by remember { mutableStateOf(false) }
@@ -68,13 +71,20 @@ fun SettingsScreen(
         },
         containerColor = OrbitTheme.colors.background
     ) { innerPadding ->
-        LazyColumn(
+        Box(
             modifier = modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(innerPadding),
+            contentAlignment = Alignment.TopCenter
         ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .widthIn(max = 720.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
             // 0.1 Theme 外观主题设置
             item {
                 SettingsSectionHeader(stringResource(R.string.theme_title))
@@ -472,6 +482,23 @@ fun SettingsScreen(
             item {
                 SettingsSectionHeader(stringResource(R.string.section_system_diagnostics))
                 SettingsCard {
+                    SettingsActionItem(
+                        icon = Icons.Default.BatteryChargingFull,
+                        title = stringResource(R.string.battery_optimization_title),
+                        subtitle = stringResource(R.string.battery_optimization_subtitle),
+                        onClick = {
+                            try {
+                                val intent = Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                try {
+                                    val intent = Intent(android.provider.Settings.ACTION_SETTINGS)
+                                    context.startActivity(intent)
+                                } catch (_: Exception) {}
+                            }
+                        }
+                    )
+                    HorizontalDivider(color = OrbitTheme.colors.gridLine)
                     SettingsInfoItem(icon = Icons.Default.Memory, title = stringResource(R.string.dsp_engine_title), value = stringResource(R.string.dsp_engine_value))
                     HorizontalDivider(color = OrbitTheme.colors.gridLine)
                     SettingsInfoItem(icon = Icons.Default.Speed, title = stringResource(R.string.dsp_latency_title), value = stringResource(R.string.dsp_latency_value))
@@ -482,6 +509,7 @@ fun SettingsScreen(
             }
         }
     }
+}
 
     // Per-App EQ 管理弹窗
     if (showAppProfileDialog) {

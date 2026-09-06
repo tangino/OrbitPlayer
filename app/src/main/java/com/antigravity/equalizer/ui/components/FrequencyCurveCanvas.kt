@@ -21,25 +21,23 @@ fun FrequencyCurveCanvas(
     frequencies: FloatArray,
     gainsDb: FloatArray,
     isEnabled: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier.fillMaxWidth().height(180.dp)
 ) {
     val colors = OrbitTheme.colors
 
     Canvas(
         modifier = modifier
-            .fillMaxWidth()
-            .height(180.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(colors.surfaceCard)
     ) {
         val width = size.width
         val height = size.height
         val midY = height / 2f
-        val maxGain = 12f // +-12dB
-        val minGain = -12f
+        val maxGain = 7f // +-7dB
+        val minGain = -7f
 
-        // 1. 绘制网格参考线 (-12dB, -6dB, 0dB, +6dB, +12dB)
-        val dbSteps = listOf(12f, 6f, 0f, -6f, -12f)
+        // 1. 绘制网格参考线 (-7dB ~ +7dB)
+        val dbSteps = listOf(7f, 3.5f, 0f, -3.5f, -7f)
         dbSteps.forEach { db ->
             val y = midY - (db / maxGain) * (height * 0.42f)
             drawLine(

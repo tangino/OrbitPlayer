@@ -89,6 +89,8 @@
     <string name="service_running">均衡器音效运行中</string>
     <string name="service_ready">就绪</string>
     <string name="service_active_device">当前生效设备: %1$s</string>
+    <string name="battery_optimization_title">后台常驻保活与电池优化</string>
+    <string name="battery_optimization_subtitle">配置无限制后台运行，避免第三方播放器切歌或长时间切后台时被系统休眠终止</string>
 
     <!-- Presets -->
     <string name="preset_flat">平直</string>

@@ -188,6 +188,46 @@ class AudioEffectManager private constructor(private val context: Context) {
     }
 
     /**
+     * 确保全局 Session 0 (Global Mix) 音效健康附着并处于激活状态
+     * 当外部播放器切歌、播放/暂停切换或系统路由变更时调用
+     */
+    @Synchronized
+    fun ensureSession0Attached() {
+        val session0 = activeSessions[0]
+        if (session0 == null) {
+            Log.i(TAG, "Session 0 missing, re-attaching Session 0...")
+            attachSession(0)
+            return
+        }
+
+        try {
+            if (this.isEnabled) {
+                session0.dynamicsProcessing?.let { dp ->
+                    if (!dp.enabled) {
+                        dp.enabled = true
+                        syncAllGainsToDynamicsProcessing(dp)
+                        syncCompressorToDynamicsProcessing(dp)
+                        syncLimiterToDynamicsProcessing(dp)
+                    }
+                }
+                session0.systemEqualizer?.let { eq ->
+                    if (!eq.enabled) {
+                        eq.enabled = true
+                        syncAllGainsToSystemEqualizer(eq)
+                    }
+                }
+                session0.systemBassBoost?.let { bb ->
+                    if (this.isBassBoostEnabled && !bb.enabled) {
+                        bb.enabled = true
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error verifying Session 0 health", e)
+        }
+    }
+
+    /**
      * 全局开关切换
      */
     @Synchronized
