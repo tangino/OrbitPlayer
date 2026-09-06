@@ -27,6 +27,9 @@ import com.antigravity.equalizer.ui.components.FrequencyCurveCanvas
 import com.antigravity.equalizer.ui.theme.*
 import com.antigravity.equalizer.ui.viewmodel.EqualizerViewModel
 
+import android.content.res.Configuration
+import androidx.compose.ui.platform.LocalConfiguration
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ParametricEqScreen(
@@ -35,6 +38,17 @@ fun ParametricEqScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    val freqs = remember(uiState.parametricBands) {
+        FloatArray(uiState.parametricBands.size) { i -> uiState.parametricBands[i].frequency }
+    }
+    val gains = remember(uiState.parametricBands) {
+        FloatArray(uiState.parametricBands.size) { i -> 
+            if (uiState.parametricBands[i].enabled) uiState.parametricBands[i].gainDb else 0f 
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -55,48 +69,96 @@ fun ParametricEqScreen(
         },
         containerColor = OrbitTheme.colors.background
     ) { innerPadding ->
-        Column(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // 频响曲线
-            val freqs = FloatArray(uiState.parametricBands.size) { i -> uiState.parametricBands[i].frequency }
-            val gains = FloatArray(uiState.parametricBands.size) { i -> 
-                if (uiState.parametricBands[i].enabled) uiState.parametricBands[i].gainDb else 0f 
-            }
-
-            FrequencyCurveCanvas(
-                frequencies = freqs,
-                gainsDb = gains,
-                isEnabled = uiState.isEnabled
-            )
-
-            Text(
-                text = "${stringResource(R.string.filter_bands)} (${uiState.parametricBands.size})",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                color = OrbitTheme.colors.primary,
-                letterSpacing = 1.sp
-            )
-
-            // 频段配置列表
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+        if (isLandscape) {
+            // 专业音频插件横屏双栏视图 (Pro Audio Plugin Dual-Pane)
+            Row(
+                modifier = modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                items(uiState.parametricBands.size) { index ->
-                    val band = uiState.parametricBands[index]
-                    ParametricBandCard(
-                        band = band,
-                        bandIndex = index,
-                        onUpdate = { updated -> viewModel.updateParametricBand(index, updated) },
-                        onDelete = { viewModel.removeParametricBand(index) }
+                // 左侧大视界频响曲线分析仪
+                FrequencyCurveCanvas(
+                    frequencies = freqs,
+                    gainsDb = gains,
+                    isEnabled = uiState.isEnabled,
+                    modifier = Modifier
+                        .weight(0.52f)
+                        .fillMaxHeight()
+                )
+
+                // 右侧频段卡片列表
+                Column(
+                    modifier = Modifier
+                        .weight(0.48f)
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "${stringResource(R.string.filter_bands)} (${uiState.parametricBands.size})",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = OrbitTheme.colors.primary,
+                        letterSpacing = 1.sp
                     )
+
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(uiState.parametricBands.size) { index ->
+                            val band = uiState.parametricBands[index]
+                            ParametricBandCard(
+                                band = band,
+                                bandIndex = index,
+                                onUpdate = { updated -> viewModel.updateParametricBand(index, updated) },
+                                onDelete = { viewModel.removeParametricBand(index) }
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            // 标准竖屏布局
+            Column(
+                modifier = modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                FrequencyCurveCanvas(
+                    frequencies = freqs,
+                    gainsDb = gains,
+                    isEnabled = uiState.isEnabled
+                )
+
+                Text(
+                    text = "${stringResource(R.string.filter_bands)} (${uiState.parametricBands.size})",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = OrbitTheme.colors.primary,
+                    letterSpacing = 1.sp
+                )
+
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(uiState.parametricBands.size) { index ->
+                        val band = uiState.parametricBands[index]
+                        ParametricBandCard(
+                            band = band,
+                            bandIndex = index,
+                            onUpdate = { updated -> viewModel.updateParametricBand(index, updated) },
+                            onDelete = { viewModel.removeParametricBand(index) }
+                        )
+                    }
                 }
             }
         }
@@ -188,13 +250,13 @@ private fun ParametricBandCard(
             )
         }
 
-        // 增益 Gain Slider (-12dB ~ +12dB)
+        // 增益 Gain Slider (-7dB ~ +7dB)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.gain_label, band.gainDb), fontSize = 11.sp, color = TextSecondary, modifier = Modifier.width(90.dp))
             Slider(
                 value = band.gainDb,
                 onValueChange = { onUpdate(band.copy(gainDb = it)) },
-                valueRange = -12f..12f,
+                valueRange = -7f..7f,
                 colors = SliderDefaults.colors(thumbColor = AccentPurple, activeTrackColor = AccentPurple),
                 modifier = Modifier.weight(1f)
             )

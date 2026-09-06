@@ -89,6 +89,8 @@
     <string name="service_running">Equalizer active</string>
     <string name="service_ready">Ready</string>
     <string name="service_active_device">Active: %1$s</string>
+    <string name="battery_optimization_title">Keep-Alive &amp; Battery Optimization</string>
+    <string name="battery_optimization_subtitle">Allow unrestricted background execution to prevent EQ from stopping</string>
 
     <!-- Presets -->
     <string name="preset_flat">Flat</string>

@@ -31,8 +31,8 @@ fun BandSlider(
     isEnabled: Boolean,
     onGainChanged: (Float) -> Unit,
     modifier: Modifier = Modifier,
-    minGain: Float = -6f,
-    maxGain: Float = 6f
+    minGain: Float = -7f,
+    maxGain: Float = 7f
 ) {
     val colors = OrbitTheme.colors
     val freqLabel = formatFrequency(frequencyHz)

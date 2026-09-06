@@ -27,13 +27,12 @@ class AudioSessionManager(
             playbackCallback = object : AudioManager.AudioPlaybackCallback() {
                 override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) {
                     super.onPlaybackConfigChanged(configs)
-                    configs?.forEach { config ->
-                        val sessionId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            config.audioAttributes.contentType
-                        } else {
-                            0
-                        }
-                        Log.d(TAG, "Audio playback state changed: config=$config, session=$sessionId")
+                    val hasPlayback = configs != null && configs.isNotEmpty()
+                    Log.d(TAG, "Audio playback state changed: count=${configs?.size ?: 0}")
+
+                    // 只要检测到系统有正在发声或状态变动的播放器，确保 Session 0 音效持续激活
+                    if (hasPlayback) {
+                        effectManager.ensureSession0Attached()
                     }
                 }
             }
