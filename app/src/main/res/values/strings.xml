@@ -89,7 +89,7 @@
     <string name="dsp_latency_title">DSP Latency</string>
     <string name="dsp_latency_value">&lt; 2.5 ms</string>
     <string name="version_title">Version</string>
-    <string name="version_value">0.1.1</string>
+    <string name="version_value">0.1.2</string>
 
     <!-- Import / Export Dialogs -->
     <string name="import_dialog_title">Import Preset / AutoEQ</string>
@@ -215,4 +215,75 @@
     <string name="added_to_playlist_success">Added to %1$s</string>
     <string name="queue_search_hint">Search in queue...</string>
     <string name="back">Back</string>
+
+    <!-- Spectrum Visualizer (Poweramp Style) -->
+    <string name="section_spectrum_visualizer">Spectrum Visualizer (Poweramp Style)</string>
+    <string name="visualizer_enabled_title">Enable Real-Time Spectrum Visualizer</string>
+    <string name="visualizer_enabled_subtitle">Render high-precision audio spectrum animation on the Now Playing screen</string>
+    <string name="visualizer_style_title">Visualizer Style</string>
+    <string name="visualizer_style_subtitle">Select the visual appearance and animation layout</string>
+    <string name="visualizer_style_bars_with_peaks">Classic Bars (with Floating Peaks)</string>
+    <string name="visualizer_style_aurora_mountain">Smooth Aurora Wave</string>
+    <string name="visualizer_style_mirrored_bars">Mirrored Butterfly Bars</string>
+    <string name="visualizer_style_off">Off</string>
+    <string name="visualizer_peak_decay_title">Peak Floating &amp; Falloff (Peak Hold)</string>
+    <string name="visualizer_peak_decay_subtitle">Peak points hold at maximum and fall off with gravity physics</string>
+    <string name="visualizer_color_title">Visualizer Color Scheme</string>
+    <string name="visualizer_color_subtitle">Select spectrum glow and gradient neon color</string>
+    <string name="visualizer_color_follow_theme">Follow Theme Accent</string>
+    <string name="visualizer_color_neon_cyan_purple">Neon Cyan &amp; Purple</string>
+    <string name="visualizer_color_fire_amber">Cyber Fire Amber</string>
+    <string name="visualizer_color_electric_green">Electric Green</string>
+    <string name="switch_visualizer_style">Switch visualizer style</string>
+    <string name="visualizer_swipe_up_hint">Swipe up for spectrum</string>
+    <string name="visualizer_swipe_down_hint">Swipe down for cover</string>
+
+    <!-- Spectrum Bar Width & Custom Color Wheel -->
+    <string name="visualizer_bar_width_title">Spectrum Bar Width</string>
+    <string name="visualizer_bar_width_subtitle">Narrower bar renders denser bands, wider renders fewer</string>
+    <string name="visualizer_color_custom">Custom Gradient (Color Wheel)</string>
+    <string name="visualizer_color1_title">Spectrum Bottom Color (Primary)</string>
+    <string name="visualizer_color2_title">Spectrum Top Color (Secondary)</string>
+    <string name="color_picker_title">Custom Color Palette</string>
+    <string name="add_to_custom_colors">Add to Custom Colors</string>
+    <string name="custom_colors_title">Saved Custom Colors</string>
+    <string name="color_hex_label">HEX Code</string>
+    <string name="color_picker_confirm">Apply Color</string>
+    <string name="color_added_success">Added to custom colors</string>
+
+    <!-- Now Playing Spectrum Maximize Mode -->
+    <string name="visualizer_maximize">Maximize Spectrum</string>
+    <string name="visualizer_restore">Restore Size</string>
+    <string name="maximized_show_cover">Show Cover</string>
+    <string name="maximized_hide_cover">Hide Cover</string>
+    <string name="maximized_cover_position">Cover Position</string>
+    <string name="maximized_cover_left">Left</string>
+    <string name="maximized_cover_right">Right</string>
+    <string name="maximized_show_controls">Show Controls</string>
+    <string name="maximized_hide_controls">Hide Controls</string>
+    <string name="maximized_cover_alpha">Cover Opacity</string>
+    <string name="maximized_cover_alpha_desc">Adjust the opacity of the album cover when visualizer is maximized</string>
+
+    <!-- Visualizer Bar Opacity & Custom App Background -->
+    <string name="visualizer_bar_alpha_title">Visualizer Opacity</string>
+    <string name="visualizer_bar_alpha_subtitle">Adjust opacity of spectrum bars and waveforms (10% - 100%)</string>
+    <string name="section_custom_background">Custom Background &amp; Acrylic Glass</string>
+    <string name="custom_background_title">Custom App Background</string>
+    <string name="custom_background_subtitle">Choose wallpaper from photos for full-app translucent immersion</string>
+    <string name="btn_choose_background">Pick Background</string>
+    <string name="btn_reset_background">Reset to Default</string>
+    <string name="background_blur_radius_title">Blur Intensity</string>
+    <string name="background_blur_radius_subtitle">Adjust Gaussian blur radius of the background (0 - 50dp)</string>
+    <string name="background_blur_style_title">Blur Style</string>
+    <string name="background_blur_style_subtitle">Select blur texture style</string>
+    <string name="background_blur_style_gaussian">Gaussian Blur</string>
+    <string name="background_blur_style_frosted">Frosted Glass (Acrylic)</string>
+    <string name="background_dim_alpha_title">Background Dim Level</string>
+    <string name="background_dim_alpha_subtitle">Adjust darkness overlay to keep text and controls sharp and legible</string>
+    <string name="background_select_success">Background applied successfully</string>
+    <string name="background_reset_success">Reset to default background</string>
+
+    <!-- Spectrum Solid Single Color Mode -->
+    <string name="visualizer_single_color_title">Solid Single Color</string>
+    <string name="visualizer_single_color_subtitle">Render spectrum bars in solid color without vertical gradient</string>
 </resources>

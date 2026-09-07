@@ -18,6 +18,7 @@ data class OrbitColors(
     val surface: Color,
     val surfaceCard: Color,
     val surfaceBorder: Color,
+    val surfaceDialog: Color,
     val primary: Color,
     val secondary: Color,
     val tertiary: Color,
@@ -35,6 +36,7 @@ val LocalOrbitColors = staticCompositionLocalOf {
         surface = SurfaceDark,
         surfaceCard = SurfaceCard,
         surfaceBorder = SurfaceCardBorder,
+        surfaceDialog = Color(0xFF1E222B),
         primary = PrimaryNeonCyan,
         secondary = AccentPurple,
         tertiary = AccentOrange,
@@ -87,6 +89,7 @@ private val LightColorScheme = lightColorScheme(
 @Composable
 fun MusicEqualizerTheme(
     themeMode: String = "system",
+    hasCustomBackground: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val isSystemDark = isSystemInDarkTheme()
@@ -96,13 +99,22 @@ fun MusicEqualizerTheme(
         else -> isSystemDark
     }
 
-    val colorScheme = if (isDark) DarkColorScheme else LightColorScheme
+    val baseColorScheme = if (isDark) DarkColorScheme else LightColorScheme
+    val colorScheme = if (hasCustomBackground) {
+        baseColorScheme.copy(
+            background = Color.Transparent
+        )
+    } else {
+        baseColorScheme
+    }
+
     val orbitColors = if (isDark) {
         OrbitColors(
-            background = DarkBackground,
-            surface = SurfaceDark,
-            surfaceCard = SurfaceCard,
-            surfaceBorder = SurfaceCardBorder,
+            background = if (hasCustomBackground) Color.Transparent else DarkBackground,
+            surface = if (hasCustomBackground) Color(0x5916181F) else SurfaceDark,
+            surfaceCard = if (hasCustomBackground) Color(0x851B1E26) else SurfaceCard,
+            surfaceBorder = if (hasCustomBackground) Color(0x40FFFFFF) else SurfaceCardBorder,
+            surfaceDialog = Color(0xFF1E222B),
             primary = PrimaryNeonCyan,
             secondary = AccentPurple,
             tertiary = AccentOrange,
@@ -115,10 +127,11 @@ fun MusicEqualizerTheme(
         )
     } else {
         OrbitColors(
-            background = LightBackground,
-            surface = SurfaceLight,
-            surfaceCard = SurfaceCardLight,
-            surfaceBorder = SurfaceCardBorderLight,
+            background = if (hasCustomBackground) Color.Transparent else LightBackground,
+            surface = if (hasCustomBackground) Color(0x73FFFFFF) else SurfaceLight,
+            surfaceCard = if (hasCustomBackground) Color(0x99F5F7FA) else SurfaceCardLight,
+            surfaceBorder = if (hasCustomBackground) Color(0x33000000) else SurfaceCardBorderLight,
+            surfaceDialog = Color(0xFFFFFFFF),
             primary = PrimaryCyanLight,
             secondary = AccentPurpleLight,
             tertiary = AccentOrangeLight,

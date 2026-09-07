@@ -49,8 +49,10 @@ data class PlaybackState(
 class MusicPlayerManager private constructor(private val context: Context) {
 
     private val effectManager = AudioEffectManager.getInstance(context)
+    val visualizerManager = AudioVisualizerManager.getInstance(context)
     private val scope = CoroutineScope(Dispatchers.Main)
     private var progressJob: Job? = null
+    private var visualizerWatchdogJob: Job? = null
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val savedRepeatOrdinal = prefs.getInt(KEY_REPEAT_MODE, RepeatMode.ALL.ordinal)
@@ -177,6 +179,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
             player.prepare()
             if (isPlaying) {
                 player.play()
+                startVisualizerWatchdog()
             }
             Log.i(TAG, "Attached full queue (${allSongs.size} songs) to player. Current index: $startIndex, isPlaying: $isPlaying")
         }
@@ -221,10 +224,13 @@ class MusicPlayerManager private constructor(private val context: Context) {
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 _playbackState.update { it.copy(isPlaying = isPlaying) }
+                visualizerManager.setPlaying(isPlaying)
                 if (isPlaying) {
                     startProgressTracker()
+                    startVisualizerWatchdog()
                 } else {
                     stopProgressTracker()
+                    stopVisualizerWatchdog()
                     saveLastPlayedSong(_playbackState.value.currentSong, player.currentPosition, syncImmediately = true)
                 }
             }
@@ -235,12 +241,25 @@ class MusicPlayerManager private constructor(private val context: Context) {
                     if (audioSessionId != C.AUDIO_SESSION_ID_UNSET && audioSessionId != 0) {
                         Log.i(TAG, "ExoPlayer AudioSession ID: $audioSessionId. Attaching to Equalizer DSP Chain...")
                         effectManager.attachSession(audioSessionId)
+                        if (player.isPlaying) {
+                            visualizerManager.attachSession(audioSessionId)
+                        }
                     }
                     _playbackState.update {
                         it.copy(durationMs = player.duration.coerceAtLeast(0L))
                     }
                 } else if (playbackState == Player.STATE_ENDED) {
                     handlePlaybackEnded()
+                }
+            }
+
+            override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                if (audioSessionId != C.AUDIO_SESSION_ID_UNSET && audioSessionId != 0) {
+                    Log.i(TAG, "ExoPlayer onAudioSessionIdChanged: $audioSessionId")
+                    effectManager.attachSession(audioSessionId)
+                    if (player.isPlaying) {
+                        visualizerManager.attachSession(audioSessionId, force = true)
+                    }
                 }
             }
 
@@ -542,7 +561,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
                     saveCurrentPosition(currentPos)
                 }
 
-                delay(300L)
+                delay(200L)
             }
         }
     }
@@ -552,6 +571,39 @@ class MusicPlayerManager private constructor(private val context: Context) {
         progressJob = null
         // 停止播放追踪时立刻同步刷盘
         saveCurrentPosition(player.currentPosition, syncImmediately = true)
+    }
+
+    /**
+     * 智能频谱持续自愈看门狗：实时监控真实音频流状态，无论冷启动、队列扩充还是切歌，全自动秒级自愈重绑
+     */
+    private fun startVisualizerWatchdog() {
+        visualizerWatchdogJob?.cancel()
+        visualizerWatchdogJob = scope.launch {
+            // 1. 立即挂载初次可用 Session
+            val initialSession = player.audioSessionId
+            if (initialSession != C.AUDIO_SESSION_ID_UNSET && initialSession != 0) {
+                visualizerManager.attachSession(initialSession)
+            }
+
+            // 2. 持续守护轮询：若由于曲库加载重置、起播缓冲或硬件切换导致断联，自动自愈重绑真实音频流
+            while (isActive && player.isPlaying) {
+                delay(350L)
+                if (!isActive || !player.isPlaying) break
+
+                if (!visualizerManager.isReceivingRealFft()) {
+                    val activeSession = player.audioSessionId
+                    if (activeSession != C.AUDIO_SESSION_ID_UNSET && activeSession != 0) {
+                        Log.i(TAG, "Visualizer watchdog: auto-healing connection to AudioSession $activeSession...")
+                        visualizerManager.attachSession(activeSession, force = true)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun stopVisualizerWatchdog() {
+        visualizerWatchdogJob?.cancel()
+        visualizerWatchdogJob = null
     }
 
     fun updateSongAttitude(songPath: String, isFavorite: Boolean, isDisliked: Boolean) {
@@ -577,6 +629,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
 
     fun release() {
         stopProgressTracker()
+        stopVisualizerWatchdog()
         saveLastPlayedSong(_playbackState.value.currentSong, player.currentPosition, syncImmediately = true)
         player.release()
     }

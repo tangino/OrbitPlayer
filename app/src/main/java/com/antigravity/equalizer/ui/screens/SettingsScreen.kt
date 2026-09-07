@@ -1,12 +1,19 @@
 package com.antigravity.equalizer.ui.screens
 
 import android.content.Intent
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import java.io.File
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -17,6 +24,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -46,6 +54,8 @@ fun SettingsScreen(
     var showImportDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showAppProfileDialog by remember { mutableStateOf(false) }
+    var showColorPickerDialog by remember { mutableStateOf(false) }
+    var editingColorIndex by remember { mutableIntStateOf(1) }
     var importText by remember { mutableStateOf("") }
     var exportedJson by remember { mutableStateOf("") }
 
@@ -58,6 +68,17 @@ fun SettingsScreen(
     val isScanning by musicViewModel?.isScanning?.collectAsState() ?: remember { mutableStateOf(false) }
 
     val appProfiles by AppProfileRepository.instance.appProfiles.collectAsState()
+
+    val backgroundPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            val success = viewModel.setCustomBackgroundFromUri(uri, context)
+            if (success) {
+                Toast.makeText(context, context.getString(R.string.background_select_success), Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -113,6 +134,182 @@ fun SettingsScreen(
                 }
             }
 
+            // 0.1.0 自定义程序背景与磨砂玻璃模糊 (沉浸透光背景)
+            item {
+                SettingsSectionHeader(stringResource(R.string.section_custom_background))
+                SettingsCard {
+                    val hasBg = uiState.customBackgroundPath != null && File(uiState.customBackgroundPath!!).exists()
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(OrbitTheme.colors.primary.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Wallpaper,
+                                contentDescription = null,
+                                tint = OrbitTheme.colors.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.custom_background_title),
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = OrbitTheme.colors.textPrimary
+                            )
+                            Text(
+                                text = stringResource(R.string.custom_background_subtitle),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = OrbitTheme.colors.textSecondary
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Button(
+                            onClick = { backgroundPickerLauncher.launch("image/*") },
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.btn_choose_background),
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+
+                    if (hasBg) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                AsyncImage(
+                                    model = ImageRequest.Builder(context)
+                                        .data(File(uiState.customBackgroundPath!!))
+                                        .crossfade(true)
+                                        .build(),
+                                    contentDescription = null,
+                                    modifier = Modifier
+                                        .size(42.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .border(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f), RoundedCornerShape(8.dp)),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                )
+                                Text(
+                                    text = if (uiState.backgroundBlurStyle == "frosted_glass") {
+                                        stringResource(R.string.background_blur_style_frosted)
+                                    } else {
+                                        stringResource(R.string.background_blur_style_gaussian)
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = OrbitTheme.colors.primary
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.clearCustomBackground(context)
+                                    Toast.makeText(context, context.getString(R.string.background_reset_success), Toast.LENGTH_SHORT).show()
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.DeleteOutline,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = OrbitTheme.colors.danger
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    stringResource(R.string.btn_reset_background),
+                                    fontSize = 12.sp,
+                                    color = OrbitTheme.colors.danger
+                                )
+                            }
+                        }
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                        )
+
+                        val blurStyleOptions = listOf(
+                            "frosted_glass" to stringResource(R.string.background_blur_style_frosted),
+                            "gaussian" to stringResource(R.string.background_blur_style_gaussian)
+                        )
+                        val currentBlurStyleLabel = blurStyleOptions.find { it.first == uiState.backgroundBlurStyle }?.second
+                            ?: stringResource(R.string.background_blur_style_frosted)
+
+                        SettingsDropdownItem(
+                            icon = Icons.Default.BlurOn,
+                            title = stringResource(R.string.background_blur_style_title),
+                            subtitle = stringResource(R.string.background_blur_style_subtitle),
+                            currentValue = currentBlurStyleLabel,
+                            options = blurStyleOptions.map { it.second },
+                            onOptionSelected = { selectedLabel ->
+                                val target = blurStyleOptions.find { it.second == selectedLabel }?.first ?: "frosted_glass"
+                                viewModel.setBackgroundBlurStyle(target)
+                            }
+                        )
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                        )
+
+                        SettingsSliderItem(
+                            icon = Icons.Default.BlurCircular,
+                            title = stringResource(R.string.background_blur_radius_title),
+                            valueText = String.format(java.util.Locale.US, "%.0f dp", uiState.backgroundBlurRadius),
+                            value = uiState.backgroundBlurRadius,
+                            valueRange = 0f..50f,
+                            onValueChange = { viewModel.setBackgroundBlurRadius(it) }
+                        )
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                        )
+
+                        SettingsSliderItem(
+                            icon = Icons.Default.BrightnessMedium,
+                            title = stringResource(R.string.background_dim_alpha_title),
+                            valueText = "${(uiState.backgroundDimAlpha * 100).toInt()}%",
+                            value = uiState.backgroundDimAlpha,
+                            valueRange = 0.0f..0.80f,
+                            onValueChange = { viewModel.setBackgroundDimAlpha(it) }
+                        )
+                    }
+                }
+            }
+
             // 0.1.1 播放进度条拖尾样式设置与个性化调节
             item {
                 SettingsSectionHeader(stringResource(R.string.progress_trail_style_title))
@@ -126,7 +323,7 @@ fun SettingsScreen(
                         ?: stringResource(R.string.trail_style_neon_pulse)
 
                     SettingsDropdownItem(
-                        icon = Icons.Default.ShowChart,
+                        icon = Icons.Default.Timeline,
                         title = stringResource(R.string.progress_trail_style_title),
                         subtitle = stringResource(R.string.progress_trail_style_subtitle),
                         currentValue = currentTrailLabel,
@@ -232,6 +429,370 @@ fun SettingsScreen(
                                 color = OrbitTheme.colors.textSecondary
                             )
                         }
+                    }
+                }
+            }
+
+            // 0.1.2 频谱可视化 (Poweramp 风格) 设置
+            item {
+                SettingsSectionHeader(stringResource(R.string.section_spectrum_visualizer))
+                SettingsCard {
+                    // 1. 启用开关
+                    SettingsSwitchItem(
+                        icon = Icons.Default.GraphicEq,
+                        title = stringResource(R.string.visualizer_enabled_title),
+                        subtitle = stringResource(R.string.visualizer_enabled_subtitle),
+                        checked = uiState.visualizerEnabled,
+                        onCheckedChange = { viewModel.toggleVisualizerEnabled(it) }
+                    )
+
+                    if (uiState.visualizerEnabled) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                        )
+
+                        // 2. 频谱形态选择
+                        val styleOptions = com.antigravity.equalizer.data.model.VisualizerStyle.values().map { style ->
+                            style to stringResource(style.titleRes)
+                        }
+                        val currentStyleLabel = styleOptions.find { it.first == uiState.visualizerStyle }?.second
+                            ?: stringResource(R.string.visualizer_style_bars_with_peaks)
+
+                        SettingsDropdownItem(
+                            icon = Icons.Default.AutoGraph,
+                            title = stringResource(R.string.visualizer_style_title),
+                            subtitle = stringResource(R.string.visualizer_style_subtitle),
+                            currentValue = currentStyleLabel,
+                            options = styleOptions.map { it.second },
+                            onOptionSelected = { selectedLabel ->
+                                val target = styleOptions.find { it.second == selectedLabel }?.first
+                                    ?: com.antigravity.equalizer.data.model.VisualizerStyle.BARS_WITH_PEAKS
+                                viewModel.setVisualizerStyle(target)
+                            }
+                        )
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                        )
+
+                        // 2.1 柱状频谱单条宽度调节 (2.0dp ~ 14.0dp，频谱越窄绘制越密，越宽越少)
+                        SettingsSliderItem(
+                            icon = Icons.Default.ViewColumn,
+                            title = stringResource(R.string.visualizer_bar_width_title),
+                            valueText = String.format(java.util.Locale.US, "%.1f dp", uiState.visualizerBarWidthDp),
+                            value = uiState.visualizerBarWidthDp,
+                            valueRange = 2.0f..14.0f,
+                            onValueChange = { viewModel.setVisualizerBarWidth(it) }
+                        )
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                        )
+
+                        // 2.2 频谱条透明度调节 (10% ~ 100%)
+                        SettingsSliderItem(
+                            icon = Icons.Default.Opacity,
+                            title = stringResource(R.string.visualizer_bar_alpha_title),
+                            valueText = "${(uiState.visualizerBarAlpha * 100).toInt()}%",
+                            value = uiState.visualizerBarAlpha,
+                            valueRange = 0.10f..1.0f,
+                            onValueChange = { viewModel.setVisualizerBarAlpha(it) }
+                        )
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                        )
+
+                        // 3. 悬浮顶峰缓降开关 (Peak Hold)
+                        SettingsSwitchItem(
+                            icon = Icons.Default.VerticalAlignTop,
+                            title = stringResource(R.string.visualizer_peak_decay_title),
+                            subtitle = stringResource(R.string.visualizer_peak_decay_subtitle),
+                            checked = uiState.visualizerPeakDecayEnabled,
+                            onCheckedChange = { viewModel.toggleVisualizerPeakDecay(it) }
+                        )
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                        )
+
+                        // 3.1 单色纯色显示开关 (Single Color Mode)
+                        SettingsSwitchItem(
+                            icon = Icons.Default.FormatColorFill,
+                            title = stringResource(R.string.visualizer_single_color_title),
+                            subtitle = stringResource(R.string.visualizer_single_color_subtitle),
+                            checked = uiState.visualizerSingleColor,
+                            onCheckedChange = {
+                                viewModel.setVisualizerSingleColor(it)
+                                if (it) {
+                                    editingColorIndex = 1
+                                }
+                            }
+                        )
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                        )
+
+                        // 4. 配色方案选择
+                        val colorOptions = com.antigravity.equalizer.data.model.VisualizerColorScheme.values().map { scheme ->
+                            scheme to stringResource(scheme.titleRes)
+                        }
+                        val currentColorLabel = colorOptions.find { it.first == uiState.visualizerColorScheme }?.second
+                            ?: stringResource(R.string.visualizer_color_follow_theme)
+
+                        SettingsDropdownItem(
+                            icon = Icons.Default.Palette,
+                            title = stringResource(R.string.visualizer_color_title),
+                            subtitle = stringResource(R.string.visualizer_color_subtitle),
+                            currentValue = currentColorLabel,
+                            options = colorOptions.map { it.second },
+                            onOptionSelected = { selectedLabel ->
+                                val target = colorOptions.find { it.second == selectedLabel }?.first
+                                    ?: com.antigravity.equalizer.data.model.VisualizerColorScheme.FOLLOW_THEME
+                                viewModel.setVisualizerColorScheme(target)
+                                if (target == com.antigravity.equalizer.data.model.VisualizerColorScheme.CUSTOM) {
+                                    editingColorIndex = 1
+                                    showColorPickerDialog = true
+                                }
+                            }
+                        )
+
+                        // 5. 自定义颜色与色卡快速点选区
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            // 标题栏：展示当前颜色（单色模式展示纯色，双色模式展示垂直渐变色球）
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (uiState.visualizerSingleColor) {
+                                                    Brush.linearGradient(
+                                                        listOf(Color(uiState.visualizerCustomColor), Color(uiState.visualizerCustomColor))
+                                                    )
+                                                } else {
+                                                    Brush.verticalGradient(
+                                                        listOf(Color(uiState.visualizerCustomColor2), Color(uiState.visualizerCustomColor))
+                                                    )
+                                                }
+                                            )
+                                            .border(1.5.dp, OrbitTheme.colors.textPrimary.copy(alpha = 0.35f), CircleShape)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = stringResource(R.string.visualizer_color_custom),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = OrbitTheme.colors.textPrimary
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // 颜色 1：主色 / 单色
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (editingColorIndex == 1) OrbitTheme.colors.primary.copy(alpha = 0.08f) else Color.Transparent)
+                                    .clickable {
+                                        editingColorIndex = 1
+                                        showColorPickerDialog = true
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(22.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(uiState.visualizerCustomColor))
+                                            .border(1.5.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            text = if (uiState.visualizerSingleColor) {
+                                                stringResource(R.string.visualizer_single_color_title)
+                                            } else {
+                                                stringResource(R.string.visualizer_color1_title)
+                                            },
+                                            fontSize = 12.sp,
+                                            fontWeight = if (editingColorIndex == 1) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (editingColorIndex == 1) OrbitTheme.colors.primary else OrbitTheme.colors.textPrimary
+                                        )
+                                        Text(
+                                            text = String.format("#%06X", 0xFFFFFF and uiState.visualizerCustomColor.toInt()),
+                                            fontSize = 10.sp,
+                                            color = OrbitTheme.colors.textSecondary
+                                        )
+                                    }
+                                }
+
+                                FilledTonalButton(
+                                    onClick = {
+                                        editingColorIndex = 1
+                                        showColorPickerDialog = true
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = OrbitTheme.colors.surface,
+                                        contentColor = OrbitTheme.colors.primary
+                                    )
+                                ) {
+                                    Icon(Icons.Default.ColorLens, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(stringResource(R.string.color_picker_title), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
+                            // 颜色 2：顶端色 (次色，仅在未开启单色时显示)
+                            if (!uiState.visualizerSingleColor) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(if (editingColorIndex == 2) OrbitTheme.colors.primary.copy(alpha = 0.08f) else Color.Transparent)
+                                        .clickable {
+                                            editingColorIndex = 2
+                                            showColorPickerDialog = true
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(22.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(uiState.visualizerCustomColor2))
+                                                .border(1.5.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column {
+                                            Text(
+                                                text = stringResource(R.string.visualizer_color2_title),
+                                                fontSize = 12.sp,
+                                                fontWeight = if (editingColorIndex == 2) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (editingColorIndex == 2) OrbitTheme.colors.primary else OrbitTheme.colors.textPrimary
+                                            )
+                                            Text(
+                                                text = String.format("#%06X", 0xFFFFFF and uiState.visualizerCustomColor2.toInt()),
+                                                fontSize = 10.sp,
+                                                color = OrbitTheme.colors.textSecondary
+                                            )
+                                        }
+                                    }
+
+                                    FilledTonalButton(
+                                        onClick = {
+                                            editingColorIndex = 2
+                                            showColorPickerDialog = true
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = OrbitTheme.colors.surface,
+                                            contentColor = OrbitTheme.colors.primary
+                                        )
+                                    ) {
+                                        Icon(Icons.Default.ColorLens, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(stringResource(R.string.color_picker_title), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+
+                            // 色卡横滑列表 (用户点击色卡直接应用到当前激活选中的颜色项)
+                            if (uiState.customVisualizerColors.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                LazyRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    items(uiState.customVisualizerColors) { colorLong ->
+                                        val isColor1 = uiState.visualizerCustomColor == colorLong
+                                        val isColor2 = uiState.visualizerCustomColor2 == colorLong
+                                        val isSelected = if (uiState.visualizerSingleColor) isColor1 else (isColor1 || isColor2)
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(colorLong))
+                                                .border(
+                                                    width = if (isSelected) 2.5.dp else 1.dp,
+                                                    color = if (isSelected) OrbitTheme.colors.primary else Color.White.copy(alpha = 0.35f),
+                                                    shape = CircleShape
+                                                )
+                                                .clickable {
+                                                    if (uiState.visualizerSingleColor || editingColorIndex == 1) {
+                                                        viewModel.setVisualizerCustomColor(colorLong)
+                                                    } else {
+                                                        viewModel.setVisualizerCustomColor2(colorLong)
+                                                    }
+                                                },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (isSelected) {
+                                                if (uiState.visualizerSingleColor) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Check,
+                                                        contentDescription = null,
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                } else {
+                                                    Text(
+                                                        text = if (isColor1 && isColor2) "1+2" else if (isColor1) "1" else "2",
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = Color.White
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            color = OrbitTheme.colors.surface
+                        )
+
+                        // 3.4 全屏最大化封面透明度
+                        SettingsSliderItem(
+                            icon = Icons.Default.Opacity,
+                            title = stringResource(R.string.maximized_cover_alpha),
+                            valueText = "${(uiState.maximizedCoverAlpha * 100).toInt()}%",
+                            value = uiState.maximizedCoverAlpha,
+                            valueRange = 0.1f..1.0f,
+                            onValueChange = { viewModel.setMaximizedCoverAlpha(it) }
+                        )
                     }
                 }
             }
@@ -687,7 +1248,7 @@ fun SettingsScreen(
                                 DropdownMenu(
                                     expanded = expanded,
                                     onDismissRequest = { expanded = false },
-                                    modifier = Modifier.background(OrbitTheme.colors.surfaceCard)
+                                    modifier = Modifier.background(OrbitTheme.colors.surfaceDialog)
                                 ) {
                                     uiState.presets.forEach { preset ->
                                         DropdownMenuItem(
@@ -712,7 +1273,7 @@ fun SettingsScreen(
                     Text(stringResource(R.string.done), color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White)
                 }
             },
-            containerColor = OrbitTheme.colors.surfaceCard
+            containerColor = OrbitTheme.colors.surfaceDialog
         )
     }
 
@@ -753,7 +1314,7 @@ fun SettingsScreen(
                     Text(stringResource(R.string.cancel), color = OrbitTheme.colors.textSecondary)
                 }
             },
-            containerColor = OrbitTheme.colors.surfaceCard
+            containerColor = OrbitTheme.colors.surfaceDialog
         )
     }
 
@@ -778,7 +1339,35 @@ fun SettingsScreen(
                     Text(stringResource(R.string.done), color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White)
                 }
             },
-            containerColor = OrbitTheme.colors.surfaceCard
+            containerColor = OrbitTheme.colors.surfaceDialog
+        )
+    }
+
+    // 自定义频谱 HSV 色盘对话框
+    if (showColorPickerDialog) {
+        val currentInitialColor = if (editingColorIndex == 1) uiState.visualizerCustomColor else uiState.visualizerCustomColor2
+        com.antigravity.equalizer.ui.components.ColorPickerDialog(
+            initialColor = currentInitialColor,
+            customColors = uiState.customVisualizerColors,
+            onColorConfirmed = { chosenColor ->
+                if (editingColorIndex == 1) {
+                    viewModel.setVisualizerCustomColor(chosenColor)
+                } else {
+                    viewModel.setVisualizerCustomColor2(chosenColor)
+                }
+            },
+            onSaveToCustomColors = { colorToAdd ->
+                viewModel.addCustomVisualizerColor(colorToAdd)
+                if (editingColorIndex == 1) {
+                    viewModel.setVisualizerCustomColor(colorToAdd)
+                } else {
+                    viewModel.setVisualizerCustomColor2(colorToAdd)
+                }
+            },
+            onRemoveCustomColor = { colorToRemove ->
+                viewModel.removeCustomVisualizerColor(colorToRemove)
+            },
+            onDismissRequest = { showColorPickerDialog = false }
         )
     }
 
@@ -872,7 +1461,7 @@ fun SettingsScreen(
                     Text(stringResource(R.string.cancel), color = OrbitTheme.colors.textSecondary)
                 }
             },
-            containerColor = OrbitTheme.colors.surfaceCard
+            containerColor = OrbitTheme.colors.surfaceDialog
         )
     }
 }

@@ -4,6 +4,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -223,4 +224,59 @@ fun Modifier.swipeToChangeSong(
 
 private fun Offset.calcDistance(): Float {
     return sqrt(x * x + y * y)
+}
+
+/**
+ * 上下滑动手势修饰符 (用于封面与大频谱可视化无缝切换)
+ * - 向上滑 (Swipe Up) -> 替换为大频谱可视化
+ * - 向下滑 (Swipe Down) -> 恢复为专辑封面
+ */
+@Composable
+fun Modifier.swipeVerticalGesture(
+    onSwipeUp: () -> Unit,
+    onSwipeDown: () -> Unit,
+    thresholdPx: Float = 60f
+): Modifier {
+    val upAction by rememberUpdatedState(onSwipeUp)
+    val downAction by rememberUpdatedState(onSwipeDown)
+
+    return this.pointerInput(Unit) {
+        var totalDragY = 0f
+        var hasTriggered = false
+
+        detectVerticalDragGestures(
+            onDragStart = {
+                totalDragY = 0f
+                hasTriggered = false
+            },
+            onDragEnd = {
+                if (!hasTriggered) {
+                    if (totalDragY < -thresholdPx) {
+                        upAction()
+                    } else if (totalDragY > thresholdPx) {
+                        downAction()
+                    }
+                }
+                totalDragY = 0f
+                hasTriggered = false
+            },
+            onDragCancel = {
+                totalDragY = 0f
+                hasTriggered = false
+            },
+            onVerticalDrag = { change, dragAmount ->
+                totalDragY += dragAmount
+                if (!hasTriggered) {
+                    if (totalDragY < -thresholdPx * 1.3f) {
+                        upAction()
+                        hasTriggered = true
+                    } else if (totalDragY > thresholdPx * 1.3f) {
+                        downAction()
+                        hasTriggered = true
+                    }
+                }
+                change.consume()
+            }
+        )
+    }
 }

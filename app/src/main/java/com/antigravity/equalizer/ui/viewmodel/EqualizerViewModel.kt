@@ -3,10 +3,13 @@ package com.antigravity.equalizer.ui.viewmodel
 import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.antigravity.equalizer.audio.AudioEffectManager
 import com.antigravity.equalizer.data.model.*
+import java.io.File
+import java.io.FileOutputStream
 import com.antigravity.equalizer.data.repository.DeviceProfileRepository
 import com.antigravity.equalizer.data.repository.PresetRepository
 import com.antigravity.equalizer.native.NativeDSP
@@ -58,7 +61,30 @@ data class EqualizerUiState(
     val trailEndWidth: Float = 1.2f,
     val trailOrbitRadius: Float = 9.5f,
     val trailColor1: Long = 0xFF00FFFFL,
-    val trailColor2: Long = 0xFF5E72E4L
+    val trailColor2: Long = 0xFF5E72E4L,
+    val visualizerEnabled: Boolean = true,
+    val visualizerStyle: VisualizerStyle = VisualizerStyle.BARS_WITH_PEAKS,
+    val visualizerPeakDecayEnabled: Boolean = true,
+    val visualizerColorScheme: VisualizerColorScheme = VisualizerColorScheme.FOLLOW_THEME,
+    val showNowPlayingVisualizer: Boolean = false,
+    val visualizerBarWidthDp: Float = 5.0f,
+    val visualizerCustomColor: Long = 0xFF00E5FFL,
+    val visualizerCustomColor2: Long = 0xFF7C4DFFL,
+    val customVisualizerColors: List<Long> = listOf(
+        0xFF00E5FFL, 0xFF00F5D4L, 0xFF7C4DFFL, 0xFFFF007FL, 0xFFFF9100L, 0xFF00E676L
+    ),
+    val isVisualizerMaximized: Boolean = false,
+    val maximizedShowCover: Boolean = true,
+    val maximizedCoverOnRight: Boolean = false,
+    val maximizedShowControls: Boolean = true,
+    val maximizedCoverAlpha: Float = 0.85f,
+    val showCoverInQueue: Boolean = true,
+    val visualizerBarAlpha: Float = 1.0f,
+    val customBackgroundPath: String? = null,
+    val backgroundBlurRadius: Float = 20f,
+    val backgroundBlurStyle: String = "frosted_glass",
+    val backgroundDimAlpha: Float = 0.35f,
+    val visualizerSingleColor: Boolean = false
 )
 
 class EqualizerViewModel(application: Application) : AndroidViewModel(application) {
@@ -73,20 +99,53 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
     val uiState: StateFlow<EqualizerUiState> = _uiState.asStateFlow()
 
     init {
-        // 1. 加载已保存的语言、主题与进度条拖尾配置
-        val currentLang = com.antigravity.equalizer.utils.LocaleHelper.getSelectedLanguage(application)
+        // 1. 从持久化配置中恢复全局通用设置
+        val savedLang = prefs.getString(KEY_LANGUAGE, "system") ?: "system"
         val savedTheme = prefs.getString(KEY_THEME_MODE, "system") ?: "system"
         val savedPersistentMiniPlayer = prefs.getBoolean(KEY_PERSISTENT_MINI_PLAYER, true)
-        val savedTrailStyle = prefs.getString(KEY_PROGRESS_TRAIL_STYLE, ProgressTrailStyle.NEON_PULSE.id)
-            ?: ProgressTrailStyle.NEON_PULSE.id
+        val savedTrailStyle = prefs.getString(KEY_PROGRESS_TRAIL_STYLE, ProgressTrailStyle.NEON_PULSE.id) ?: ProgressTrailStyle.NEON_PULSE.id
         val savedTrailStartWidth = prefs.getFloat(KEY_TRAIL_START_WIDTH, 3.8f)
         val savedTrailEndWidth = prefs.getFloat(KEY_TRAIL_END_WIDTH, 1.2f)
         val savedTrailOrbitRadius = prefs.getFloat(KEY_TRAIL_ORBIT_RADIUS, 9.5f)
         val savedTrailColor1 = prefs.getLong(KEY_TRAIL_COLOR1, 0xFF00FFFFL)
         val savedTrailColor2 = prefs.getLong(KEY_TRAIL_COLOR2, 0xFF5E72E4L)
+        val savedVizEnabled = prefs.getBoolean(KEY_VIZ_ENABLED, true)
+        val savedVizStyle = VisualizerStyle.fromId(prefs.getString(KEY_VIZ_STYLE, VisualizerStyle.BARS_WITH_PEAKS.id))
+        val savedVizPeakDecay = prefs.getBoolean(KEY_VIZ_PEAK_DECAY, true)
+        val savedVizColor = VisualizerColorScheme.fromId(prefs.getString(KEY_VIZ_COLOR, VisualizerColorScheme.FOLLOW_THEME.id))
+        val savedShowNowPlayingVisualizer = prefs.getBoolean(KEY_SHOW_NOW_PLAYING_VISUALIZER, false)
+        val savedBarWidthDp = prefs.getFloat(KEY_VIZ_BAR_WIDTH_DP, 5.0f)
+        val savedCustomColor = prefs.getLong(KEY_VIZ_CUSTOM_COLOR, 0xFF00E5FFL)
+        val savedCustomColor2 = prefs.getLong(KEY_VIZ_CUSTOM_COLOR2, 0xFF7C4DFFL)
+        val savedCustomColorsJson = prefs.getString(KEY_CUSTOM_VIZ_COLORS, null)
+        val savedCustomColors = if (!savedCustomColorsJson.isNullOrBlank()) {
+            try {
+                val jsonArr = org.json.JSONArray(savedCustomColorsJson)
+                List(jsonArr.length()) { idx -> jsonArr.getLong(idx) }
+            } catch (e: Exception) {
+                listOf(0xFF00E5FFL, 0xFF00F5D4L, 0xFF7C4DFFL, 0xFFFF007FL, 0xFFFF9100L, 0xFF00E676L)
+            }
+        } else {
+            listOf(0xFF00E5FFL, 0xFF00F5D4L, 0xFF7C4DFFL, 0xFFFF007FL, 0xFFFF9100L, 0xFF00E676L)
+        }
+        val savedIsVisualizerMaximized = prefs.getBoolean(KEY_IS_VISUALIZER_MAXIMIZED, false)
+        val savedMaximizedShowCover = prefs.getBoolean(KEY_MAXIMIZED_SHOW_COVER, true)
+        val savedMaximizedCoverOnRight = prefs.getBoolean(KEY_MAXIMIZED_COVER_ON_RIGHT, false)
+        val savedMaximizedShowControls = prefs.getBoolean(KEY_MAXIMIZED_SHOW_CONTROLS, true)
+        val savedMaximizedCoverAlpha = prefs.getFloat(KEY_MAXIMIZED_COVER_ALPHA, 0.85f)
+        val savedShowCoverInQueue = prefs.getBoolean(KEY_SHOW_COVER_IN_QUEUE, true)
+        val savedVizBarAlpha = prefs.getFloat(KEY_VIZ_BAR_ALPHA, 1.0f)
+        val savedCustomBgPath = prefs.getString(KEY_CUSTOM_BG_PATH, null)?.let { path ->
+            if (File(path).exists()) path else null
+        }
+        val savedBgBlurRadius = prefs.getFloat(KEY_BG_BLUR_RADIUS, 20f)
+        val savedBgBlurStyle = prefs.getString(KEY_BG_BLUR_STYLE, "frosted_glass") ?: "frosted_glass"
+        val savedBgDimAlpha = prefs.getFloat(KEY_BG_DIM_ALPHA, 0.35f)
+        val savedVizSingleColor = prefs.getBoolean(KEY_VIZ_SINGLE_COLOR, false)
+
         _uiState.update {
             it.copy(
-                selectedLanguage = currentLang,
+                selectedLanguage = savedLang,
                 themeMode = savedTheme,
                 persistentMiniPlayer = savedPersistentMiniPlayer,
                 progressTrailStyle = savedTrailStyle,
@@ -94,7 +153,28 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
                 trailEndWidth = savedTrailEndWidth,
                 trailOrbitRadius = savedTrailOrbitRadius,
                 trailColor1 = savedTrailColor1,
-                trailColor2 = savedTrailColor2
+                trailColor2 = savedTrailColor2,
+                visualizerEnabled = savedVizEnabled,
+                visualizerStyle = savedVizStyle,
+                visualizerPeakDecayEnabled = savedVizPeakDecay,
+                visualizerColorScheme = savedVizColor,
+                showNowPlayingVisualizer = savedShowNowPlayingVisualizer,
+                visualizerBarWidthDp = savedBarWidthDp,
+                visualizerCustomColor = savedCustomColor,
+                visualizerCustomColor2 = savedCustomColor2,
+                customVisualizerColors = savedCustomColors,
+                isVisualizerMaximized = savedIsVisualizerMaximized,
+                maximizedShowCover = savedMaximizedShowCover,
+                maximizedCoverOnRight = savedMaximizedCoverOnRight,
+                maximizedShowControls = savedMaximizedShowControls,
+                maximizedCoverAlpha = savedMaximizedCoverAlpha,
+                showCoverInQueue = savedShowCoverInQueue,
+                visualizerBarAlpha = savedVizBarAlpha,
+                customBackgroundPath = savedCustomBgPath,
+                backgroundBlurRadius = savedBgBlurRadius,
+                backgroundBlurStyle = savedBgBlurStyle,
+                backgroundDimAlpha = savedBgDimAlpha,
+                visualizerSingleColor = savedVizSingleColor
             )
         }
 
@@ -469,6 +549,170 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         prefs.edit().putBoolean(KEY_PERSISTENT_MINI_PLAYER, enabled).apply()
     }
 
+    fun toggleVisualizerEnabled(enabled: Boolean) {
+        _uiState.update { it.copy(visualizerEnabled = enabled) }
+        prefs.edit().putBoolean(KEY_VIZ_ENABLED, enabled).apply()
+    }
+
+    fun setVisualizerStyle(style: VisualizerStyle) {
+        _uiState.update { it.copy(visualizerStyle = style) }
+        prefs.edit().putString(KEY_VIZ_STYLE, style.id).apply()
+    }
+
+    fun cycleVisualizerStyle() {
+        val styles = VisualizerStyle.values()
+        val currentIndex = styles.indexOf(_uiState.value.visualizerStyle)
+        val nextStyle = styles[(currentIndex + 1) % styles.size]
+        setVisualizerStyle(nextStyle)
+    }
+
+    fun toggleVisualizerPeakDecay(enabled: Boolean) {
+        _uiState.update { it.copy(visualizerPeakDecayEnabled = enabled) }
+        prefs.edit().putBoolean(KEY_VIZ_PEAK_DECAY, enabled).apply()
+    }
+
+    fun setVisualizerColorScheme(scheme: VisualizerColorScheme) {
+        _uiState.update { it.copy(visualizerColorScheme = scheme) }
+        prefs.edit().putString(KEY_VIZ_COLOR, scheme.id).apply()
+    }
+
+    fun setShowNowPlayingVisualizer(show: Boolean) {
+        _uiState.update { it.copy(showNowPlayingVisualizer = show) }
+        prefs.edit().putBoolean(KEY_SHOW_NOW_PLAYING_VISUALIZER, show).apply()
+    }
+
+    fun setVisualizerBarWidth(widthDp: Float) {
+        _uiState.update { it.copy(visualizerBarWidthDp = widthDp) }
+        prefs.edit().putFloat(KEY_VIZ_BAR_WIDTH_DP, widthDp).apply()
+    }
+
+    fun setVisualizerCustomColor(colorLong: Long) {
+        _uiState.update { it.copy(visualizerCustomColor = colorLong, visualizerColorScheme = VisualizerColorScheme.CUSTOM) }
+        prefs.edit()
+            .putLong(KEY_VIZ_CUSTOM_COLOR, colorLong)
+            .putString(KEY_VIZ_COLOR, VisualizerColorScheme.CUSTOM.id)
+            .apply()
+    }
+
+    fun setVisualizerCustomColor2(colorLong: Long) {
+        _uiState.update { it.copy(visualizerCustomColor2 = colorLong, visualizerColorScheme = VisualizerColorScheme.CUSTOM) }
+        prefs.edit()
+            .putLong(KEY_VIZ_CUSTOM_COLOR2, colorLong)
+            .putString(KEY_VIZ_COLOR, VisualizerColorScheme.CUSTOM.id)
+            .apply()
+    }
+
+    fun addCustomVisualizerColor(colorLong: Long) {
+        val current = _uiState.value.customVisualizerColors.toMutableList()
+        if (!current.contains(colorLong)) {
+            current.add(0, colorLong)
+            val jsonArr = org.json.JSONArray()
+            current.forEach { jsonArr.put(it) }
+            prefs.edit().putString(KEY_CUSTOM_VIZ_COLORS, jsonArr.toString()).apply()
+            _uiState.update { it.copy(customVisualizerColors = current) }
+        }
+    }
+
+    fun removeCustomVisualizerColor(colorLong: Long) {
+        val current = _uiState.value.customVisualizerColors.toMutableList()
+        if (current.remove(colorLong)) {
+            val jsonArr = org.json.JSONArray()
+            current.forEach { jsonArr.put(it) }
+            prefs.edit().putString(KEY_CUSTOM_VIZ_COLORS, jsonArr.toString()).apply()
+            _uiState.update { it.copy(customVisualizerColors = current) }
+        }
+    }
+
+    fun setVisualizerMaximized(maximized: Boolean) {
+        _uiState.update { it.copy(isVisualizerMaximized = maximized) }
+        prefs.edit().putBoolean(KEY_IS_VISUALIZER_MAXIMIZED, maximized).apply()
+    }
+
+    fun setMaximizedShowCover(show: Boolean) {
+        _uiState.update { it.copy(maximizedShowCover = show) }
+        prefs.edit().putBoolean(KEY_MAXIMIZED_SHOW_COVER, show).apply()
+    }
+
+    fun setMaximizedCoverOnRight(onRight: Boolean) {
+        _uiState.update { it.copy(maximizedCoverOnRight = onRight) }
+        prefs.edit().putBoolean(KEY_MAXIMIZED_COVER_ON_RIGHT, onRight).apply()
+    }
+
+    fun setMaximizedShowControls(show: Boolean) {
+        _uiState.update { it.copy(maximizedShowControls = show) }
+        prefs.edit().putBoolean(KEY_MAXIMIZED_SHOW_CONTROLS, show).apply()
+    }
+
+    fun setMaximizedCoverAlpha(alpha: Float) {
+        val clamped = alpha.coerceIn(0.1f, 1.0f)
+        _uiState.update { it.copy(maximizedCoverAlpha = clamped) }
+        prefs.edit().putFloat(KEY_MAXIMIZED_COVER_ALPHA, clamped).apply()
+    }
+
+    fun setShowCoverInQueue(show: Boolean) {
+        _uiState.update { it.copy(showCoverInQueue = show) }
+        prefs.edit().putBoolean(KEY_SHOW_COVER_IN_QUEUE, show).apply()
+    }
+
+    fun setVisualizerBarAlpha(alpha: Float) {
+        val clamped = alpha.coerceIn(0.1f, 1.0f)
+        _uiState.update { it.copy(visualizerBarAlpha = clamped) }
+        prefs.edit().putFloat(KEY_VIZ_BAR_ALPHA, clamped).apply()
+    }
+
+    fun setCustomBackgroundFromUri(uri: Uri, context: Context): Boolean {
+        return try {
+            val destFile = File(context.filesDir, "custom_app_background.jpg")
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(destFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            val absPath = destFile.absolutePath
+            _uiState.update { it.copy(customBackgroundPath = absPath) }
+            prefs.edit().putString(KEY_CUSTOM_BG_PATH, absPath).apply()
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
+    fun clearCustomBackground(context: Context) {
+        try {
+            val destFile = File(context.filesDir, "custom_app_background.jpg")
+            if (destFile.exists()) {
+                destFile.delete()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        _uiState.update { it.copy(customBackgroundPath = null) }
+        prefs.edit().remove(KEY_CUSTOM_BG_PATH).apply()
+    }
+
+    fun setBackgroundBlurRadius(radius: Float) {
+        val clamped = radius.coerceIn(0f, 50f)
+        _uiState.update { it.copy(backgroundBlurRadius = clamped) }
+        prefs.edit().putFloat(KEY_BG_BLUR_RADIUS, clamped).apply()
+    }
+
+    fun setBackgroundBlurStyle(style: String) {
+        _uiState.update { it.copy(backgroundBlurStyle = style) }
+        prefs.edit().putString(KEY_BG_BLUR_STYLE, style).apply()
+    }
+
+    fun setBackgroundDimAlpha(dim: Float) {
+        val clamped = dim.coerceIn(0.0f, 0.85f)
+        _uiState.update { it.copy(backgroundDimAlpha = clamped) }
+        prefs.edit().putFloat(KEY_BG_DIM_ALPHA, clamped).apply()
+    }
+
+    fun setVisualizerSingleColor(enabled: Boolean) {
+        _uiState.update { it.copy(visualizerSingleColor = enabled) }
+        prefs.edit().putBoolean(KEY_VIZ_SINGLE_COLOR, enabled).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "equalizer_ui_state_prefs"
         private const val KEY_EQ_ENABLED = "key_eq_enabled"
@@ -481,6 +725,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         private const val KEY_TREBLE_BOOST_STRENGTH = "key_treble_boost_strength"
         private const val KEY_COMPRESSOR_ENABLED = "key_compressor_enabled"
         private const val KEY_LIMITER_ENABLED = "key_limiter_enabled"
+        private const val KEY_LANGUAGE = "key_language"
         private const val KEY_THEME_MODE = "key_theme_mode"
         private const val KEY_LAUNCH_AS_EQUALIZER_ONLY = "key_launch_as_equalizer_only"
         private const val KEY_PERSISTENT_MINI_PLAYER = "key_persistent_mini_player"
@@ -490,5 +735,26 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         private const val KEY_TRAIL_ORBIT_RADIUS = "key_trail_orbit_radius"
         private const val KEY_TRAIL_COLOR1 = "key_trail_color1"
         private const val KEY_TRAIL_COLOR2 = "key_trail_color2"
+        private const val KEY_VIZ_ENABLED = "key_viz_enabled"
+        private const val KEY_VIZ_STYLE = "key_viz_style"
+        private const val KEY_VIZ_PEAK_DECAY = "key_viz_peak_decay"
+        private const val KEY_VIZ_COLOR = "key_viz_color"
+        private const val KEY_SHOW_NOW_PLAYING_VISUALIZER = "key_show_now_playing_visualizer"
+        private const val KEY_VIZ_BAR_WIDTH_DP = "key_viz_bar_width_dp"
+        private const val KEY_VIZ_CUSTOM_COLOR = "key_viz_custom_color"
+        private const val KEY_VIZ_CUSTOM_COLOR2 = "key_viz_custom_color2"
+        private const val KEY_CUSTOM_VIZ_COLORS = "key_custom_viz_colors"
+        private const val KEY_MAXIMIZED_SHOW_COVER = "key_maximized_show_cover"
+        private const val KEY_MAXIMIZED_COVER_ON_RIGHT = "key_maximized_cover_on_right"
+        private const val KEY_MAXIMIZED_SHOW_CONTROLS = "key_maximized_show_controls"
+        private const val KEY_MAXIMIZED_COVER_ALPHA = "key_maximized_cover_alpha"
+        private const val KEY_IS_VISUALIZER_MAXIMIZED = "key_is_visualizer_maximized"
+        private const val KEY_SHOW_COVER_IN_QUEUE = "key_show_cover_in_queue"
+        private const val KEY_VIZ_BAR_ALPHA = "key_viz_bar_alpha"
+        private const val KEY_CUSTOM_BG_PATH = "key_custom_bg_path"
+        private const val KEY_BG_BLUR_RADIUS = "key_bg_blur_radius"
+        private const val KEY_BG_BLUR_STYLE = "key_bg_blur_style"
+        private const val KEY_BG_DIM_ALPHA = "key_bg_dim_alpha"
+        private const val KEY_VIZ_SINGLE_COLOR = "key_viz_single_color"
     }
 }

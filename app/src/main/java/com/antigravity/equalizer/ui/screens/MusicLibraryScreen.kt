@@ -105,8 +105,6 @@ fun rememberSynchronizedGridStateHolder(): SynchronizedGridStateHolder {
 @Composable
 fun MusicLibraryScreen(
     viewModel: MusicPlayerViewModel,
-    equalizerUiState: EqualizerUiState,
-    onOpenEqualizer: () -> Unit,
     onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -1163,7 +1161,7 @@ fun MusicLibraryScreen(
                     Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
                 }
             },
-            containerColor = OrbitTheme.colors.surfaceCard
+            containerColor = OrbitTheme.colors.surfaceDialog
         )
     }
 
@@ -1203,7 +1201,7 @@ fun MusicLibraryScreen(
                     Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
                 }
             },
-            containerColor = OrbitTheme.colors.surfaceCard
+            containerColor = OrbitTheme.colors.surfaceDialog
         )
     }
 
@@ -1238,7 +1236,7 @@ fun MusicLibraryScreen(
                     Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
                 }
             },
-            containerColor = OrbitTheme.colors.surfaceCard
+            containerColor = OrbitTheme.colors.surfaceDialog
         )
     }
 
@@ -1335,7 +1333,7 @@ fun MusicLibraryScreen(
                     Text(stringResource(R.string.btn_ok), color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White)
                 }
             },
-            containerColor = OrbitTheme.colors.surfaceCard
+            containerColor = OrbitTheme.colors.surfaceDialog
         )
     }
 
@@ -1445,7 +1443,7 @@ fun MusicLibraryScreen(
                     Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
                 }
             },
-            containerColor = OrbitTheme.colors.surfaceCard
+            containerColor = OrbitTheme.colors.surfaceDialog
         )
     }
 
@@ -1453,7 +1451,7 @@ fun MusicLibraryScreen(
     activeSongForLongClickMenu?.let { longClickedSong ->
         ModalBottomSheet(
             onDismissRequest = { activeSongForLongClickMenu = null },
-            containerColor = OrbitTheme.colors.surfaceCard,
+            containerColor = OrbitTheme.colors.surfaceDialog,
             shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
         ) {
             Column(

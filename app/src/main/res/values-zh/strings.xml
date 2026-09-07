@@ -89,7 +89,7 @@
     <string name="dsp_latency_title">处理延迟</string>
     <string name="dsp_latency_value">&lt; 2.5 毫秒 (极低延迟)</string>
     <string name="version_title">软件版本</string>
-    <string name="version_value">0.1.1</string>
+    <string name="version_value">0.1.2</string>
 
     <!-- Import / Export Dialogs -->
     <string name="import_dialog_title">导入预设 / AutoEQ 调音</string>
@@ -215,4 +215,76 @@
     <string name="added_to_playlist_success">已添加到 %1$s</string>
     <string name="queue_search_hint">在队列中搜索...</string>
     <string name="back">返回</string>
+
+    <!-- 频谱可视化 (Poweramp 风格) -->
+    <string name="section_spectrum_visualizer">频谱可视化 (Poweramp 风格)</string>
+    <string name="visualizer_enabled_title">启用实时频谱可视化</string>
+    <string name="visualizer_enabled_subtitle">在全屏播放页面实时渲染高灵敏度音频动态频谱</string>
+    <string name="visualizer_style_title">频谱视效形态</string>
+    <string name="visualizer_style_subtitle">选择跳动频谱的渲染风格</string>
+    <string name="visualizer_style_bars_with_peaks">经典柱状 (带悬浮峰)</string>
+    <string name="visualizer_style_aurora_mountain">平滑极光山脉曲线</string>
+    <string name="visualizer_style_mirrored_bars">镜面对称律动频谱</string>
+    <string name="visualizer_style_off">关闭</string>
+    <string name="visualizer_peak_decay_title">顶峰悬浮缓降 (Peak Hold)</string>
+    <string name="visualizer_peak_decay_subtitle">峰值达到最高点时暂留并带有重力加速度坠落效果</string>
+    <string name="visualizer_color_title">频谱配色方案</string>
+    <string name="visualizer_color_subtitle">选择频谱光晕与渐变发光色彩</string>
+    <string name="visualizer_color_follow_theme">跟随主题高亮</string>
+    <string name="visualizer_color_neon_cyan_purple">霓虹青紫</string>
+    <string name="visualizer_color_fire_amber">电音烈焰</string>
+    <string name="visualizer_color_electric_green">极客荧光绿</string>
+    <string name="switch_visualizer_style">切换频谱样式</string>
+    <string name="visualizer_swipe_up_hint">上滑切换频谱</string>
+    <string name="visualizer_swipe_down_hint">下滑切回封面</string>
+
+    <!-- 频谱自定义宽度与色盘调色 -->
+    <string name="visualizer_bar_width_title">柱状频谱单条宽度</string>
+    <string name="visualizer_bar_width_subtitle">越窄渲染频段越细腻密集，越宽越少沉稳</string>
+    <string name="visualizer_color_custom">自定义双色渐变 (调色盘)</string>
+    <string name="visualizer_color1_title">频谱底端色 (主色)</string>
+    <string name="visualizer_color2_title">频谱顶端色 (次色)</string>
+    <string name="color_picker_title">自定义调色盘</string>
+    <string name="add_to_custom_colors">添加到自定义颜色</string>
+    <string name="custom_colors_title">已保存的自定义色彩</string>
+    <string name="color_hex_label">颜色代码</string>
+    <string name="color_picker_confirm">确定使用</string>
+    <string name="color_added_success">已保存到自定义颜色</string>
+
+    <!-- 播放页频谱最大化沉浸模式 -->
+    <string name="visualizer_maximize">最大化频谱</string>
+    <string name="visualizer_restore">退出最大化</string>
+    <string name="maximized_show_cover">显示封面</string>
+    <string name="maximized_hide_cover">隐藏封面</string>
+    <string name="maximized_cover_position">封面位置</string>
+    <string name="maximized_cover_left">居左</string>
+    <string name="maximized_cover_right">居右</string>
+    <string name="maximized_show_controls">显示控制条</string>
+    <string name="maximized_hide_controls">隐藏控制条</string>
+    <string name="maximized_cover_alpha">封面透明度</string>
+    <string name="maximized_cover_alpha_desc">调整最大化时专辑封面的不透明度</string>
+
+    <!-- 频谱条透明度与全局自定义背景 -->
+    <string name="visualizer_bar_alpha_title">频谱条透明度</string>
+    <string name="visualizer_bar_alpha_subtitle">调整柱状条及频谱曲线的不透明度 (10% - 100%)</string>
+    <string name="section_custom_background">沉浸背景与毛玻璃</string>
+    <string name="custom_background_title">自定义程序背景</string>
+    <string name="custom_background_subtitle">从系统相册选取壁纸作为全应用沉浸式透光背景</string>
+    <string name="btn_choose_background">选取背景壁纸</string>
+    <string name="btn_reset_background">恢复默认纯黑</string>
+    <string name="background_blur_radius_title">背景模糊程度</string>
+    <string name="background_blur_radius_subtitle">调节背景高斯模糊柔焦半径 (0 - 50dp)</string>
+    <string name="background_blur_style_title">模糊质感样式</string>
+    <string name="background_blur_style_subtitle">选择模糊渲染风格</string>
+    <string name="background_blur_style_gaussian">高斯柔光模糊</string>
+    <string name="background_blur_style_frosted">磨砂玻璃 (亚克力质感)</string>
+    <string name="background_dim_alpha_title">背景遮罩暗度</string>
+    <string name="background_dim_alpha_subtitle">调节半透明暗度遮罩，确保文字与按钮清晰通透</string>
+    <string name="background_select_success">背景壁纸已成功应用</string>
+    <string name="background_reset_success">已恢复默认纯净背景</string>
+
+    <!-- 频谱单色显示模式 -->
+    <string name="visualizer_single_color_title">单色纯色显示</string>
+    <string name="visualizer_single_color_subtitle">使用单一纯色渲染频谱柱条，关闭双色垂直渐变</string>
 </resources>
+

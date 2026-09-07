@@ -48,6 +48,7 @@ import com.antigravity.equalizer.ui.viewmodel.EqualizerViewModel
 fun MainEqualizerScreen(
     viewModel: EqualizerViewModel,
     onBackToLibrary: () -> Unit = {},
+    onOpenSettings: () -> Unit = { viewModel.navigateTo(AppScreen.SETTINGS) },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -112,7 +113,7 @@ fun MainEqualizerScreen(
                     }
 
                     // 设置入口 (包含主题切换、导入导出等)
-                    IconButton(onClick = { viewModel.navigateTo(AppScreen.SETTINGS) }) {
+                    IconButton(onClick = onOpenSettings) {
                         Icon(
                             imageVector = Icons.Default.Settings,
                             contentDescription = stringResource(R.string.settings),
@@ -316,7 +317,7 @@ fun MainEqualizerScreen(
                         Text(text = stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
                     }
                 },
-                containerColor = OrbitTheme.colors.surfaceCard,
+                containerColor = OrbitTheme.colors.surfaceDialog,
                 shape = RoundedCornerShape(16.dp)
             )
         }
@@ -357,7 +358,7 @@ fun MainEqualizerScreen(
                         Text(text = stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
                     }
                 },
-                containerColor = OrbitTheme.colors.surfaceCard,
+                containerColor = OrbitTheme.colors.surfaceDialog,
                 shape = RoundedCornerShape(16.dp)
             )
         }

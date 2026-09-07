@@ -1,13 +1,24 @@
 package com.antigravity.equalizer.ui.screens
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -25,6 +36,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
@@ -50,32 +62,49 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.antigravity.equalizer.R
+import com.antigravity.equalizer.audio.PlaybackState
 import com.antigravity.equalizer.audio.RepeatMode
 import com.antigravity.equalizer.audio.ShuffleStrategy
+import com.antigravity.equalizer.audio.VisualizerFrame
 import com.antigravity.equalizer.data.model.ProgressTrailStyle
 import com.antigravity.equalizer.data.model.Song
 import com.antigravity.equalizer.data.model.SongAttitude
+import com.antigravity.equalizer.data.model.VisualizerColorScheme
+import com.antigravity.equalizer.data.model.VisualizerStyle
+import com.antigravity.equalizer.ui.components.AppBackgroundLayer
+import com.antigravity.equalizer.ui.components.PowerampSpectrumVisualizer
 import com.antigravity.equalizer.ui.theme.*
 import com.antigravity.equalizer.ui.utils.swipeToChangeSong
+import com.antigravity.equalizer.ui.utils.swipeVerticalGesture
 import com.antigravity.equalizer.ui.viewmodel.EqualizerUiState
 import com.antigravity.equalizer.ui.viewmodel.MusicPlayerViewModel
 import com.antigravity.equalizer.utils.LyricLine
 import com.antigravity.equalizer.utils.LyricParser
 import kotlin.math.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun NowPlayingScreen(
     viewModel: MusicPlayerViewModel,
     equalizerUiState: EqualizerUiState,
     onBack: () -> Unit,
     onOpenEqualizer: () -> Unit,
+    onCycleVisualizerStyle: (() -> Unit)? = null,
+    onToggleCoverVisualizer: (Boolean) -> Unit = {},
+    onToggleVisualizerMaximized: (Boolean) -> Unit = {},
+    onToggleMaximizedShowCover: (Boolean) -> Unit = {},
+    onToggleMaximizedCoverPosition: (Boolean) -> Unit = {},
+    onToggleMaximizedShowControls: (Boolean) -> Unit = {},
+    onSetMaximizedCoverAlpha: (Float) -> Unit = {},
+    onToggleCoverInQueue: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val playbackState by viewModel.playbackState.collectAsState()
+    val visualizerFrame by viewModel.visualizerFlow.collectAsState()
     val allSongs by viewModel.allSongs.collectAsState()
     val favoriteSongs by viewModel.favoriteSongs.collectAsState()
     val rawSong = playbackState.currentSong
@@ -93,6 +122,7 @@ fun NowPlayingScreen(
     var draggingProgress by remember { mutableFloatStateOf(0f) }
 
     val playlists by viewModel.playlists.collectAsState()
+
     var showAddToPlaylistDialog by remember { mutableStateOf(false) }
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
@@ -129,6 +159,16 @@ fun NowPlayingScreen(
         label = "CoverScaleAnim"
     )
 
+    // 专辑封面是否被上滑替换为全尺寸沉浸式大频谱可视化 (持久化配置驱动)
+    val showCoverVisualizer = equalizerUiState.showNowPlayingVisualizer
+
+    // 当频谱视效被彻底关闭时，若当前处于封面大频谱模式，自动平滑退回专辑封面
+    LaunchedEffect(equalizerUiState.visualizerStyle, equalizerUiState.visualizerEnabled) {
+        if ((equalizerUiState.visualizerStyle == VisualizerStyle.OFF || !equalizerUiState.visualizerEnabled) && showCoverVisualizer) {
+            onToggleCoverVisualizer(false)
+        }
+    }
+
     // 当前应用的均衡器配置文案
     val currentPresetName = remember(equalizerUiState.selectedPresetId, equalizerUiState.presets) {
         val preset = equalizerUiState.presets.find { it.id == equalizerUiState.selectedPresetId }
@@ -139,7 +179,15 @@ fun NowPlayingScreen(
         }
     }
 
-    Scaffold(
+    Box(modifier = modifier.fillMaxSize()) {
+        AppBackgroundLayer(
+            customBackgroundPath = equalizerUiState.customBackgroundPath,
+            blurRadius = equalizerUiState.backgroundBlurRadius,
+            blurStyle = equalizerUiState.backgroundBlurStyle,
+            dimAlpha = equalizerUiState.backgroundDimAlpha
+        )
+
+        Scaffold(
         topBar = {
             TopAppBar(
                 navigationIcon = {
@@ -189,39 +237,216 @@ fun NowPlayingScreen(
         val configuration = LocalConfiguration.current
         val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
-        // 1. 封面视图
-        val coverView: @Composable (Modifier) -> Unit = { mod ->
-            Box(
-                modifier = mod
-                    .scale(coverScale)
-                    .shadow(
-                        elevation = 16.dp,
-                        shape = RoundedCornerShape(18.dp),
-                        spotColor = OrbitTheme.colors.primary.copy(alpha = 0.35f)
-                    )
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(OrbitTheme.colors.surfaceCard),
-                contentAlignment = Alignment.Center
-            ) {
-                AnimatedContent(
-                    targetState = song?.albumArtUri,
-                    transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) },
-                    label = "AlbumArtAnim"
-                ) { artUri ->
-                    if (artUri != null) {
-                        AsyncImage(
-                            model = artUri,
-                            contentDescription = song?.title,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
+        // 1. 封面与大频谱可视化无缝切换视图 (大频谱横向占满页面四周留空，封面保持精致正方形)
+        val coverView: @Composable () -> Unit = {
+            AnimatedContent(
+                targetState = showCoverVisualizer,
+                transitionSpec = {
+                    if (targetState) {
+                        (slideInVertically(animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)) { height -> height } + fadeIn(tween(250)))
+                            .togetherWith(slideOutVertically(animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)) { height -> -height } + fadeOut(tween(200)))
                     } else {
-                        Icon(
-                            imageVector = Icons.Default.MusicNote,
-                            contentDescription = null,
-                            tint = OrbitTheme.colors.primary,
-                            modifier = Modifier.size(if (isLandscape) 52.dp else 72.dp)
+                        (slideInVertically(animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)) { height -> -height } + fadeIn(tween(250)))
+                            .togetherWith(slideOutVertically(animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)) { height -> height } + fadeOut(tween(200)))
+                    }
+                },
+                label = "CoverVisualizerSwitchAnim"
+            ) { isVisualizerMode ->
+                if (isVisualizerMode) {
+                    // ========== 沉浸式大频谱可视化 (纯净无边框，横向舒展自然融入页面) ==========
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(if (isLandscape) 150.dp else 195.dp)
+                            .swipeVerticalGesture(
+                                onSwipeUp = {},
+                                onSwipeDown = { onToggleCoverVisualizer(false) }
+                            )
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = { onCycleVisualizerStyle?.invoke() }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val currentStyle = if (equalizerUiState.visualizerStyle == VisualizerStyle.OFF) {
+                            VisualizerStyle.BARS_WITH_PEAKS
+                        } else {
+                            equalizerUiState.visualizerStyle
+                        }
+
+                        // 全屏动态频谱
+                        PowerampSpectrumVisualizer(
+                            magnitudes = visualizerFrame.rawMagnitudes,
+                            peaks = visualizerFrame.peakCaps,
+                            style = currentStyle,
+                            colorScheme = equalizerUiState.visualizerColorScheme,
+                            peakDecayEnabled = equalizerUiState.visualizerPeakDecayEnabled,
+                            isPlaying = playbackState.isPlaying,
+                            barWidthDp = equalizerUiState.visualizerBarWidthDp,
+                            barAlpha = equalizerUiState.visualizerBarAlpha,
+                            customColor = equalizerUiState.visualizerCustomColor,
+                            customColor2 = equalizerUiState.visualizerCustomColor2,
+                            isSingleColor = equalizerUiState.visualizerSingleColor,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            onClick = { onCycleVisualizerStyle?.invoke() }
                         )
+
+                        // 顶部操作组：样式药丸徽标 + 最大化全屏按钮
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            // 样式切换徽标
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = OrbitTheme.colors.background.copy(alpha = 0.70f),
+                                modifier = Modifier.clickable { onCycleVisualizerStyle?.invoke() }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    val styleText = when (currentStyle) {
+                                        VisualizerStyle.BARS_WITH_PEAKS -> stringResource(R.string.visualizer_style_bars_with_peaks)
+                                        VisualizerStyle.AURORA_MOUNTAIN -> stringResource(R.string.visualizer_style_aurora_mountain)
+                                        VisualizerStyle.MIRRORED_BARS -> stringResource(R.string.visualizer_style_mirrored_bars)
+                                        VisualizerStyle.OFF -> stringResource(R.string.visualizer_style_off)
+                                    }
+                                    Text(
+                                        text = styleText,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = OrbitTheme.colors.primary
+                                    )
+                                    Icon(
+                                        imageVector = Icons.Default.GraphicEq,
+                                        contentDescription = null,
+                                        tint = OrbitTheme.colors.primary,
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                }
+                            }
+
+                            // 最大化全屏按钮
+                            Surface(
+                                shape = CircleShape,
+                                color = OrbitTheme.colors.background.copy(alpha = 0.70f),
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clickable { onToggleVisualizerMaximized(true) }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Fullscreen,
+                                        contentDescription = stringResource(R.string.visualizer_maximize),
+                                        tint = OrbitTheme.colors.primary,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // 底部优雅向下滑动提示浮标
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 6.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(OrbitTheme.colors.background.copy(alpha = 0.50f))
+                                .padding(horizontal = 8.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = null,
+                                tint = OrbitTheme.colors.textSecondary.copy(alpha = 0.75f),
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = stringResource(R.string.visualizer_swipe_down_hint),
+                                fontSize = 9.sp,
+                                color = OrbitTheme.colors.textSecondary.copy(alpha = 0.75f)
+                            )
+                        }
+                    }
+                } else {
+                    // ========== 原生专辑封面视图 (精致正方形居中，支持向上滑动替换为大频谱) ==========
+                    val coverSize = if (isLandscape) 150.dp else 190.dp
+                    Box(
+                        modifier = Modifier
+                            .size(coverSize)
+                            .scale(coverScale)
+                            .shadow(
+                                elevation = 16.dp,
+                                shape = RoundedCornerShape(18.dp),
+                                spotColor = OrbitTheme.colors.primary.copy(alpha = 0.35f)
+                            )
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(OrbitTheme.colors.surfaceCard)
+                            .swipeVerticalGesture(
+                                onSwipeUp = {
+                                    if (equalizerUiState.visualizerStyle == VisualizerStyle.OFF) {
+                                        onCycleVisualizerStyle?.invoke()
+                                    }
+                                    onToggleCoverVisualizer(true)
+                                },
+                                onSwipeDown = {}
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AnimatedContent(
+                            targetState = song?.albumArtUri,
+                            transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) },
+                            label = "AlbumArtAnim"
+                        ) { artUri ->
+                            if (artUri != null) {
+                                AsyncImage(
+                                    model = artUri,
+                                    contentDescription = song?.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.MusicNote,
+                                    contentDescription = null,
+                                    tint = OrbitTheme.colors.primary,
+                                    modifier = Modifier.size(if (isLandscape) 52.dp else 72.dp)
+                                )
+                            }
+                        }
+
+                        // 底部优雅的上滑提示小浮标
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 6.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(OrbitTheme.colors.surfaceCard.copy(alpha = 0.75f))
+                                .padding(horizontal = 8.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowUp,
+                                contentDescription = null,
+                                tint = OrbitTheme.colors.textSecondary.copy(alpha = 0.85f),
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Text(
+                                text = stringResource(R.string.visualizer_swipe_up_hint),
+                                fontSize = 9.sp,
+                                color = OrbitTheme.colors.textSecondary.copy(alpha = 0.85f)
+                            )
+                        }
                     }
                 }
             }
@@ -404,6 +629,46 @@ fun NowPlayingScreen(
                     }
                 }
 
+                // 频谱视效形态切换与封面可视化控制 (单击切换封面位置可视化展示/关闭，长按切换频谱样式)
+                val vizActive = showCoverVisualizer || (equalizerUiState.visualizerEnabled && equalizerUiState.visualizerStyle != VisualizerStyle.OFF)
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .combinedClickable(
+                            onClick = {
+                                if (showCoverVisualizer) {
+                                    onToggleCoverVisualizer(false)
+                                } else {
+                                    if (equalizerUiState.visualizerStyle == VisualizerStyle.OFF) {
+                                        onCycleVisualizerStyle?.invoke()
+                                    }
+                                    onToggleCoverVisualizer(true)
+                                }
+                            },
+                            onLongClick = {
+                                onCycleVisualizerStyle?.invoke()
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.GraphicEq,
+                        contentDescription = stringResource(R.string.switch_visualizer_style),
+                        tint = if (vizActive) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    if (vizActive) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(OrbitTheme.colors.tertiary)
+                        )
+                    }
+                }
+
                 // 三点菜单
                 IconButton(
                     onClick = { showAddToPlaylistDialog = true },
@@ -416,6 +681,34 @@ fun NowPlayingScreen(
                         modifier = Modifier.size(24.dp)
                     )
                 }
+            }
+        }
+
+        // 4.5 仿 Poweramp 殿堂级动态频谱视效视图 (当封面替换为全尺寸大频谱时自动折叠，避免视觉重复)
+        val spectrumVisualizerView: @Composable () -> Unit = {
+            AnimatedVisibility(
+                visible = !showCoverVisualizer && equalizerUiState.visualizerEnabled && equalizerUiState.visualizerStyle != VisualizerStyle.OFF,
+                enter = expandVertically(tween(250)) + fadeIn(tween(200)),
+                exit = shrinkVertically(tween(200)) + fadeOut(tween(150))
+            ) {
+                PowerampSpectrumVisualizer(
+                    magnitudes = visualizerFrame.rawMagnitudes,
+                    peaks = visualizerFrame.peakCaps,
+                    style = equalizerUiState.visualizerStyle,
+                    colorScheme = equalizerUiState.visualizerColorScheme,
+                    peakDecayEnabled = equalizerUiState.visualizerPeakDecayEnabled,
+                    isPlaying = playbackState.isPlaying,
+                    barWidthDp = equalizerUiState.visualizerBarWidthDp,
+                    barAlpha = equalizerUiState.visualizerBarAlpha,
+                    customColor = equalizerUiState.visualizerCustomColor,
+                    customColor2 = equalizerUiState.visualizerCustomColor2,
+                    isSingleColor = equalizerUiState.visualizerSingleColor,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(if (isLandscape) 40.dp else 46.dp)
+                        .padding(horizontal = 4.dp),
+                    onClick = { onCycleVisualizerStyle?.invoke() }
+                )
             }
         }
 
@@ -433,6 +726,8 @@ fun NowPlayingScreen(
                         viewModel.seekTo((draggingProgress * playbackState.durationMs).toLong())
                     },
                     isPlaying = playbackState.isPlaying,
+                    currentPositionMs = currentPosMs,
+                    durationMs = playbackState.durationMs,
                     trailStyle = equalizerUiState.progressTrailStyle,
                     startWidthDp = equalizerUiState.trailStartWidth,
                     endWidthDp = equalizerUiState.trailEndWidth,
@@ -561,42 +856,48 @@ fun NowPlayingScreen(
         }
 
         if (isLandscape) {
-            // ========== 专业横屏唱片与歌词分屏布局 (Vinyl & Lyrics Landscape Layout) ==========
+            // ========== 专业横屏唱片与歌词分屏布局 (左右 1:1 对称均分平衡布局) ==========
             Row(
                 modifier = modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .padding(horizontal = 20.dp, vertical = 6.dp)
                     .swipeToChangeSong(
                         onSwipeNext = { viewModel.playNext() },
                         onSwipePrevious = { viewModel.playPrevious() }
                     ),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 左侧唱片信息区 (占 40% 宽度)
+                // 左侧唱片信息区 (对称均分 50% 空间)
                 Column(
                     modifier = Modifier
-                        .weight(0.40f)
+                        .weight(1f)
                         .fillMaxHeight(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    coverView(Modifier.size(150.dp))
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        coverView()
+                    }
                     trackInfoView()
                     quickActionsView()
                 }
 
-                // 右侧全景歌词与控制区 (占 60% 宽度)
+                // 右侧全景歌词与控制区 (对称均分 50% 空间)
                 Column(
                     modifier = Modifier
-                        .weight(0.60f)
+                        .weight(1f)
                         .fillMaxHeight(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.SpaceBetween
                 ) {
                     lyricsView(Modifier.weight(1f).fillMaxWidth())
-                    Spacer(modifier = Modifier.height(4.dp))
+                    spectrumVisualizerView()
+                    Spacer(modifier = Modifier.height(2.dp))
                     progressSliderView()
                     Spacer(modifier = Modifier.height(4.dp))
                     controlsRowView()
@@ -622,18 +923,18 @@ fun NowPlayingScreen(
                         .padding(top = 0.dp, bottom = 2.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    coverView(Modifier.size(190.dp))
+                    coverView()
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
                 lyricsView(Modifier.fillMaxWidth().height(105.dp))
                 Spacer(modifier = Modifier.height(6.dp))
                 trackInfoView()
-                Spacer(modifier = Modifier.height(8.dp))
-                quickActionsView()
                 Spacer(modifier = Modifier.height(6.dp))
+                quickActionsView()
+                spectrumVisualizerView()
                 progressSliderView()
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 controlsRowView()
                 Spacer(modifier = Modifier.height(20.dp))
             }
@@ -649,7 +950,7 @@ fun NowPlayingScreen(
         ) {
             val currentQueue: List<Song> = playbackState.currentPlaylist
             var queueSearchQuery by remember { mutableStateOf("") }
-            var showCoverInQueue by remember { mutableStateOf(true) }
+            val showCoverInQueue = equalizerUiState.showCoverInQueue
 
             val filteredQueue = remember(currentQueue, queueSearchQuery) {
                 if (queueSearchQuery.isBlank()) {
@@ -705,7 +1006,7 @@ fun NowPlayingScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         // 专辑封面显示/隐藏开关
                         IconButton(
-                            onClick = { showCoverInQueue = !showCoverInQueue },
+                            onClick = { onToggleCoverInQueue(!showCoverInQueue) },
                             modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
@@ -1041,7 +1342,7 @@ fun NowPlayingScreen(
                     Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
                 }
             },
-            containerColor = OrbitTheme.colors.surfaceCard
+            containerColor = OrbitTheme.colors.surfaceDialog
         )
     }
 
@@ -1090,8 +1391,33 @@ fun NowPlayingScreen(
                     Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
                 }
             },
-            containerColor = OrbitTheme.colors.surfaceCard
+            containerColor = OrbitTheme.colors.surfaceDialog
         )
+    }
+
+    // 全屏最大化沉浸大频谱浮层
+    AnimatedVisibility(
+        visible = equalizerUiState.isVisualizerMaximized,
+        enter = fadeIn(tween(300)) + scaleIn(initialScale = 0.96f, animationSpec = tween(300)),
+        exit = fadeOut(tween(250)) + scaleOut(targetScale = 0.96f, animationSpec = tween(250))
+    ) {
+        MaximizedVisualizerOverlay(
+            playbackState = playbackState,
+            visualizerFrame = visualizerFrame,
+            equalizerUiState = equalizerUiState,
+            song = song,
+            onBack = { onToggleVisualizerMaximized(false) },
+            onCycleVisualizerStyle = onCycleVisualizerStyle,
+            onToggleMaximizedShowCover = onToggleMaximizedShowCover,
+            onToggleMaximizedCoverPosition = onToggleMaximizedCoverPosition,
+            onToggleMaximizedShowControls = onToggleMaximizedShowControls,
+            onSetMaximizedCoverAlpha = onSetMaximizedCoverAlpha,
+            onTogglePlay = { viewModel.togglePlayPause() },
+            onPlayNext = { viewModel.playNext() },
+            onPlayPrevious = { viewModel.playPrevious() },
+            onSeekTo = { viewModel.seekTo((it * playbackState.durationMs).toLong()) }
+        )
+    }
     }
 }
 
@@ -1114,6 +1440,8 @@ private fun LuminousGlowingSlider(
     onValueChange: (Float) -> Unit,
     onValueChangeFinished: () -> Unit,
     isPlaying: Boolean,
+    currentPositionMs: Long = 0L,
+    durationMs: Long = 0L,
     trailStyle: String = ProgressTrailStyle.NEON_PULSE.id,
     startWidthDp: Float = 3.8f,
     endWidthDp: Float = 1.2f,
@@ -1122,7 +1450,17 @@ private fun LuminousGlowingSlider(
     color2: Long = 0xFF5E72E4L,
     modifier: Modifier = Modifier
 ) {
-    val progress = value.coerceIn(0f, 1f)
+    var isDragging by remember { mutableStateOf(false) }
+    var dragProgress by remember { mutableFloatStateOf(0f) }
+
+    // 高精度时间戳外推基准点，确保随屏幕 60/120Hz 刷新率无级平滑推移
+    var lastSyncPositionMs by remember { mutableLongStateOf(currentPositionMs) }
+    var lastSyncTimestamp by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
+
+    LaunchedEffect(currentPositionMs, value, isPlaying) {
+        lastSyncPositionMs = if (currentPositionMs > 0L) currentPositionMs else (value * durationMs).toLong()
+        lastSyncTimestamp = android.os.SystemClock.elapsedRealtime()
+    }
 
     // 星光柔和脉冲动画 (缩放速度与旋转速度适度放缓)
     val infiniteTransition = rememberInfiniteTransition(label = "NowPlayingStarAnim")
@@ -1151,7 +1489,7 @@ private fun LuminousGlowingSlider(
         initialValue = 0f,
         targetValue = if (isPlaying) 360f else 0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(8500, easing = LinearEasing),
+            animation = tween(4500, easing = LinearEasing),
             repeatMode = androidx.compose.animation.core.RepeatMode.Restart
         ),
         label = "starRotation"
@@ -1168,6 +1506,17 @@ private fun LuminousGlowingSlider(
         label = "tailRotationPhase"
     )
 
+    // 预分配复用数据缓冲 (完全消除每帧对象分配与 GC 压力)
+    // 霓虹管: 32 段 (33 个点，每点 5 个 Float: x, y, z, alpha, width)
+    val neonSegments = 32
+    val neon1Buf = remember { FloatArray((neonSegments + 1) * 5) }
+    val neon2Buf = remember { FloatArray((neonSegments + 1) * 5) }
+
+    // 彗星双拖尾: 24 段 (25 个点，每点 6 个 Float: x, y, z, u, alpha, width)
+    val cometSegments = 24
+    val comet1Buf = remember { FloatArray((cometSegments + 1) * 6) }
+    val comet2Buf = remember { FloatArray((cometSegments + 1) * 6) }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
@@ -1175,6 +1524,7 @@ private fun LuminousGlowingSlider(
             .pointerInput(Unit) {
                 detectTapGestures { offset ->
                     val newProgress = (offset.x / size.width).coerceIn(0f, 1f)
+                    dragProgress = newProgress
                     onValueChange(newProgress)
                     onValueChangeFinished()
                 }
@@ -1182,19 +1532,22 @@ private fun LuminousGlowingSlider(
             .pointerInput(Unit) {
                 detectDragGestures(
                     onDragStart = { offset ->
-                        val newProgress = (offset.x / size.width).coerceIn(0f, 1f)
-                        onValueChange(newProgress)
+                        isDragging = true
+                        dragProgress = (offset.x / size.width).coerceIn(0f, 1f)
+                        onValueChange(dragProgress)
                     },
                     onDragEnd = {
+                        isDragging = false
                         onValueChangeFinished()
                     },
                     onDragCancel = {
+                        isDragging = false
                         onValueChangeFinished()
                     },
                     onDrag = { change, _ ->
                         change.consume()
-                        val newProgress = (change.position.x / size.width).coerceIn(0f, 1f)
-                        onValueChange(newProgress)
+                        dragProgress = (change.position.x / size.width).coerceIn(0f, 1f)
+                        onValueChange(dragProgress)
                     }
                 )
             },
@@ -1210,7 +1563,19 @@ private fun LuminousGlowingSlider(
             val h = size.height
             val centerY = h / 2f
             val trackHeight = 4.dp.toPx()
-            val thumbX = progress * w
+
+            // 核心平滑进度计算：当未手动拖动且处于播放态时，利用系统真实运行时间戳高频插值推进，彻底消除跳帧感
+            val activeProgress = if (isDragging) {
+                dragProgress.coerceIn(0f, 1f)
+            } else if (isPlaying && durationMs > 0L) {
+                val now = android.os.SystemClock.elapsedRealtime()
+                val elapsed = (now - lastSyncTimestamp).coerceAtLeast(0L)
+                val estimatedMs = (lastSyncPositionMs + elapsed).coerceAtMost(durationMs)
+                (estimatedMs.toFloat() / durationMs).coerceIn(0f, 1f)
+            } else {
+                value.coerceIn(0f, 1f)
+            }
+            val thumbX = activeProgress * w
 
             // 1. 底层暗调透光轨道 (Inactive Track)
             drawRoundRect(
@@ -1223,49 +1588,45 @@ private fun LuminousGlowingSlider(
             // 2. 根据用户设置渲染不同拖尾动效
             when (selectedStyle) {
                 ProgressTrailStyle.NEON_PULSE -> {
-                    // ==================== 样式一：图片同款高能霓虹双发光管 (3D 缠绕立体旋转，纯线条无杂点) ====================
+                    // ==================== 样式一：高能霓虹双发光管 (零对象分配极速绘制) ====================
                     val maxTailLength = 76.dp.toPx()
                     val tailLength = minOf(thumbX, maxTailLength)
 
                     if (tailLength > 3f) {
-                        val maxAmp = orbitRadiusDp.dp.toPx() // 根据用户设置的环绕半径环抱缠绕轨道
+                        val maxAmp = orbitRadiusDp.dp.toPx()
                         val phaseRad = tailRotationPhase * (PI.toFloat() / 180f)
-                        val segments = 48 // 48 级高密度平滑微元，保证线条完全平滑一体，圆润无缝
+                        val startWidthPx = startWidthDp.dp.toPx()
+                        val endWidthPx = endWidthDp.dp.toPx()
+                        val minWidthPx = 0.5f.dp.toPx()
 
-                        class NeonTubeNode(
-                            val x: Float,
-                            val y: Float,
-                            val z: Float,
-                            val u: Float,
-                            val alpha: Float,
-                            val tubeWidth: Float
-                        )
-
-                        fun buildNeonTubeNodes(phaseOffset: Float): List<NeonTubeNode> {
-                            val list = ArrayList<NeonTubeNode>(segments + 1)
-                            for (i in 0..segments) {
-                                val u = i / segments.toFloat() // 0(滑块星核) ~ 1(拖尾尾梢)
+                        // 原地填充缓冲数据 (0 GC Allocation)
+                        fun fillNeon(buf: FloatArray, phaseOffset: Float) {
+                            val pi = PI.toFloat()
+                            for (i in 0..neonSegments) {
+                                val u = i / neonSegments.toFloat()
                                 val x = thumbX - u * tailLength
-                                val envelope = (sin(u * PI.toFloat())).pow(0.85f) * (1f - 0.16f * u)
+                                val envelope = (sin(u * pi)).pow(0.85f) * (1f - 0.16f * u)
                                 val amp = maxAmp * envelope
-                                val theta = phaseRad - u * (3.2f * PI.toFloat()) + phaseOffset
+                                val theta = phaseRad - u * (3.2f * pi) + phaseOffset
                                 val y = centerY + amp * sin(theta)
-                                val z = cos(theta) // 深度: > 0 为前景(穿过轨道正面)，< 0 为后景(穿到轨道背面)
-
+                                val z = cos(theta)
                                 val depthAlpha = 0.65f + 0.35f * ((z + 1f) * 0.5f)
-                                val alpha = (1f - u).pow(1.05f) * twinkleAlpha * depthAlpha
-                                // 霓虹发光管直径：基于用户设定的起点与终点做连续平滑插值，配合三维 z 深度微透视
-                                val baseWidthPx = (startWidthDp * (1f - u) + endWidthDp * u).dp.toPx()
-                                val width = (baseWidthPx * (1f + 0.28f * z)).coerceAtLeast(0.5f.dp.toPx())
-                                list.add(NeonTubeNode(x, y, z, u, alpha.coerceIn(0f, 1f), width))
+                                val alpha = ((1f - u).pow(1.05f) * twinkleAlpha * depthAlpha).coerceIn(0f, 1f)
+                                val baseW = startWidthPx * (1f - u) + endWidthPx * u
+                                val width = (baseW * (1f + 0.28f * z)).coerceAtLeast(minWidthPx)
+
+                                val baseIdx = i * 5
+                                buf[baseIdx] = x
+                                buf[baseIdx + 1] = y
+                                buf[baseIdx + 2] = z
+                                buf[baseIdx + 3] = alpha
+                                buf[baseIdx + 4] = width
                             }
-                            return list
                         }
 
-                        val neonTube1 = buildNeonTubeNodes(0f)            // 线条 1
-                        val neonTube2 = buildNeonTubeNodes(PI.toFloat())  // 线条 2
+                        fillNeon(neon1Buf, 0f)
+                        fillNeon(neon2Buf, PI.toFloat())
 
-                        // 动态派生两条线条各自的高饱和四层发光霓虹调色板
                         val c1 = Color(color1)
                         val c2 = Color(color2)
 
@@ -1279,85 +1640,73 @@ private fun LuminousGlowingSlider(
                         val tube2Solid = androidx.compose.ui.graphics.lerp(c2, Color.White, 0.22f)
                         val tube2Core = androidx.compose.ui.graphics.lerp(c2, Color.White, 0.82f)
 
-                        // 绘制图片同款四层物理发光管 (纯 Color 绘制，稳定高亮，零杂点，通透立体)
-                        fun drawNeonTube(
-                            nodes: List<NeonTubeNode>,
+                        fun drawNeonFromBuf(
+                            buf: FloatArray,
                             isForeground: Boolean,
                             bloomColor: Color,
                             neonColor: Color,
                             solidColor: Color,
                             coreColor: Color
                         ) {
-                            if (nodes.size < 2) return
-                            for (i in 0 until nodes.size - 1) {
-                                val n1 = nodes[i]
-                                val n2 = nodes[i + 1]
-                                val avgZ = (n1.z + n2.z) * 0.5f
-                                val isNodeFg = avgZ >= 0f
-                                if (isNodeFg == isForeground) {
-                                     val segAlpha = ((n1.alpha + n2.alpha) * 0.5f).coerceIn(0f, 1f)
-                                     if (segAlpha > 0.01f) {
-                                         val p1 = Offset(n1.x, n1.y)
-                                         val p2 = Offset(n2.x, n2.y)
-                                         val strokeW = (n1.tubeWidth + n2.tubeWidth) * 0.5f
-                                         val fgFactor = if (isForeground) 1.0f else 0.70f
+                            val fgFactor = if (isForeground) 1.0f else 0.70f
+                            for (i in 0 until neonSegments) {
+                                val idx1 = i * 5
+                                val idx2 = (i + 1) * 5
+                                val z1 = buf[idx1 + 2]
+                                val z2 = buf[idx2 + 2]
+                                val avgZ = (z1 + z2) * 0.5f
+                                val isFg = avgZ >= 0f
+                                if (isFg == isForeground) {
+                                    val a1 = buf[idx1 + 3]
+                                    val a2 = buf[idx2 + 3]
+                                    val segAlpha = ((a1 + a2) * 0.5f).coerceIn(0f, 1f)
+                                    if (segAlpha > 0.01f) {
+                                        val p1 = Offset(buf[idx1], buf[idx1 + 1])
+                                        val p2 = Offset(buf[idx2], buf[idx2 + 1])
+                                        val strokeW = (buf[idx1 + 4] + buf[idx2 + 4]) * 0.5f
 
-                                         // 1. 最外层广域柔光漫射光晕
-                                         drawLine(
-                                             color = bloomColor.copy(alpha = segAlpha * 0.40f * fgFactor),
-                                             start = p1,
-                                             end = p2,
-                                             strokeWidth = strokeW * 2.8f,
-                                             cap = StrokeCap.Round
-                                         )
-                                         // 2. 次外层鲜艳电离辉光
-                                         drawLine(
-                                             color = neonColor.copy(alpha = segAlpha * 0.85f * fgFactor),
-                                             start = p1,
-                                             end = p2,
-                                             strokeWidth = strokeW * 1.55f,
-                                             cap = StrokeCap.Round
-                                         )
-                                         // 3. 第三层高饱和实心发光管壁
-                                         drawLine(
-                                             color = solidColor.copy(alpha = segAlpha * 0.95f * fgFactor),
-                                             start = p1,
-                                             end = p2,
-                                             strokeWidth = strokeW * 0.95f,
-                                             cap = StrokeCap.Round
-                                         )
-                                         // 4. 最内层耀眼纯白高能电弧核心
-                                         drawLine(
-                                             color = coreColor.copy(alpha = segAlpha * 0.98f * fgFactor),
-                                             start = p1,
-                                             end = p2,
-                                             strokeWidth = strokeW * 0.38f,
-                                             cap = StrokeCap.Round
-                                         )
-                                     }
+                                        // 1. 最外层广域柔光漫射光晕
+                                        drawLine(
+                                            color = bloomColor.copy(alpha = segAlpha * 0.40f * fgFactor),
+                                            start = p1,
+                                            end = p2,
+                                            strokeWidth = strokeW * 2.8f,
+                                            cap = StrokeCap.Round
+                                        )
+                                        // 2. 次外层鲜艳电离辉光
+                                        drawLine(
+                                            color = neonColor.copy(alpha = segAlpha * 0.85f * fgFactor),
+                                            start = p1,
+                                            end = p2,
+                                            strokeWidth = strokeW * 1.55f,
+                                            cap = StrokeCap.Round
+                                        )
+                                        // 3. 第三层实心发光管壁
+                                        drawLine(
+                                            color = solidColor.copy(alpha = segAlpha * 0.95f * fgFactor),
+                                            start = p1,
+                                            end = p2,
+                                            strokeWidth = strokeW * 0.95f,
+                                            cap = StrokeCap.Round
+                                        )
+                                        // 4. 最内层耀眼纯白电弧核心
+                                        drawLine(
+                                            color = coreColor.copy(alpha = segAlpha * 0.98f * fgFactor),
+                                            start = p1,
+                                            end = p2,
+                                            strokeWidth = strokeW * 0.38f,
+                                            cap = StrokeCap.Round
+                                        )
+                                    }
                                 }
                             }
                         }
 
-                        // 1. 霓虹双线条·后景绘制 (穿插在进度条后方，背光自然沉降)
-                        drawNeonTube(
-                            neonTube1,
-                            isForeground = false,
-                            bloomColor = tube1Bloom,
-                            neonColor = tube1Neon,
-                            solidColor = tube1Solid,
-                            coreColor = tube1Core
-                        )
-                        drawNeonTube(
-                            neonTube2,
-                            isForeground = false,
-                            bloomColor = tube2Bloom,
-                            neonColor = tube2Neon,
-                            solidColor = tube2Solid,
-                            coreColor = tube2Core
-                        )
+                        // 霓虹双线条·后景
+                        drawNeonFromBuf(neon1Buf, false, tube1Bloom, tube1Neon, tube1Solid, tube1Core)
+                        drawNeonFromBuf(neon2Buf, false, tube2Bloom, tube2Neon, tube2Solid, tube2Core)
 
-                        // 2. 已播放流光基座轨道 (作为底衬被前景线条压过)
+                        // 流光轨道基座
                         if (thumbX > 0f) {
                             drawRoundRect(
                                 brush = Brush.horizontalGradient(
@@ -1375,23 +1724,9 @@ private fun LuminousGlowingSlider(
                             )
                         }
 
-                        // 3. 霓虹双线条·前景绘制 (高亮跨越在轨道正面，通透饱满，纯线条无杂点)
-                        drawNeonTube(
-                            neonTube1,
-                            isForeground = true,
-                            bloomColor = tube1Bloom,
-                            neonColor = tube1Neon,
-                            solidColor = tube1Solid,
-                            coreColor = tube1Core
-                        )
-                        drawNeonTube(
-                            neonTube2,
-                            isForeground = true,
-                            bloomColor = tube2Bloom,
-                            neonColor = tube2Neon,
-                            solidColor = tube2Solid,
-                            coreColor = tube2Core
-                        )
+                        // 霓虹双线条·前景
+                        drawNeonFromBuf(neon1Buf, true, tube1Bloom, tube1Neon, tube1Solid, tube1Core)
+                        drawNeonFromBuf(neon2Buf, true, tube2Bloom, tube2Neon, tube2Solid, tube2Core)
                     } else if (thumbX > 0f) {
                         drawRoundRect(
                             brush = Brush.horizontalGradient(
@@ -1411,128 +1746,135 @@ private fun LuminousGlowingSlider(
                 }
 
                 ProgressTrailStyle.COMET_HELIX -> {
-                    // ==================== 样式二：彗星双拖尾 3D 缠绕模型 (原有样式) ====================
+                    // ==================== 样式二：彗星双拖尾 3D 缠绕模型 (零内存分配) ====================
                     val maxTailLength = 68.dp.toPx()
                     val tailLength = minOf(thumbX, maxTailLength)
-                    val segments = 32
                     val maxAmp = orbitRadiusDp.dp.toPx()
                     val phaseRad = tailRotationPhase * (PI.toFloat() / 180f)
+                    val startWidthPx = startWidthDp.dp.toPx()
+                    val endWidthPx = endWidthDp.dp.toPx()
 
-                    class CometNode(
-                        val x: Float,
-                        val y: Float,
-                        val z: Float,
-                        val u: Float,
-                        val alpha: Float,
-                        val width: Float
-                    )
+                    if (tailLength > 3f) {
+                        val pi = PI.toFloat()
+                        fun fillComet(buf: FloatArray, phaseOffset: Float) {
+                            for (i in 0..cometSegments) {
+                                val u = i / cometSegments.toFloat()
+                                val x = thumbX - u * tailLength
+                                val envelope = (sin(u * pi)).pow(0.85f) * (1f - 0.2f * u)
+                                val amp = maxAmp * envelope
+                                val theta = phaseRad - u * (3.0f * pi) + phaseOffset
+                                val y = centerY + amp * sin(theta)
+                                val z = cos(theta)
 
-                    fun buildCometNodes(phaseOffset: Float): List<CometNode> {
-                        if (tailLength < 3f) return emptyList()
-                        val list = ArrayList<CometNode>(segments + 1)
-                        for (i in 0..segments) {
-                            val u = i / segments.toFloat()
-                            val x = thumbX - u * tailLength
-                            val envelope = (sin(u * PI.toFloat())).pow(0.85f) * (1f - 0.2f * u)
-                            val amp = maxAmp * envelope
-                            val theta = phaseRad - u * (3.0f * PI.toFloat()) + phaseOffset
-                            val y = centerY + amp * sin(theta)
-                            val z = cos(theta)
+                                val depthAlpha = 0.55f + 0.45f * ((z + 1f) * 0.5f)
+                                val alpha = ((1f - u).pow(1.1f) * twinkleAlpha * depthAlpha).coerceIn(0f, 1f)
+                                val baseW = startWidthPx * (1f - u) + endWidthPx * u
+                                val strokeW = (baseW * (1f + 0.25f * z)).coerceAtLeast(0.5f)
 
-                            val depthAlpha = 0.55f + 0.45f * ((z + 1f) * 0.5f)
-                            val alpha = (1f - u).pow(1.1f) * twinkleAlpha * depthAlpha
-                            val baseW = (startWidthDp * (1f - u) + endWidthDp * u).dp.toPx()
-                            val strokeW = (baseW * (1f + 0.25f * z)).coerceAtLeast(0.5f)
-                            list.add(CometNode(x, y, z, u, alpha.coerceIn(0f, 1f), strokeW))
+                                val baseIdx = i * 6
+                                buf[baseIdx] = x
+                                buf[baseIdx + 1] = y
+                                buf[baseIdx + 2] = z
+                                buf[baseIdx + 3] = u
+                                buf[baseIdx + 4] = alpha
+                                buf[baseIdx + 5] = strokeW
+                            }
                         }
-                        return list
-                    }
 
-                    val trail1 = buildCometNodes(0f)
-                    val trail2 = buildCometNodes(PI.toFloat())
+                        fillComet(comet1Buf, 0f)
+                        fillComet(comet2Buf, PI.toFloat())
 
-                    val cometC1 = Color(color1)
-                    val cometC2 = Color(color2)
+                        val cometC1 = Color(color1)
+                        val cometC2 = Color(color2)
 
-                    fun drawTrail(nodes: List<CometNode>, isForeground: Boolean, coreColor: Color, glowColor: Color) {
-                        if (nodes.size < 2) return
-                        for (i in 0 until nodes.size - 1) {
-                            val n1 = nodes[i]
-                            val n2 = nodes[i + 1]
-                            val avgZ = (n1.z + n2.z) * 0.5f
-                            val isNodeFg = avgZ >= 0f
-                            if (isNodeFg == isForeground) {
-                                val segAlpha = ((n1.alpha + n2.alpha) * 0.5f).coerceIn(0f, 1f)
-                                if (segAlpha > 0.02f) {
-                                    drawLine(
-                                        color = glowColor.copy(alpha = segAlpha * 0.45f),
-                                        start = Offset(n1.x, n1.y),
-                                        end = Offset(n2.x, n2.y),
-                                        strokeWidth = (n1.width + n2.width) * 1.5f,
-                                        cap = StrokeCap.Round
-                                    )
-                                    drawLine(
-                                        color = coreColor.copy(alpha = segAlpha * 0.95f),
-                                        start = Offset(n1.x, n1.y),
-                                        end = Offset(n2.x, n2.y),
-                                        strokeWidth = (n1.width + n2.width) * 0.55f,
-                                        cap = StrokeCap.Round
-                                    )
+                        fun drawCometFromBuf(buf: FloatArray, isForeground: Boolean, coreColor: Color, glowColor: Color) {
+                            for (i in 0 until cometSegments) {
+                                val idx1 = i * 6
+                                val idx2 = (i + 1) * 6
+                                val z1 = buf[idx1 + 2]
+                                val z2 = buf[idx2 + 2]
+                                val avgZ = (z1 + z2) * 0.5f
+                                val isFg = avgZ >= 0f
+                                if (isFg == isForeground) {
+                                    val segAlpha = ((buf[idx1 + 4] + buf[idx2 + 4]) * 0.5f).coerceIn(0f, 1f)
+                                    if (segAlpha > 0.02f) {
+                                        val p1 = Offset(buf[idx1], buf[idx1 + 1])
+                                        val p2 = Offset(buf[idx2], buf[idx2 + 1])
+                                        val strokeW = (buf[idx1 + 5] + buf[idx2 + 5]) * 0.5f
+                                        drawLine(
+                                            color = glowColor.copy(alpha = segAlpha * 0.45f),
+                                            start = p1,
+                                            end = p2,
+                                            strokeWidth = strokeW * 1.5f,
+                                            cap = StrokeCap.Round
+                                        )
+                                        drawLine(
+                                            color = coreColor.copy(alpha = segAlpha * 0.95f),
+                                            start = p1,
+                                            end = p2,
+                                            strokeWidth = strokeW * 0.55f,
+                                            cap = StrokeCap.Round
+                                        )
+                                    }
+                                }
+                            }
+
+                            val sampleIndices = intArrayOf(2, 6, 11, 17)
+                            for (idx in sampleIndices) {
+                                if (idx <= cometSegments) {
+                                    val baseIdx = idx * 6
+                                    val z = buf[baseIdx + 2]
+                                    val isFg = z >= 0f
+                                    val a = buf[baseIdx + 4]
+                                    if (isFg == isForeground && a > 0.05f) {
+                                        val u = buf[baseIdx + 3]
+                                        val r = (if (isFg) 1.8.dp.toPx() else 1.1.dp.toPx()) * (1f - u * 0.5f)
+                                        val center = Offset(buf[baseIdx], buf[baseIdx + 1])
+                                        drawCircle(
+                                            color = glowColor.copy(alpha = a * 0.65f),
+                                            radius = r * 1.8f,
+                                            center = center
+                                        )
+                                        drawCircle(
+                                            color = Color.White.copy(alpha = a * 0.95f),
+                                            radius = r,
+                                            center = center
+                                        )
+                                    }
                                 }
                             }
                         }
 
-                        val sampleIndices = intArrayOf(2, 6, 11, 17, 24)
-                        for (idx in sampleIndices) {
-                            if (idx < nodes.size) {
-                                val node = nodes[idx]
-                                val isNodeFg = node.z >= 0f
-                                if (isNodeFg == isForeground && node.alpha > 0.05f) {
-                                    val r = (if (isNodeFg) 1.8.dp.toPx() else 1.1.dp.toPx()) * (1f - node.u * 0.5f)
-                                    drawCircle(
-                                        color = glowColor.copy(alpha = node.alpha * 0.65f),
-                                        radius = r * 1.8f,
-                                        center = Offset(node.x, node.y)
-                                    )
-                                    drawCircle(
-                                        color = Color.White.copy(alpha = node.alpha * 0.95f),
-                                        radius = r,
-                                        center = Offset(node.x, node.y)
-                                    )
-                                }
-                            }
-                        }
-                    }
+                        // 彗星双拖尾·后景
+                        drawCometFromBuf(comet1Buf, false, Color.White, cometC1)
+                        drawCometFromBuf(comet2Buf, false, androidx.compose.ui.graphics.lerp(cometC2, Color.White, 0.7f), cometC2)
 
-                    // 彗星双拖尾·后景
-                    drawTrail(trail1, isForeground = false, coreColor = Color.White, glowColor = cometC1)
-                    drawTrail(trail2, isForeground = false, coreColor = androidx.compose.ui.graphics.lerp(cometC2, Color.White, 0.7f), glowColor = cometC2)
-
-                    // 已播放流光轨道
-                    if (thumbX > 0f) {
-                        drawRoundRect(
-                            brush = Brush.horizontalGradient(
-                                listOf(
-                                    primaryColor.copy(alpha = 0.75f),
-                                    primaryColor,
-                                    secondaryColor
+                        // 流光基座轨道
+                        if (thumbX > 0f) {
+                            drawRoundRect(
+                                brush = Brush.horizontalGradient(
+                                    listOf(
+                                        primaryColor.copy(alpha = 0.75f),
+                                        primaryColor,
+                                        secondaryColor
+                                    ),
+                                    startX = 0f,
+                                    endX = thumbX.coerceAtLeast(1f)
                                 ),
-                                startX = 0f,
-                                endX = thumbX.coerceAtLeast(1f)
-                            ),
-                            topLeft = Offset(0f, centerY - trackHeight / 2f),
-                            size = androidx.compose.ui.geometry.Size(thumbX, trackHeight),
-                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackHeight / 2f, trackHeight / 2f)
-                        )
-                    }
+                                topLeft = Offset(0f, centerY - trackHeight / 2f),
+                                size = androidx.compose.ui.geometry.Size(thumbX, trackHeight),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackHeight / 2f, trackHeight / 2f)
+                            )
+                        }
 
-                    // 彗星双拖尾·前景
-                    drawTrail(trail1, isForeground = true, coreColor = Color.White, glowColor = cometC1)
-                    drawTrail(trail2, isForeground = true, coreColor = androidx.compose.ui.graphics.lerp(cometC2, Color.White, 0.7f), glowColor = cometC2)
+                        // 彗星双拖尾·前景
+                        drawCometFromBuf(comet1Buf, true, Color.White, cometC1)
+                        drawCometFromBuf(comet2Buf, true, androidx.compose.ui.graphics.lerp(cometC2, Color.White, 0.7f), cometC2)
+                    }
                 }
 
                 ProgressTrailStyle.MINIMAL -> {
-                    // ==================== 样式三：经典极简 (仅保留流光轨道，无多余拖尾) ====================
+                    // ==================== 样式三：经典极简 ====================
                     if (thumbX > 0f) {
                         drawRoundRect(
                             brush = Brush.horizontalGradient(
@@ -1554,7 +1896,7 @@ private fun LuminousGlowingSlider(
 
             val thumbPos = Offset(thumbX, centerY)
 
-            // 5. 漫反射外散微光晕 (光晕半径适度减少至 15dp)
+            // 3. 漫反射外散微光晕
             val haloRadius = 15.dp.toPx() * twinkleScale
             drawCircle(
                 brush = Brush.radialGradient(
@@ -1570,7 +1912,7 @@ private fun LuminousGlowingSlider(
                 center = thumbPos
             )
 
-            // 4. 旋转四角星芒十字光辉 (针长减至 8.5dp，线宽减至 1.4dp)
+            // 4. 旋转四角星芒十字光辉
             rotate(degrees = starRotation, pivot = thumbPos) {
                 val rayLength = 8.5.dp.toPx() * twinkleScale
                 val rayWidth = 1.4.dp.toPx()
@@ -1631,3 +1973,418 @@ private fun LuminousGlowingSlider(
         }
     }
 }
+
+/**
+ * 全屏最大化沉浸大频谱视图 (Maximized Visualizer Overlay)
+ * 1. 背景铺满全尺寸动态频谱，支持自适应单条宽度与自定义颜色
+ * 2. 悬浮专辑封面：支持显隐控制、居左/居右自由切换
+ * 3. 悬浮底部控制栏：支持显隐控制、流畅进度拖拽与切歌控制
+ * 4. 顶部悬浮操作胶囊栏：一键开关封面、切换位置、开关控制栏、切换样式、退出全屏
+ */
+@Composable
+private fun MaximizedVisualizerOverlay(
+    playbackState: PlaybackState,
+    visualizerFrame: VisualizerFrame,
+    equalizerUiState: EqualizerUiState,
+    song: Song?,
+    onBack: () -> Unit,
+    onCycleVisualizerStyle: (() -> Unit)?,
+    onToggleMaximizedShowCover: (Boolean) -> Unit,
+    onToggleMaximizedCoverPosition: (Boolean) -> Unit,
+    onToggleMaximizedShowControls: (Boolean) -> Unit,
+    onSetMaximizedCoverAlpha: (Float) -> Unit,
+    onTogglePlay: () -> Unit,
+    onPlayNext: () -> Unit,
+    onPlayPrevious: () -> Unit,
+    onSeekTo: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val currentStyle = if (equalizerUiState.visualizerStyle == VisualizerStyle.OFF) {
+        VisualizerStyle.BARS_WITH_PEAKS
+    } else {
+        equalizerUiState.visualizerStyle
+    }
+
+    var isDraggingSlider by remember { mutableStateOf(false) }
+    var draggingProgress by remember { mutableFloatStateOf(0f) }
+    val progress = if (isDraggingSlider) draggingProgress else playbackState.progress
+    val currentPosMs = if (isDraggingSlider) (draggingProgress * playbackState.durationMs).toLong() else playbackState.currentPositionMs
+
+    var showTopControlBar by remember { mutableStateOf(true) }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { showTopControlBar = !showTopControlBar }
+            )
+    ) {
+        // 0. 全局沉浸背景层 (彻底遮挡普通播放页面的大封面与按钮，呈现纯净壁纸/暗黑底色)
+        AppBackgroundLayer(
+            customBackgroundPath = equalizerUiState.customBackgroundPath,
+            blurRadius = equalizerUiState.backgroundBlurRadius,
+            blurStyle = equalizerUiState.backgroundBlurStyle,
+            dimAlpha = equalizerUiState.backgroundDimAlpha
+        )
+
+        // 1. 全屏底层动态频谱渲染 (完全触底与横向铺满，点击屏幕任意位置可显/隐上方设置条)
+        PowerampSpectrumVisualizer(
+            magnitudes = visualizerFrame.rawMagnitudes,
+            peaks = visualizerFrame.peakCaps,
+            style = currentStyle,
+            colorScheme = equalizerUiState.visualizerColorScheme,
+            peakDecayEnabled = equalizerUiState.visualizerPeakDecayEnabled,
+            isPlaying = playbackState.isPlaying,
+            barWidthDp = equalizerUiState.visualizerBarWidthDp,
+            barAlpha = equalizerUiState.visualizerBarAlpha,
+            customColor = equalizerUiState.visualizerCustomColor,
+            customColor2 = equalizerUiState.visualizerCustomColor2,
+            isSingleColor = equalizerUiState.visualizerSingleColor,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(
+                    start = 0.dp,
+                    end = 0.dp,
+                    top = if (isLandscape) 40.dp else 52.dp,
+                    bottom = 0.dp
+                ),
+            onClick = { showTopControlBar = !showTopControlBar }
+        )
+
+        // 2. 悬浮专辑封面 (支持居左/居右与自定义透明度)
+        AnimatedVisibility(
+            visible = equalizerUiState.maximizedShowCover,
+            enter = fadeIn(tween(250)) + scaleIn(initialScale = 0.85f, animationSpec = tween(250)),
+            exit = fadeOut(tween(200)) + scaleOut(targetScale = 0.85f, animationSpec = tween(200)),
+            modifier = Modifier
+                .align(
+                    if (equalizerUiState.maximizedCoverOnRight) Alignment.CenterEnd else Alignment.CenterStart
+                )
+                .padding(
+                    start = if (equalizerUiState.maximizedCoverOnRight) 0.dp else 18.dp,
+                    end = if (equalizerUiState.maximizedCoverOnRight) 18.dp else 0.dp,
+                    bottom = if (equalizerUiState.maximizedShowControls) (if (isLandscape) 48.dp else 84.dp) else 0.dp
+                )
+        ) {
+            val coverSize = if (isLandscape) 210.dp else 240.dp
+            Box(
+                modifier = Modifier
+                    .size(coverSize)
+                    .alpha(equalizerUiState.maximizedCoverAlpha)
+                    .shadow(24.dp, RoundedCornerShape(22.dp), spotColor = OrbitTheme.colors.primary.copy(alpha = 0.50f * equalizerUiState.maximizedCoverAlpha))
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(Color(0xFF1A1A26).copy(alpha = equalizerUiState.maximizedCoverAlpha))
+                    .border(1.5.dp, OrbitTheme.colors.primary.copy(alpha = 0.38f * equalizerUiState.maximizedCoverAlpha), RoundedCornerShape(22.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (song?.albumArtUri != null) {
+                    AsyncImage(
+                        model = song.albumArtUri,
+                        contentDescription = song.album,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.MusicNote,
+                        contentDescription = null,
+                        tint = OrbitTheme.colors.primary.copy(alpha = 0.6f),
+                        modifier = Modifier.size(56.dp)
+                    )
+                }
+            }
+        }
+
+        // 3. 顶部悬浮操作胶囊栏 (支持点击屏幕平滑显示/隐藏)
+        AnimatedVisibility(
+            visible = showTopControlBar,
+            enter = slideInVertically(tween(250)) { -it } + fadeIn(tween(200)),
+            exit = slideOutVertically(tween(200)) { -it } + fadeOut(tween(150)),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = if (isLandscape) 10.dp else 16.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(26.dp),
+                color = Color(0xDD181826),
+                shadowElevation = 8.dp,
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x33FFFFFF)),
+                modifier = Modifier
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // 开关封面
+                    IconButton(
+                        onClick = { onToggleMaximizedShowCover(!equalizerUiState.maximizedShowCover) },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (equalizerUiState.maximizedShowCover) Icons.Default.Image else Icons.Default.HideImage,
+                            contentDescription = stringResource(if (equalizerUiState.maximizedShowCover) R.string.maximized_hide_cover else R.string.maximized_show_cover),
+                            tint = if (equalizerUiState.maximizedShowCover) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // 切换封面位置 (居左 / 居右，仅在显示封面时出现)
+                    if (equalizerUiState.maximizedShowCover) {
+                        IconButton(
+                            onClick = { onToggleMaximizedCoverPosition(!equalizerUiState.maximizedCoverOnRight) },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (equalizerUiState.maximizedCoverOnRight) Icons.Default.FormatAlignRight else Icons.Default.FormatAlignLeft,
+                                contentDescription = stringResource(R.string.maximized_cover_position),
+                                tint = OrbitTheme.colors.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        // 调节封面透明度 (循环切换 100% -> 75% -> 50% -> 25%)
+                        IconButton(
+                            onClick = {
+                                val nextAlpha = when {
+                                    equalizerUiState.maximizedCoverAlpha > 0.85f -> 0.75f
+                                    equalizerUiState.maximizedCoverAlpha > 0.60f -> 0.50f
+                                    equalizerUiState.maximizedCoverAlpha > 0.35f -> 0.25f
+                                    else -> 1.0f
+                                }
+                                onSetMaximizedCoverAlpha(nextAlpha)
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Opacity,
+                                contentDescription = stringResource(R.string.maximized_cover_alpha),
+                                tint = OrbitTheme.colors.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    // 开关底部播放控件
+                    IconButton(
+                        onClick = { onToggleMaximizedShowControls(!equalizerUiState.maximizedShowControls) },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (equalizerUiState.maximizedShowControls) Icons.Default.PlayCircle else Icons.Default.PlayDisabled,
+                            contentDescription = stringResource(if (equalizerUiState.maximizedShowControls) R.string.maximized_hide_controls else R.string.maximized_show_controls),
+                            tint = if (equalizerUiState.maximizedShowControls) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // 频谱样式切换药丸
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = OrbitTheme.colors.primary.copy(alpha = 0.15f),
+                        modifier = Modifier.clickable { onCycleVisualizerStyle?.invoke() }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.GraphicEq,
+                                contentDescription = null,
+                                tint = OrbitTheme.colors.primary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            val styleText = when (currentStyle) {
+                                VisualizerStyle.BARS_WITH_PEAKS -> stringResource(R.string.visualizer_style_bars_with_peaks)
+                                VisualizerStyle.AURORA_MOUNTAIN -> stringResource(R.string.visualizer_style_aurora_mountain)
+                                VisualizerStyle.MIRRORED_BARS -> stringResource(R.string.visualizer_style_mirrored_bars)
+                                VisualizerStyle.OFF -> stringResource(R.string.visualizer_style_off)
+                            }
+                            Text(
+                                text = styleText,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = OrbitTheme.colors.primary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(2.dp))
+
+                    // 退出最大化全屏按钮
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FullscreenExit,
+                            contentDescription = stringResource(R.string.btn_cancel),
+                            tint = OrbitTheme.colors.textPrimary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // 4. 底部悬浮播放控制卡片 (纯净无背景，直接悬浮在动态频谱之上)
+        AnimatedVisibility(
+            visible = equalizerUiState.maximizedShowControls,
+            enter = slideInVertically(tween(250)) { height -> height } + fadeIn(tween(200)),
+            exit = slideOutVertically(tween(200)) { height -> height } + fadeOut(tween(150)),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(horizontal = if (isLandscape) 48.dp else 16.dp, vertical = 12.dp)
+                .widthIn(max = 580.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {}
+                    )
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                // 歌曲信息行：当封面在左边显示时，歌曲名称和作者在右边显示
+                val isCoverOnLeft = equalizerUiState.maximizedShowCover && !equalizerUiState.maximizedCoverOnRight
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = if (isCoverOnLeft) Arrangement.End else Arrangement.Start
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = if (isCoverOnLeft) Alignment.End else Alignment.Start
+                    ) {
+                        Text(
+                            text = song?.title ?: "No Song",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = if (isCoverOnLeft) TextAlign.End else TextAlign.Start,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            text = song?.artist ?: "Unknown Artist",
+                            fontSize = 11.sp,
+                            color = Color.White.copy(alpha = 0.7f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = if (isCoverOnLeft) TextAlign.End else TextAlign.Start,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // 进度条与时间
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = formatTime(currentPosMs),
+                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.75f)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    LuminousGlowingSlider(
+                        value = progress,
+                        onValueChange = {
+                            isDraggingSlider = true
+                            draggingProgress = it
+                        },
+                        onValueChangeFinished = {
+                            isDraggingSlider = false
+                            onSeekTo(draggingProgress)
+                        },
+                        isPlaying = playbackState.isPlaying,
+                        currentPositionMs = currentPosMs,
+                        durationMs = playbackState.durationMs,
+                        trailStyle = equalizerUiState.progressTrailStyle,
+                        startWidthDp = equalizerUiState.trailStartWidth,
+                        endWidthDp = equalizerUiState.trailEndWidth,
+                        orbitRadiusDp = equalizerUiState.trailOrbitRadius,
+                        color1 = equalizerUiState.trailColor1,
+                        color2 = equalizerUiState.trailColor2,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = formatTime(playbackState.durationMs),
+                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.75f)
+                    )
+                }
+
+                // 核心播放控制按钮
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 2.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onPlayPrevious,
+                        modifier = Modifier.size(42.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SkipPrevious,
+                            contentDescription = "Previous",
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(18.dp))
+
+                    Surface(
+                        shape = CircleShape,
+                        color = OrbitTheme.colors.primary,
+                        shadowElevation = 8.dp,
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clickable { onTogglePlay() }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
+                                tint = Color.White,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(18.dp))
+
+                    IconButton(
+                        onClick = onPlayNext,
+                        modifier = Modifier.size(42.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SkipNext,
+                            contentDescription = "Next",
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+

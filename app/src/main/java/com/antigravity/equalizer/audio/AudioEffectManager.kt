@@ -63,13 +63,16 @@ class AudioEffectManager private constructor(private val context: Context) {
         nativeDSP.setLimiter(false)
     }
 
+    fun isSessionAttached(sessionId: Int): Boolean {
+        return activeSessions.containsKey(sessionId)
+    }
+
     /**
      * 为指定 AudioSessionId 挂载音效
      */
     @Synchronized
     fun attachSession(sessionId: Int) {
         if (activeSessions.containsKey(sessionId)) {
-            Log.d(TAG, "AudioSession $sessionId is already attached.")
             return
         }
 

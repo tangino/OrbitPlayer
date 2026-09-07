@@ -59,6 +59,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val libraryUiState: StateFlow<LibraryUiState> = _libraryUiState.asStateFlow()
 
     val playbackState: StateFlow<PlaybackState> = playerManager.playbackState
+    val visualizerFlow = playerManager.visualizerManager.visualizerFlow
     val isScanning: StateFlow<Boolean> = repository.isScanning
 
     val allSongs: StateFlow<List<Song>> = repository.allSongs
