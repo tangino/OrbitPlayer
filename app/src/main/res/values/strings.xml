@@ -43,6 +43,8 @@
     <!-- Settings Items -->
     <string name="launch_as_equalizer_only_title">Launch as Equalizer Only</string>
     <string name="launch_as_equalizer_only_subtitle">Directly open the equalizer configuration screen when starting the application</string>
+    <string name="persistent_mini_player_title">Persistent Mini Player</string>
+    <string name="persistent_mini_player_subtitle">Keep mini player bar visible at the bottom of all screens (except when now playing is expanded)</string>
     <string name="language_title">Display Language</string>
     <string name="language_subtitle">Change application display language</string>
     <string name="language_system">Follow System</string>
@@ -54,6 +56,18 @@
     <string name="theme_system">Follow System</string>
     <string name="theme_dark">Dark Theme</string>
     <string name="theme_light">Light Theme</string>
+
+    <string name="progress_trail_style_title">Progress Trail Style</string>
+    <string name="progress_trail_style_subtitle">Visual trail effect behind progress thumb on now playing screen</string>
+    <string name="trail_style_neon_pulse">Smooth Curve</string>
+    <string name="trail_style_comet_helix">Dotted Curve</string>
+    <string name="trail_style_minimal">Classic Minimal (No Trail)</string>
+    <string name="trail_start_width_title">Trail Start Width (Thumb)</string>
+    <string name="trail_end_width_title">Trail End Width (Tail Tip)</string>
+    <string name="trail_radius_title">Trail Orbit Radius</string>
+    <string name="trail_color1_title">Trail 1 Color (Primary)</string>
+    <string name="trail_color2_title">Trail 2 Color (Secondary)</string>
+    <string name="trail_reset_defaults">Reset Trail Settings</string>
 
     <string name="sample_rate_title">Sample Rate</string>
     <string name="sample_rate_subtitle">Target DSP processing rate</string>

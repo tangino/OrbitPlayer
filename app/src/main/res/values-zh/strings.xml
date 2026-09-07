@@ -43,6 +43,8 @@
     <!-- Settings Items -->
     <string name="launch_as_equalizer_only_title">仅作为均衡器启动</string>
     <string name="launch_as_equalizer_only_subtitle">启动程序时直接进入均衡器配置界面，隐藏音乐库主界面</string>
+    <string name="persistent_mini_player_title">播放条常驻所有页面</string>
+    <string name="persistent_mini_player_subtitle">在媒体库、均衡器及设置中心等页面底部始终常驻播放控制栏 (展开全屏播放页除外)</string>
     <string name="language_title">显示语言</string>
     <string name="language_subtitle">自定义切换应用界面的语言</string>
     <string name="language_system">跟随系统</string>
@@ -54,6 +56,18 @@
     <string name="theme_system">跟随系统</string>
     <string name="theme_dark">深色模式</string>
     <string name="theme_light">浅色模式</string>
+
+    <string name="progress_trail_style_title">播放进度条拖尾样式</string>
+    <string name="progress_trail_style_subtitle">自定义正在播放界面进度滑块左侧的流光动效</string>
+    <string name="trail_style_neon_pulse">平滑曲线</string>
+    <string name="trail_style_comet_helix">点阵曲线</string>
+    <string name="trail_style_minimal">经典极简 (无拖尾)</string>
+    <string name="trail_start_width_title">拖尾起点粗细 (滑块端)</string>
+    <string name="trail_end_width_title">拖尾终点粗细 (尾梢端)</string>
+    <string name="trail_radius_title">拖尾半径 (线条距离进度条)</string>
+    <string name="trail_color1_title">拖尾 1 颜色 (主线条)</string>
+    <string name="trail_color2_title">拖尾 2 颜色 (副线条)</string>
+    <string name="trail_reset_defaults">重置拖尾为默认</string>
 
     <string name="sample_rate_title">DSP 采样率</string>
     <string name="sample_rate_subtitle">目标高保真音频处理采样率</string>

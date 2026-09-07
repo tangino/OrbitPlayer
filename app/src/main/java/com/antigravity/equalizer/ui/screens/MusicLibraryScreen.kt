@@ -179,20 +179,6 @@ fun MusicLibraryScreen(
     val artistsListState = rememberLazyListState()
     val playlistsListState = rememberLazyListState()
 
-    // 监听列表滚动状态：滚动时自动隐藏下方播放 Dock，停止时自动浮现
-    val isAnyScrolling by remember {
-        derivedStateOf {
-            songsGridHolder.isScrollInProgress ||
-                    foldersListState.isScrollInProgress ||
-                    folderSongsGridHolder.isScrollInProgress ||
-                    albumsGridHolder.isScrollInProgress ||
-                    albumSongsGridHolder.isScrollInProgress ||
-                    artistsListState.isScrollInProgress ||
-                    artistSongsGridHolder.isScrollInProgress ||
-                    playlistsListState.isScrollInProgress ||
-                    playlistSongsListState.isScrollInProgress
-        }
-    }
 
     // 1. 全屏播放页展开状态 -> 侧滑返回收起全屏播放页
     BackHandler(enabled = libraryState.isNowPlayingExpanded) {
@@ -1140,31 +1126,7 @@ fun MusicLibraryScreen(
             }
         }
 
-            // 底部常驻 macOS Dock 播放条：列表滑动时自动平滑隐藏，停止时自动浮现
-            if (playbackState.currentSong != null) {
-                AnimatedVisibility(
-                    visible = !isAnyScrolling,
-                    enter = slideInVertically(
-                        initialOffsetY = { it },
-                        animationSpec = tween(240)
-                    ) + fadeIn(animationSpec = tween(200)),
-                    exit = slideOutVertically(
-                        targetOffsetY = { it },
-                        animationSpec = tween(200)
-                    ) + fadeOut(animationSpec = tween(160)),
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .widthIn(max = 680.dp)
-                ) {
-                    MiniPlayerBar(
-                        playbackState = playbackState,
-                        onTogglePlay = { viewModel.togglePlayPause() },
-                        onPlayNext = { viewModel.playNext() },
-                        onPlayPrevious = { viewModel.playPrevious() },
-                        onClick = { viewModel.setNowPlayingExpanded(true) }
-                    )
-                }
-            }
+
         }
     }
 
@@ -1645,19 +1607,7 @@ fun MusicLibraryScreen(
         }
     }
 
-    // 全屏正在播放页面展开过渡
-    AnimatedVisibility(
-        visible = libraryState.isNowPlayingExpanded,
-        enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-        exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
-    ) {
-        NowPlayingScreen(
-            viewModel = viewModel,
-            equalizerUiState = equalizerUiState,
-            onBack = { viewModel.setNowPlayingExpanded(false) },
-            onOpenEqualizer = onOpenEqualizer
-        )
-    }
+
 }
 
 @Composable

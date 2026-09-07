@@ -2,10 +2,12 @@ package com.antigravity.equalizer.ui.screens
 
 import android.content.Intent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -111,6 +113,129 @@ fun SettingsScreen(
                 }
             }
 
+            // 0.1.1 播放进度条拖尾样式设置与个性化调节
+            item {
+                SettingsSectionHeader(stringResource(R.string.progress_trail_style_title))
+                SettingsCard {
+                    val trailOptions = listOf(
+                        com.antigravity.equalizer.data.model.ProgressTrailStyle.NEON_PULSE.id to stringResource(R.string.trail_style_neon_pulse),
+                        com.antigravity.equalizer.data.model.ProgressTrailStyle.COMET_HELIX.id to stringResource(R.string.trail_style_comet_helix),
+                        com.antigravity.equalizer.data.model.ProgressTrailStyle.MINIMAL.id to stringResource(R.string.trail_style_minimal)
+                    )
+                    val currentTrailLabel = trailOptions.find { it.first == uiState.progressTrailStyle }?.second
+                        ?: stringResource(R.string.trail_style_neon_pulse)
+
+                    SettingsDropdownItem(
+                        icon = Icons.Default.ShowChart,
+                        title = stringResource(R.string.progress_trail_style_title),
+                        subtitle = stringResource(R.string.progress_trail_style_subtitle),
+                        currentValue = currentTrailLabel,
+                        options = trailOptions.map { it.second },
+                        onOptionSelected = { selectedLabel ->
+                            val styleId = trailOptions.find { it.second == selectedLabel }?.first
+                                ?: com.antigravity.equalizer.data.model.ProgressTrailStyle.NEON_PULSE.id
+                            viewModel.setProgressTrailStyle(styleId)
+                        }
+                    )
+
+                    if (uiState.progressTrailStyle != com.antigravity.equalizer.data.model.ProgressTrailStyle.MINIMAL.id) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            thickness = 0.6.dp,
+                            color = GridLineColor
+                        )
+
+                        // 起点粗细 (1.0dp ~ 10.0dp)
+                        SettingsSliderItem(
+                            icon = Icons.Default.Tune,
+                            title = stringResource(R.string.trail_start_width_title),
+                            valueText = String.format(java.util.Locale.US, "%.1f dp", uiState.trailStartWidth),
+                            value = uiState.trailStartWidth,
+                            valueRange = 1.0f..10.0f,
+                            onValueChange = { viewModel.setTrailStartWidth(it) }
+                        )
+
+                        // 终点粗细 (0.5dp ~ 8.0dp)
+                        SettingsSliderItem(
+                            icon = Icons.Default.HorizontalRule,
+                            title = stringResource(R.string.trail_end_width_title),
+                            valueText = String.format(java.util.Locale.US, "%.1f dp", uiState.trailEndWidth),
+                            value = uiState.trailEndWidth,
+                            valueRange = 0.5f..8.0f,
+                            onValueChange = { viewModel.setTrailEndWidth(it) }
+                        )
+
+                        // 拖尾环绕半径 (3.0dp ~ 18.0dp)
+                        SettingsSliderItem(
+                            icon = Icons.Default.Adjust,
+                            title = stringResource(R.string.trail_radius_title),
+                            valueText = String.format(java.util.Locale.US, "%.1f dp", uiState.trailOrbitRadius),
+                            value = uiState.trailOrbitRadius,
+                            valueRange = 3.0f..18.0f,
+                            onValueChange = { viewModel.setTrailOrbitRadius(it) }
+                        )
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            thickness = 0.6.dp,
+                            color = GridLineColor
+                        )
+
+                        // 拖尾 1 颜色 (主线条)
+                        SettingsColorPickerItem(
+                            icon = Icons.Default.Palette,
+                            title = stringResource(R.string.trail_color1_title),
+                            selectedColor = uiState.trailColor1,
+                            onColorSelected = { viewModel.setTrailColor1(it) }
+                        )
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            thickness = 0.6.dp,
+                            color = GridLineColor
+                        )
+
+                        // 拖尾 2 颜色 (副线条)
+                        SettingsColorPickerItem(
+                            icon = Icons.Default.Brush,
+                            title = stringResource(R.string.trail_color2_title),
+                            selectedColor = uiState.trailColor2,
+                            onColorSelected = { viewModel.setTrailColor2(it) }
+                        )
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            thickness = 0.6.dp,
+                            color = GridLineColor
+                        )
+
+                        // 恢复默认按钮
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.resetTrailSettings() }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = stringResource(R.string.trail_reset_defaults),
+                                tint = OrbitTheme.colors.textSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.trail_reset_defaults),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = OrbitTheme.colors.textSecondary
+                            )
+                        }
+                    }
+                }
+            }
+
             // 0.2 Language 语言设置
             item {
                 SettingsSectionHeader(stringResource(R.string.language_title))
@@ -137,7 +262,7 @@ fun SettingsScreen(
                 }
             }
 
-            // 0.3 启动偏好设置 (仅作为均衡器启动)
+            // 0.3 启动偏好设置 (仅作为均衡器启动 & 播放条常驻)
             item {
                 SettingsSectionHeader(stringResource(R.string.section_startup_mode))
                 SettingsCard {
@@ -147,6 +272,17 @@ fun SettingsScreen(
                         subtitle = stringResource(R.string.launch_as_equalizer_only_subtitle),
                         checked = uiState.launchAsEqualizerOnly,
                         onCheckedChange = { viewModel.toggleLaunchAsEqualizerOnly(it) }
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                    )
+                    SettingsSwitchItem(
+                        icon = Icons.Default.SmartDisplay,
+                        title = stringResource(R.string.persistent_mini_player_title),
+                        subtitle = stringResource(R.string.persistent_mini_player_subtitle),
+                        checked = uiState.persistentMiniPlayer,
+                        onCheckedChange = { viewModel.togglePersistentMiniPlayer(it) }
                     )
                 }
             }
@@ -505,7 +641,7 @@ fun SettingsScreen(
                     HorizontalDivider(color = OrbitTheme.colors.gridLine)
                     SettingsInfoItem(icon = Icons.Default.Info, title = stringResource(R.string.version_title), value = stringResource(R.string.version_value))
                 }
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(96.dp))
             }
         }
     }
@@ -883,5 +1019,144 @@ private fun SettingsInfoItem(
         Spacer(modifier = Modifier.width(14.dp))
         Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary, modifier = Modifier.weight(1f))
         Text(value, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextSecondary)
+    }
+}
+
+@Composable
+private fun SettingsSliderItem(
+    icon: ImageVector,
+    title: String,
+    valueText: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    onValueChange: (Float) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = title, tint = OrbitTheme.colors.secondary, modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = title,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = OrbitTheme.colors.textPrimary,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = valueText,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = OrbitTheme.colors.primary
+            )
+        }
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            colors = SliderDefaults.colors(
+                thumbColor = OrbitTheme.colors.primary,
+                activeTrackColor = OrbitTheme.colors.primary,
+                inactiveTrackColor = OrbitTheme.colors.surface
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+    }
+}
+
+@Composable
+private fun SettingsColorPickerItem(
+    icon: ImageVector,
+    title: String,
+    selectedColor: Long,
+    onColorSelected: (Long) -> Unit
+) {
+    val presetColors = listOf(
+        0xFF00FFFFL to "青碧",
+        0xFF00F5D4L to "极光",
+        0xFF4361EEL to "赛博蓝",
+        0xFF5E72E4L to "星际蓝",
+        0xFF7C4DFFL to "魅惑紫",
+        0xFFFF007FL to "霓虹粉",
+        0xFFFF0055L to "烈焰红",
+        0xFFFF7700L to "日光橙",
+        0xFFFFBE0BL to "闪电金",
+        0xFFFFFFFFL to "纯白"
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = title, tint = OrbitTheme.colors.tertiary, modifier = Modifier.size(20.dp))
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = title,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = OrbitTheme.colors.textPrimary,
+                modifier = Modifier.weight(1f)
+            )
+            // 当前选中颜色圆球指示器
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(Color(selectedColor))
+                    .border(
+                        width = 2.dp,
+                        color = OrbitTheme.colors.textPrimary.copy(alpha = 0.6f),
+                        shape = CircleShape
+                    )
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // 一排高光霓虹色块方便用户快捷点击
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            presetColors.forEach { (colorVal, _) ->
+                val isSelected = (selectedColor == colorVal)
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(Color(colorVal))
+                        .then(
+                            if (isSelected) {
+                                Modifier.border(2.5.dp, OrbitTheme.colors.primary, CircleShape)
+                            } else {
+                                Modifier.border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
+                            }
+                        )
+                        .clickable { onColorSelected(colorVal) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isSelected) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(if (colorVal == 0xFFFFFFFFL) Color.Black else Color.White)
+                        )
+                    }
+                }
+            }
+        }
     }
 }

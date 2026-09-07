@@ -51,7 +51,14 @@ data class EqualizerUiState(
     val peakLeftDb: Float = -60f,
     val peakRightDb: Float = -60f,
     val activeDeviceName: String = "Phone Speaker",
-    val launchAsEqualizerOnly: Boolean = false
+    val launchAsEqualizerOnly: Boolean = false,
+    val persistentMiniPlayer: Boolean = true,
+    val progressTrailStyle: String = ProgressTrailStyle.NEON_PULSE.id,
+    val trailStartWidth: Float = 3.8f,
+    val trailEndWidth: Float = 1.2f,
+    val trailOrbitRadius: Float = 9.5f,
+    val trailColor1: Long = 0xFF00FFFFL,
+    val trailColor2: Long = 0xFF5E72E4L
 )
 
 class EqualizerViewModel(application: Application) : AndroidViewModel(application) {
@@ -66,10 +73,30 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
     val uiState: StateFlow<EqualizerUiState> = _uiState.asStateFlow()
 
     init {
-        // 1. 加载已保存的语言与主题配置
+        // 1. 加载已保存的语言、主题与进度条拖尾配置
         val currentLang = com.antigravity.equalizer.utils.LocaleHelper.getSelectedLanguage(application)
         val savedTheme = prefs.getString(KEY_THEME_MODE, "system") ?: "system"
-        _uiState.update { it.copy(selectedLanguage = currentLang, themeMode = savedTheme) }
+        val savedPersistentMiniPlayer = prefs.getBoolean(KEY_PERSISTENT_MINI_PLAYER, true)
+        val savedTrailStyle = prefs.getString(KEY_PROGRESS_TRAIL_STYLE, ProgressTrailStyle.NEON_PULSE.id)
+            ?: ProgressTrailStyle.NEON_PULSE.id
+        val savedTrailStartWidth = prefs.getFloat(KEY_TRAIL_START_WIDTH, 3.8f)
+        val savedTrailEndWidth = prefs.getFloat(KEY_TRAIL_END_WIDTH, 1.2f)
+        val savedTrailOrbitRadius = prefs.getFloat(KEY_TRAIL_ORBIT_RADIUS, 9.5f)
+        val savedTrailColor1 = prefs.getLong(KEY_TRAIL_COLOR1, 0xFF00FFFFL)
+        val savedTrailColor2 = prefs.getLong(KEY_TRAIL_COLOR2, 0xFF5E72E4L)
+        _uiState.update {
+            it.copy(
+                selectedLanguage = currentLang,
+                themeMode = savedTheme,
+                persistentMiniPlayer = savedPersistentMiniPlayer,
+                progressTrailStyle = savedTrailStyle,
+                trailStartWidth = savedTrailStartWidth,
+                trailEndWidth = savedTrailEndWidth,
+                trailOrbitRadius = savedTrailOrbitRadius,
+                trailColor1 = savedTrailColor1,
+                trailColor2 = savedTrailColor2
+            )
+        }
 
         // 2. 自动恢复上次保存的 UI 状态与均衡器参数
         restoreEqualizerUiState()
@@ -203,6 +230,55 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
     fun setThemeMode(mode: String) {
         prefs.edit().putString(KEY_THEME_MODE, mode).apply()
         _uiState.update { it.copy(themeMode = mode) }
+    }
+
+    fun setProgressTrailStyle(style: String) {
+        prefs.edit().putString(KEY_PROGRESS_TRAIL_STYLE, style).apply()
+        _uiState.update { it.copy(progressTrailStyle = style) }
+    }
+
+    fun setTrailStartWidth(width: Float) {
+        prefs.edit().putFloat(KEY_TRAIL_START_WIDTH, width).apply()
+        _uiState.update { it.copy(trailStartWidth = width) }
+    }
+
+    fun setTrailEndWidth(width: Float) {
+        prefs.edit().putFloat(KEY_TRAIL_END_WIDTH, width).apply()
+        _uiState.update { it.copy(trailEndWidth = width) }
+    }
+
+    fun setTrailOrbitRadius(radius: Float) {
+        prefs.edit().putFloat(KEY_TRAIL_ORBIT_RADIUS, radius).apply()
+        _uiState.update { it.copy(trailOrbitRadius = radius) }
+    }
+
+    fun setTrailColor1(color: Long) {
+        prefs.edit().putLong(KEY_TRAIL_COLOR1, color).apply()
+        _uiState.update { it.copy(trailColor1 = color) }
+    }
+
+    fun setTrailColor2(color: Long) {
+        prefs.edit().putLong(KEY_TRAIL_COLOR2, color).apply()
+        _uiState.update { it.copy(trailColor2 = color) }
+    }
+
+    fun resetTrailSettings() {
+        prefs.edit()
+            .putFloat(KEY_TRAIL_START_WIDTH, 3.8f)
+            .putFloat(KEY_TRAIL_END_WIDTH, 1.2f)
+            .putFloat(KEY_TRAIL_ORBIT_RADIUS, 9.5f)
+            .putLong(KEY_TRAIL_COLOR1, 0xFF00FFFFL)
+            .putLong(KEY_TRAIL_COLOR2, 0xFF5E72E4L)
+            .apply()
+        _uiState.update {
+            it.copy(
+                trailStartWidth = 3.8f,
+                trailEndWidth = 1.2f,
+                trailOrbitRadius = 9.5f,
+                trailColor1 = 0xFF00FFFFL,
+                trailColor2 = 0xFF5E72E4L
+            )
+        }
     }
 
     fun setSampleRate(sampleRate: Float) {
@@ -388,6 +464,11 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         prefs.edit().putBoolean(KEY_LAUNCH_AS_EQUALIZER_ONLY, enabled).apply()
     }
 
+    fun togglePersistentMiniPlayer(enabled: Boolean) {
+        _uiState.update { it.copy(persistentMiniPlayer = enabled) }
+        prefs.edit().putBoolean(KEY_PERSISTENT_MINI_PLAYER, enabled).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "equalizer_ui_state_prefs"
         private const val KEY_EQ_ENABLED = "key_eq_enabled"
@@ -402,5 +483,12 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         private const val KEY_LIMITER_ENABLED = "key_limiter_enabled"
         private const val KEY_THEME_MODE = "key_theme_mode"
         private const val KEY_LAUNCH_AS_EQUALIZER_ONLY = "key_launch_as_equalizer_only"
+        private const val KEY_PERSISTENT_MINI_PLAYER = "key_persistent_mini_player"
+        private const val KEY_PROGRESS_TRAIL_STYLE = "key_progress_trail_style"
+        private const val KEY_TRAIL_START_WIDTH = "key_trail_start_width"
+        private const val KEY_TRAIL_END_WIDTH = "key_trail_end_width"
+        private const val KEY_TRAIL_ORBIT_RADIUS = "key_trail_orbit_radius"
+        private const val KEY_TRAIL_COLOR1 = "key_trail_color1"
+        private const val KEY_TRAIL_COLOR2 = "key_trail_color2"
     }
 }

@@ -31,7 +31,9 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
@@ -50,6 +52,7 @@ import coil.compose.AsyncImage
 import com.antigravity.equalizer.R
 import com.antigravity.equalizer.audio.RepeatMode
 import com.antigravity.equalizer.audio.ShuffleStrategy
+import com.antigravity.equalizer.data.model.ProgressTrailStyle
 import com.antigravity.equalizer.data.model.Song
 import com.antigravity.equalizer.data.model.SongAttitude
 import com.antigravity.equalizer.ui.theme.*
@@ -430,6 +433,12 @@ fun NowPlayingScreen(
                         viewModel.seekTo((draggingProgress * playbackState.durationMs).toLong())
                     },
                     isPlaying = playbackState.isPlaying,
+                    trailStyle = equalizerUiState.progressTrailStyle,
+                    startWidthDp = equalizerUiState.trailStartWidth,
+                    endWidthDp = equalizerUiState.trailEndWidth,
+                    orbitRadiusDp = equalizerUiState.trailOrbitRadius,
+                    color1 = equalizerUiState.trailColor1,
+                    color2 = equalizerUiState.trailColor2,
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -1105,6 +1114,12 @@ private fun LuminousGlowingSlider(
     onValueChange: (Float) -> Unit,
     onValueChangeFinished: () -> Unit,
     isPlaying: Boolean,
+    trailStyle: String = ProgressTrailStyle.NEON_PULSE.id,
+    startWidthDp: Float = 3.8f,
+    endWidthDp: Float = 1.2f,
+    orbitRadiusDp: Float = 9.5f,
+    color1: Long = 0xFF00FFFFL,
+    color2: Long = 0xFF5E72E4L,
     modifier: Modifier = Modifier
 ) {
     val progress = value.coerceIn(0f, 1f)
@@ -1142,7 +1157,7 @@ private fun LuminousGlowingSlider(
         label = "starRotation"
     )
 
-    // 彗星双拖尾三维围绕旋转相位 (Double Helix Swirling Phase)
+    // 双拖尾三维围绕旋转相位 (Double Helix Swirling Phase)
     val tailRotationPhase by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = if (isPlaying) 360f else 0f,
@@ -1156,7 +1171,7 @@ private fun LuminousGlowingSlider(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
-            .height(36.dp)
+            .height(38.dp)
             .pointerInput(Unit) {
                 detectTapGestures { offset ->
                     val newProgress = (offset.x / size.width).coerceIn(0f, 1f)
@@ -1188,6 +1203,7 @@ private fun LuminousGlowingSlider(
         val primaryColor = OrbitTheme.colors.primary
         val secondaryColor = OrbitTheme.colors.secondary
         val surfaceTrackColor = OrbitTheme.colors.surface
+        val selectedStyle = ProgressTrailStyle.fromId(trailStyle)
 
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
@@ -1204,126 +1220,337 @@ private fun LuminousGlowingSlider(
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackHeight / 2f, trackHeight / 2f)
             )
 
-            // ==================== 彗星双拖尾 3D 缠绕模型计算 ====================
-            val maxTailLength = 68.dp.toPx()
-            val tailLength = minOf(thumbX, maxTailLength)
-            val segments = 32
-            val maxAmp = 8.5.dp.toPx() // 上下 8.5dp 环抱缠绕 4dp 轨道
-            val phaseRad = tailRotationPhase * (PI.toFloat() / 180f)
+            // 2. 根据用户设置渲染不同拖尾动效
+            when (selectedStyle) {
+                ProgressTrailStyle.NEON_PULSE -> {
+                    // ==================== 样式一：图片同款高能霓虹双发光管 (3D 缠绕立体旋转，纯线条无杂点) ====================
+                    val maxTailLength = 76.dp.toPx()
+                    val tailLength = minOf(thumbX, maxTailLength)
 
-            class CometNode(
-                val x: Float,
-                val y: Float,
-                val z: Float,
-                val u: Float,
-                val alpha: Float,
-                val width: Float
-            )
+                    if (tailLength > 3f) {
+                        val maxAmp = orbitRadiusDp.dp.toPx() // 根据用户设置的环绕半径环抱缠绕轨道
+                        val phaseRad = tailRotationPhase * (PI.toFloat() / 180f)
+                        val segments = 48 // 48 级高密度平滑微元，保证线条完全平滑一体，圆润无缝
 
-            fun buildCometNodes(phaseOffset: Float): List<CometNode> {
-                if (tailLength < 3f) return emptyList()
-                val list = ArrayList<CometNode>(segments + 1)
-                for (i in 0..segments) {
-                    val u = i / segments.toFloat() // 0(紧邻星星) ~ 1(彗尾末端)
-                    val x = thumbX - u * tailLength
-                    // 振幅包络：星核出发平滑展开，在 0.28 处最饱满，末端收缩成流线细丝
-                    val envelope = (sin(u * PI.toFloat())).pow(0.85f) * (1f - 0.2f * u)
-                    val amp = maxAmp * envelope
-                    // 螺旋角：随 X 轴向左延伸约 1.5 个螺旋周期
-                    val theta = phaseRad - u * (3.0f * PI.toFloat()) + phaseOffset
-                    val y = centerY + amp * sin(theta)
-                    val z = cos(theta) // 深度: > 0 为前景(穿过前方)，< 0 为后景(穿到后方)
+                        class NeonTubeNode(
+                            val x: Float,
+                            val y: Float,
+                            val z: Float,
+                            val u: Float,
+                            val alpha: Float,
+                            val tubeWidth: Float
+                        )
 
-                    val depthAlpha = 0.55f + 0.45f * ((z + 1f) * 0.5f)
-                    val alpha = (1f - u).pow(1.1f) * twinkleAlpha * depthAlpha
-                    val strokeW = (2.2.dp.toPx() + 0.9.dp.toPx() * z) * (1f - u * 0.65f)
-                    list.add(CometNode(x, y, z, u, alpha.coerceIn(0f, 1f), strokeW.coerceAtLeast(0.5f)))
-                }
-                return list
-            }
+                        fun buildNeonTubeNodes(phaseOffset: Float): List<NeonTubeNode> {
+                            val list = ArrayList<NeonTubeNode>(segments + 1)
+                            for (i in 0..segments) {
+                                val u = i / segments.toFloat() // 0(滑块星核) ~ 1(拖尾尾梢)
+                                val x = thumbX - u * tailLength
+                                val envelope = (sin(u * PI.toFloat())).pow(0.85f) * (1f - 0.16f * u)
+                                val amp = maxAmp * envelope
+                                val theta = phaseRad - u * (3.2f * PI.toFloat()) + phaseOffset
+                                val y = centerY + amp * sin(theta)
+                                val z = cos(theta) // 深度: > 0 为前景(穿过轨道正面)，< 0 为后景(穿到轨道背面)
 
-            val trail1 = buildCometNodes(0f)            // 主彗星拖尾 (青碧/纯白冰蓝)
-            val trail2 = buildCometNodes(PI.toFloat())  // 伴彗星拖尾 (极光紫粉反相交织)
+                                val depthAlpha = 0.65f + 0.35f * ((z + 1f) * 0.5f)
+                                val alpha = (1f - u).pow(1.05f) * twinkleAlpha * depthAlpha
+                                // 霓虹发光管直径：基于用户设定的起点与终点做连续平滑插值，配合三维 z 深度微透视
+                                val baseWidthPx = (startWidthDp * (1f - u) + endWidthDp * u).dp.toPx()
+                                val width = (baseWidthPx * (1f + 0.28f * z)).coerceAtLeast(0.5f.dp.toPx())
+                                list.add(NeonTubeNode(x, y, z, u, alpha.coerceIn(0f, 1f), width))
+                            }
+                            return list
+                        }
 
-            fun drawTrail(nodes: List<CometNode>, isForeground: Boolean, coreColor: Color, glowColor: Color) {
-                if (nodes.size < 2) return
-                // 绘制拖尾流动光线
-                for (i in 0 until nodes.size - 1) {
-                    val n1 = nodes[i]
-                    val n2 = nodes[i + 1]
-                    val avgZ = (n1.z + n2.z) * 0.5f
-                    val isNodeFg = avgZ >= 0f
-                    if (isNodeFg == isForeground) {
-                        val segAlpha = ((n1.alpha + n2.alpha) * 0.5f).coerceIn(0f, 1f)
-                        if (segAlpha > 0.02f) {
-                            // 离子漫射光晕
-                            drawLine(
-                                color = glowColor.copy(alpha = segAlpha * 0.45f),
-                                start = Offset(n1.x, n1.y),
-                                end = Offset(n2.x, n2.y),
-                                strokeWidth = (n1.width + n2.width) * 1.5f,
-                                cap = StrokeCap.Round
-                            )
-                            // 离子核心光束
-                            drawLine(
-                                color = coreColor.copy(alpha = segAlpha * 0.95f),
-                                start = Offset(n1.x, n1.y),
-                                end = Offset(n2.x, n2.y),
-                                strokeWidth = (n1.width + n2.width) * 0.55f,
-                                cap = StrokeCap.Round
+                        val neonTube1 = buildNeonTubeNodes(0f)            // 线条 1
+                        val neonTube2 = buildNeonTubeNodes(PI.toFloat())  // 线条 2
+
+                        // 动态派生两条线条各自的高饱和四层发光霓虹调色板
+                        val c1 = Color(color1)
+                        val c2 = Color(color2)
+
+                        val tube1Bloom = c1.copy(alpha = 0.9f)
+                        val tube1Neon = c1
+                        val tube1Solid = androidx.compose.ui.graphics.lerp(c1, Color.White, 0.22f)
+                        val tube1Core = androidx.compose.ui.graphics.lerp(c1, Color.White, 0.82f)
+
+                        val tube2Bloom = c2.copy(alpha = 0.9f)
+                        val tube2Neon = c2
+                        val tube2Solid = androidx.compose.ui.graphics.lerp(c2, Color.White, 0.22f)
+                        val tube2Core = androidx.compose.ui.graphics.lerp(c2, Color.White, 0.82f)
+
+                        // 绘制图片同款四层物理发光管 (纯 Color 绘制，稳定高亮，零杂点，通透立体)
+                        fun drawNeonTube(
+                            nodes: List<NeonTubeNode>,
+                            isForeground: Boolean,
+                            bloomColor: Color,
+                            neonColor: Color,
+                            solidColor: Color,
+                            coreColor: Color
+                        ) {
+                            if (nodes.size < 2) return
+                            for (i in 0 until nodes.size - 1) {
+                                val n1 = nodes[i]
+                                val n2 = nodes[i + 1]
+                                val avgZ = (n1.z + n2.z) * 0.5f
+                                val isNodeFg = avgZ >= 0f
+                                if (isNodeFg == isForeground) {
+                                     val segAlpha = ((n1.alpha + n2.alpha) * 0.5f).coerceIn(0f, 1f)
+                                     if (segAlpha > 0.01f) {
+                                         val p1 = Offset(n1.x, n1.y)
+                                         val p2 = Offset(n2.x, n2.y)
+                                         val strokeW = (n1.tubeWidth + n2.tubeWidth) * 0.5f
+                                         val fgFactor = if (isForeground) 1.0f else 0.70f
+
+                                         // 1. 最外层广域柔光漫射光晕
+                                         drawLine(
+                                             color = bloomColor.copy(alpha = segAlpha * 0.40f * fgFactor),
+                                             start = p1,
+                                             end = p2,
+                                             strokeWidth = strokeW * 2.8f,
+                                             cap = StrokeCap.Round
+                                         )
+                                         // 2. 次外层鲜艳电离辉光
+                                         drawLine(
+                                             color = neonColor.copy(alpha = segAlpha * 0.85f * fgFactor),
+                                             start = p1,
+                                             end = p2,
+                                             strokeWidth = strokeW * 1.55f,
+                                             cap = StrokeCap.Round
+                                         )
+                                         // 3. 第三层高饱和实心发光管壁
+                                         drawLine(
+                                             color = solidColor.copy(alpha = segAlpha * 0.95f * fgFactor),
+                                             start = p1,
+                                             end = p2,
+                                             strokeWidth = strokeW * 0.95f,
+                                             cap = StrokeCap.Round
+                                         )
+                                         // 4. 最内层耀眼纯白高能电弧核心
+                                         drawLine(
+                                             color = coreColor.copy(alpha = segAlpha * 0.98f * fgFactor),
+                                             start = p1,
+                                             end = p2,
+                                             strokeWidth = strokeW * 0.38f,
+                                             cap = StrokeCap.Round
+                                         )
+                                     }
+                                }
+                            }
+                        }
+
+                        // 1. 霓虹双线条·后景绘制 (穿插在进度条后方，背光自然沉降)
+                        drawNeonTube(
+                            neonTube1,
+                            isForeground = false,
+                            bloomColor = tube1Bloom,
+                            neonColor = tube1Neon,
+                            solidColor = tube1Solid,
+                            coreColor = tube1Core
+                        )
+                        drawNeonTube(
+                            neonTube2,
+                            isForeground = false,
+                            bloomColor = tube2Bloom,
+                            neonColor = tube2Neon,
+                            solidColor = tube2Solid,
+                            coreColor = tube2Core
+                        )
+
+                        // 2. 已播放流光基座轨道 (作为底衬被前景线条压过)
+                        if (thumbX > 0f) {
+                            drawRoundRect(
+                                brush = Brush.horizontalGradient(
+                                    listOf(
+                                        primaryColor.copy(alpha = 0.75f),
+                                        primaryColor,
+                                        secondaryColor
+                                    ),
+                                    startX = 0f,
+                                    endX = thumbX.coerceAtLeast(1f)
+                                ),
+                                topLeft = Offset(0f, centerY - trackHeight / 2f),
+                                size = androidx.compose.ui.geometry.Size(thumbX, trackHeight),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackHeight / 2f, trackHeight / 2f)
                             )
                         }
+
+                        // 3. 霓虹双线条·前景绘制 (高亮跨越在轨道正面，通透饱满，纯线条无杂点)
+                        drawNeonTube(
+                            neonTube1,
+                            isForeground = true,
+                            bloomColor = tube1Bloom,
+                            neonColor = tube1Neon,
+                            solidColor = tube1Solid,
+                            coreColor = tube1Core
+                        )
+                        drawNeonTube(
+                            neonTube2,
+                            isForeground = true,
+                            bloomColor = tube2Bloom,
+                            neonColor = tube2Neon,
+                            solidColor = tube2Solid,
+                            coreColor = tube2Core
+                        )
+                    } else if (thumbX > 0f) {
+                        drawRoundRect(
+                            brush = Brush.horizontalGradient(
+                                listOf(
+                                    primaryColor.copy(alpha = 0.75f),
+                                    primaryColor,
+                                    secondaryColor
+                                ),
+                                startX = 0f,
+                                endX = thumbX.coerceAtLeast(1f)
+                            ),
+                            topLeft = Offset(0f, centerY - trackHeight / 2f),
+                            size = androidx.compose.ui.geometry.Size(thumbX, trackHeight),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackHeight / 2f, trackHeight / 2f)
+                        )
                     }
                 }
 
-                // 拖尾上的彗星发光星尘微粒 (Stardust Particles)
-                val sampleIndices = intArrayOf(2, 6, 11, 17, 24)
-                for (idx in sampleIndices) {
-                    if (idx < nodes.size) {
-                        val node = nodes[idx]
-                        val isNodeFg = node.z >= 0f
-                        if (isNodeFg == isForeground && node.alpha > 0.05f) {
-                            val r = (if (isNodeFg) 1.8.dp.toPx() else 1.1.dp.toPx()) * (1f - node.u * 0.5f)
-                            drawCircle(
-                                color = glowColor.copy(alpha = node.alpha * 0.65f),
-                                radius = r * 1.8f,
-                                center = Offset(node.x, node.y)
-                            )
-                            drawCircle(
-                                color = Color.White.copy(alpha = node.alpha * 0.95f),
-                                radius = r,
-                                center = Offset(node.x, node.y)
-                            )
+                ProgressTrailStyle.COMET_HELIX -> {
+                    // ==================== 样式二：彗星双拖尾 3D 缠绕模型 (原有样式) ====================
+                    val maxTailLength = 68.dp.toPx()
+                    val tailLength = minOf(thumbX, maxTailLength)
+                    val segments = 32
+                    val maxAmp = orbitRadiusDp.dp.toPx()
+                    val phaseRad = tailRotationPhase * (PI.toFloat() / 180f)
+
+                    class CometNode(
+                        val x: Float,
+                        val y: Float,
+                        val z: Float,
+                        val u: Float,
+                        val alpha: Float,
+                        val width: Float
+                    )
+
+                    fun buildCometNodes(phaseOffset: Float): List<CometNode> {
+                        if (tailLength < 3f) return emptyList()
+                        val list = ArrayList<CometNode>(segments + 1)
+                        for (i in 0..segments) {
+                            val u = i / segments.toFloat()
+                            val x = thumbX - u * tailLength
+                            val envelope = (sin(u * PI.toFloat())).pow(0.85f) * (1f - 0.2f * u)
+                            val amp = maxAmp * envelope
+                            val theta = phaseRad - u * (3.0f * PI.toFloat()) + phaseOffset
+                            val y = centerY + amp * sin(theta)
+                            val z = cos(theta)
+
+                            val depthAlpha = 0.55f + 0.45f * ((z + 1f) * 0.5f)
+                            val alpha = (1f - u).pow(1.1f) * twinkleAlpha * depthAlpha
+                            val baseW = (startWidthDp * (1f - u) + endWidthDp * u).dp.toPx()
+                            val strokeW = (baseW * (1f + 0.25f * z)).coerceAtLeast(0.5f)
+                            list.add(CometNode(x, y, z, u, alpha.coerceIn(0f, 1f), strokeW))
                         }
+                        return list
+                    }
+
+                    val trail1 = buildCometNodes(0f)
+                    val trail2 = buildCometNodes(PI.toFloat())
+
+                    val cometC1 = Color(color1)
+                    val cometC2 = Color(color2)
+
+                    fun drawTrail(nodes: List<CometNode>, isForeground: Boolean, coreColor: Color, glowColor: Color) {
+                        if (nodes.size < 2) return
+                        for (i in 0 until nodes.size - 1) {
+                            val n1 = nodes[i]
+                            val n2 = nodes[i + 1]
+                            val avgZ = (n1.z + n2.z) * 0.5f
+                            val isNodeFg = avgZ >= 0f
+                            if (isNodeFg == isForeground) {
+                                val segAlpha = ((n1.alpha + n2.alpha) * 0.5f).coerceIn(0f, 1f)
+                                if (segAlpha > 0.02f) {
+                                    drawLine(
+                                        color = glowColor.copy(alpha = segAlpha * 0.45f),
+                                        start = Offset(n1.x, n1.y),
+                                        end = Offset(n2.x, n2.y),
+                                        strokeWidth = (n1.width + n2.width) * 1.5f,
+                                        cap = StrokeCap.Round
+                                    )
+                                    drawLine(
+                                        color = coreColor.copy(alpha = segAlpha * 0.95f),
+                                        start = Offset(n1.x, n1.y),
+                                        end = Offset(n2.x, n2.y),
+                                        strokeWidth = (n1.width + n2.width) * 0.55f,
+                                        cap = StrokeCap.Round
+                                    )
+                                }
+                            }
+                        }
+
+                        val sampleIndices = intArrayOf(2, 6, 11, 17, 24)
+                        for (idx in sampleIndices) {
+                            if (idx < nodes.size) {
+                                val node = nodes[idx]
+                                val isNodeFg = node.z >= 0f
+                                if (isNodeFg == isForeground && node.alpha > 0.05f) {
+                                    val r = (if (isNodeFg) 1.8.dp.toPx() else 1.1.dp.toPx()) * (1f - node.u * 0.5f)
+                                    drawCircle(
+                                        color = glowColor.copy(alpha = node.alpha * 0.65f),
+                                        radius = r * 1.8f,
+                                        center = Offset(node.x, node.y)
+                                    )
+                                    drawCircle(
+                                        color = Color.White.copy(alpha = node.alpha * 0.95f),
+                                        radius = r,
+                                        center = Offset(node.x, node.y)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 彗星双拖尾·后景
+                    drawTrail(trail1, isForeground = false, coreColor = Color.White, glowColor = cometC1)
+                    drawTrail(trail2, isForeground = false, coreColor = androidx.compose.ui.graphics.lerp(cometC2, Color.White, 0.7f), glowColor = cometC2)
+
+                    // 已播放流光轨道
+                    if (thumbX > 0f) {
+                        drawRoundRect(
+                            brush = Brush.horizontalGradient(
+                                listOf(
+                                    primaryColor.copy(alpha = 0.75f),
+                                    primaryColor,
+                                    secondaryColor
+                                ),
+                                startX = 0f,
+                                endX = thumbX.coerceAtLeast(1f)
+                            ),
+                            topLeft = Offset(0f, centerY - trackHeight / 2f),
+                            size = androidx.compose.ui.geometry.Size(thumbX, trackHeight),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackHeight / 2f, trackHeight / 2f)
+                        )
+                    }
+
+                    // 彗星双拖尾·前景
+                    drawTrail(trail1, isForeground = true, coreColor = Color.White, glowColor = cometC1)
+                    drawTrail(trail2, isForeground = true, coreColor = androidx.compose.ui.graphics.lerp(cometC2, Color.White, 0.7f), glowColor = cometC2)
+                }
+
+                ProgressTrailStyle.MINIMAL -> {
+                    // ==================== 样式三：经典极简 (仅保留流光轨道，无多余拖尾) ====================
+                    if (thumbX > 0f) {
+                        drawRoundRect(
+                            brush = Brush.horizontalGradient(
+                                listOf(
+                                    primaryColor.copy(alpha = 0.75f),
+                                    primaryColor,
+                                    secondaryColor
+                                ),
+                                startX = 0f,
+                                endX = thumbX.coerceAtLeast(1f)
+                            ),
+                            topLeft = Offset(0f, centerY - trackHeight / 2f),
+                            size = androidx.compose.ui.geometry.Size(thumbX, trackHeight),
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackHeight / 2f, trackHeight / 2f)
+                        )
                     }
                 }
             }
-
-            // 2. 彗星双拖尾·后景绘制 (穿插在进度条后方)
-            drawTrail(trail1, isForeground = false, coreColor = Color.White, glowColor = primaryColor)
-            drawTrail(trail2, isForeground = false, coreColor = secondaryColor, glowColor = secondaryColor)
-
-            // 3. 已播放流光高光渐变轨道 (Active Track)
-            if (thumbX > 0f) {
-                drawRoundRect(
-                    brush = Brush.horizontalGradient(
-                        listOf(
-                            primaryColor.copy(alpha = 0.75f),
-                            primaryColor,
-                            secondaryColor
-                        ),
-                        startX = 0f,
-                        endX = thumbX.coerceAtLeast(1f)
-                    ),
-                    topLeft = Offset(0f, centerY - trackHeight / 2f),
-                    size = androidx.compose.ui.geometry.Size(thumbX, trackHeight),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackHeight / 2f, trackHeight / 2f)
-                )
-            }
-
-            // 4. 彗星双拖尾·前景绘制 (缠绕穿透在进度条前方)
-            drawTrail(trail1, isForeground = true, coreColor = Color.White, glowColor = primaryColor)
-            drawTrail(trail2, isForeground = true, coreColor = secondaryColor, glowColor = secondaryColor)
 
             val thumbPos = Offset(thumbX, centerY)
 

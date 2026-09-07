@@ -12,16 +12,30 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.antigravity.equalizer.data.model.AppScreen
+import com.antigravity.equalizer.ui.components.MiniPlayerBar
 import com.antigravity.equalizer.ui.screens.MainEqualizerScreen
 import com.antigravity.equalizer.ui.screens.MusicLibraryScreen
+import com.antigravity.equalizer.ui.screens.NowPlayingScreen
 import com.antigravity.equalizer.ui.screens.ParametricEqScreen
 import com.antigravity.equalizer.ui.screens.SettingsScreen
 import com.antigravity.equalizer.ui.theme.MusicEqualizerTheme
@@ -58,6 +72,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val uiState by equalizerViewModel.uiState.collectAsState()
+            val playbackState by musicPlayerViewModel.playbackState.collectAsState()
+            val libraryUiState by musicPlayerViewModel.libraryUiState.collectAsState()
 
             val targetLocale = when (uiState.selectedLanguage) {
                 "zh" -> Locale.SIMPLIFIED_CHINESE
@@ -80,18 +96,23 @@ class MainActivity : ComponentActivity() {
                 currentContext.createConfigurationContext(updatedConfig)
             }
 
+            // 拦截全屏播放页手势返回，优先收起播放页
+            BackHandler(enabled = libraryUiState.isNowPlayingExpanded) {
+                musicPlayerViewModel.setNowPlayingExpanded(false)
+            }
+
             // 全局各级页面系统返回手势（BackHandler）精准拦截
-            BackHandler(enabled = uiState.currentScreen == AppScreen.MAIN) {
+            BackHandler(enabled = !libraryUiState.isNowPlayingExpanded && uiState.currentScreen == AppScreen.MAIN) {
                 if (uiState.launchAsEqualizerOnly) {
                     finish()
                 } else {
                     equalizerViewModel.navigateTo(AppScreen.LIBRARY)
                 }
             }
-            BackHandler(enabled = uiState.currentScreen == AppScreen.PARAMETRIC) {
+            BackHandler(enabled = !libraryUiState.isNowPlayingExpanded && uiState.currentScreen == AppScreen.PARAMETRIC) {
                 equalizerViewModel.navigateTo(AppScreen.MAIN)
             }
-            BackHandler(enabled = uiState.currentScreen == AppScreen.SETTINGS) {
+            BackHandler(enabled = !libraryUiState.isNowPlayingExpanded && uiState.currentScreen == AppScreen.SETTINGS) {
                 if (uiState.launchAsEqualizerOnly) {
                     equalizerViewModel.navigateTo(AppScreen.MAIN)
                 } else {
@@ -104,43 +125,91 @@ class MainActivity : ComponentActivity() {
                 LocalContext provides localizedContext
             ) {
                 MusicEqualizerTheme(themeMode = uiState.themeMode) {
-                    when (uiState.currentScreen) {
-                        AppScreen.LIBRARY -> {
-                            MusicLibraryScreen(
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        when (uiState.currentScreen) {
+                            AppScreen.LIBRARY -> {
+                                MusicLibraryScreen(
+                                    viewModel = musicPlayerViewModel,
+                                    equalizerUiState = uiState,
+                                    onOpenEqualizer = { equalizerViewModel.navigateTo(AppScreen.MAIN) },
+                                    onOpenSettings = { equalizerViewModel.navigateTo(AppScreen.SETTINGS) }
+                                )
+                            }
+                            AppScreen.MAIN -> {
+                                MainEqualizerScreen(
+                                    viewModel = equalizerViewModel,
+                                    onBackToLibrary = {
+                                        if (uiState.launchAsEqualizerOnly) {
+                                            finish()
+                                        } else {
+                                            equalizerViewModel.navigateTo(AppScreen.LIBRARY)
+                                        }
+                                    }
+                                )
+                            }
+                            AppScreen.PARAMETRIC -> {
+                                ParametricEqScreen(
+                                    viewModel = equalizerViewModel,
+                                    onBack = { equalizerViewModel.navigateTo(AppScreen.MAIN) }
+                                )
+                            }
+                            AppScreen.SETTINGS -> {
+                                SettingsScreen(
+                                    viewModel = equalizerViewModel,
+                                    musicViewModel = musicPlayerViewModel,
+                                    onBack = {
+                                        if (uiState.launchAsEqualizerOnly) {
+                                            equalizerViewModel.navigateTo(AppScreen.MAIN)
+                                        } else {
+                                            equalizerViewModel.navigateTo(AppScreen.LIBRARY)
+                                        }
+                                    }
+                                )
+                            }
+                        }
+
+                        // 底部常驻播放条：根据用户配置与页面状态智能展示（展开全屏播放页时自动隐藏）
+                        val showMiniPlayer = playbackState.currentSong != null &&
+                                !libraryUiState.isNowPlayingExpanded &&
+                                (uiState.persistentMiniPlayer || uiState.currentScreen == AppScreen.LIBRARY)
+
+                        AnimatedVisibility(
+                            visible = showMiniPlayer,
+                            enter = slideInVertically(
+                                initialOffsetY = { it },
+                                animationSpec = tween(240)
+                            ) + fadeIn(animationSpec = tween(200)),
+                            exit = slideOutVertically(
+                                targetOffsetY = { it },
+                                animationSpec = tween(200)
+                            ) + fadeOut(animationSpec = tween(160)),
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .widthIn(max = 680.dp)
+                        ) {
+                            MiniPlayerBar(
+                                playbackState = playbackState,
+                                onTogglePlay = { musicPlayerViewModel.togglePlayPause() },
+                                onPlayNext = { musicPlayerViewModel.playNext() },
+                                onPlayPrevious = { musicPlayerViewModel.playPrevious() },
+                                onClick = { musicPlayerViewModel.setNowPlayingExpanded(true) }
+                            )
+                        }
+
+                        // 全屏正在播放页面展开过渡
+                        AnimatedVisibility(
+                            visible = libraryUiState.isNowPlayingExpanded,
+                            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            NowPlayingScreen(
                                 viewModel = musicPlayerViewModel,
                                 equalizerUiState = uiState,
-                                onOpenEqualizer = { equalizerViewModel.navigateTo(AppScreen.MAIN) },
-                                onOpenSettings = { equalizerViewModel.navigateTo(AppScreen.SETTINGS) }
-                            )
-                        }
-                        AppScreen.MAIN -> {
-                            MainEqualizerScreen(
-                                viewModel = equalizerViewModel,
-                                onBackToLibrary = {
-                                    if (uiState.launchAsEqualizerOnly) {
-                                        finish()
-                                    } else {
-                                        equalizerViewModel.navigateTo(AppScreen.LIBRARY)
-                                    }
-                                }
-                            )
-                        }
-                        AppScreen.PARAMETRIC -> {
-                            ParametricEqScreen(
-                                viewModel = equalizerViewModel,
-                                onBack = { equalizerViewModel.navigateTo(AppScreen.MAIN) }
-                            )
-                        }
-                        AppScreen.SETTINGS -> {
-                            SettingsScreen(
-                                viewModel = equalizerViewModel,
-                                musicViewModel = musicPlayerViewModel,
-                                onBack = {
-                                    if (uiState.launchAsEqualizerOnly) {
-                                        equalizerViewModel.navigateTo(AppScreen.MAIN)
-                                    } else {
-                                        equalizerViewModel.navigateTo(AppScreen.LIBRARY)
-                                    }
+                                onBack = { musicPlayerViewModel.setNowPlayingExpanded(false) },
+                                onOpenEqualizer = {
+                                    musicPlayerViewModel.setNowPlayingExpanded(false)
+                                    equalizerViewModel.navigateTo(AppScreen.MAIN)
                                 }
                             )
                         }
