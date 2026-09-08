@@ -1175,6 +1175,30 @@ fun SettingsScreen(
                                 )
                             }
                         }
+
+                        HorizontalDivider(color = GridLineColor)
+
+                        // 4. MusicBrainz / Cover Art Archive 在线大尺寸封面自动匹配开关
+                        SettingsSwitchItem(
+                            icon = Icons.Default.ImageSearch,
+                            title = stringResource(R.string.online_cover_auto_match_title),
+                            subtitle = stringResource(R.string.online_cover_auto_match_subtitle),
+                            checked = uiState.autoMatchOnlineCover,
+                            onCheckedChange = { viewModel.setAutoMatchOnlineCover(it) }
+                        )
+
+                        if (uiState.autoMatchOnlineCover) {
+                            HorizontalDivider(color = GridLineColor)
+
+                            // 5. 仅在 Wi-Fi 网络下自动匹配
+                            SettingsSwitchItem(
+                                icon = Icons.Default.Wifi,
+                                title = stringResource(R.string.online_cover_wifi_only_title),
+                                subtitle = stringResource(R.string.online_cover_wifi_only_subtitle),
+                                checked = uiState.onlineCoverWifiOnly,
+                                onCheckedChange = { viewModel.setOnlineCoverWifiOnly(it) }
+                            )
+                        }
                     }
                 }
             }

@@ -6,8 +6,12 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.util.Log
 import android.util.LruCache
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.util.Collections
 
 /**
@@ -17,6 +21,7 @@ import java.util.Collections
  * 1. 严格单曲绑定：绝不使用 Android MediaStore 粗暴按 albumId 共享的旧版相册 URI，避免未知专辑或同目录歌曲封面错乱。
  * 2. 严密提取优先级：单曲专属内嵌 ID3 封面 > 同名图片封面 > 明确专辑的同目录封面 > 确认为无封面。
  * 3. 绝不跨歌曲借调：若歌曲本身无封面，坚决返回 null，确保由 UI 和通知栏呈现纯净的默认矢量音符占位，不移花接木。
+ * 4. 大尺寸在线升级：支持与 MusicBrainz / Cover Art Archive 对比，仅在网络封面尺寸更大时安全覆盖更新。
  */
 object CoverHelper {
 
@@ -36,6 +41,17 @@ object CoverHelper {
 
     // 记录已知无封面的歌曲 ID，避免频繁进行无意义的文件 I/O
     private val noCoverSet = Collections.synchronizedSet(HashSet<Long>())
+
+    // 记录已知已尝试在线搜索或无更高清封面的歌曲 ID，避免频繁重复网络调用
+    private val onlineSearchAttemptedSet = Collections.synchronizedSet(HashSet<Long>())
+
+    // 封面更新事件流，通知 UI 与播放服务即时刷新
+    private val _coverUpdatedFlow = MutableSharedFlow<Long>(extraBufferCapacity = 16)
+    val coverUpdatedFlow: SharedFlow<Long> = _coverUpdatedFlow.asSharedFlow()
+
+    // 封面全局版本时间戳，用于 Compose 界面重组与 Coil 缓存重载感知
+    private val _coverVersion = kotlinx.coroutines.flow.MutableStateFlow(0L)
+    val coverVersion: kotlinx.coroutines.flow.StateFlow<Long> = _coverVersion
 
     /**
      * 获取或按需提取歌曲专属封面缓存文件
@@ -152,11 +168,110 @@ object CoverHelper {
     }
 
     /**
+     * 高效获取歌曲本地当前封面的像素尺寸 (宽 x 高)，仅解码边界不载入完整位图
+     * 若歌曲当前无有效封面则返回 null
+     */
+    fun getCoverDimensions(
+        context: Context,
+        songId: Long,
+        path: String?,
+        album: String?
+    ): Pair<Int, Int>? {
+        val file = getOrExtractCoverFile(context, songId, path, album) ?: return null
+        if (!file.exists() || file.length() < 128) return null
+
+        return try {
+            val options = BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+            BitmapFactory.decodeFile(file.absolutePath, options)
+            if (options.outWidth > 0 && options.outHeight > 0) {
+                Pair(options.outWidth, options.outHeight)
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to decode cover dimensions for song $songId", e)
+            null
+        }
+    }
+
+    /**
+     * 将在线下载的更大尺寸封面安全持久化覆盖为单曲专属封面
+     * 并同步更新内存缓存与通知事件流
+     */
+    fun updateCoverFile(
+        context: Context,
+        songId: Long,
+        sourceFile: File
+    ): Boolean {
+        if (songId == 0L || !sourceFile.exists() || sourceFile.length() < 128) return false
+
+        try {
+            val coversDir = File(context.cacheDir, COVERS_DIR_NAME).apply {
+                if (!exists()) mkdirs()
+            }
+            val targetFile = File(coversDir, "cover_${songId}.jpg")
+
+            // 复制临时大图文件至缓存文件
+            sourceFile.inputStream().use { input ->
+                FileOutputStream(targetFile).use { output ->
+                    input.copyTo(output)
+                    output.flush()
+                }
+            }
+
+            // 从无封面集合中移除
+            noCoverSet.remove(songId)
+
+            // 刷新内存缓存
+            val newBitmap = BitmapFactory.decodeFile(targetFile.absolutePath)
+            if (newBitmap != null) {
+                memoryCache.put(songId, newBitmap)
+            } else {
+                memoryCache.remove(songId)
+            }
+
+            // 发送更新通知
+            _coverVersion.value = System.currentTimeMillis()
+            _coverUpdatedFlow.tryEmit(songId)
+            Log.i(TAG, "Successfully updated large cover for song $songId (size: ${targetFile.length()} bytes)")
+            return true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to update cover file for song $songId", e)
+            return false
+        }
+    }
+
+    /**
+     * 标记该歌曲已经尝试过在线封面检索（无论成功或未匹配），避免后续重复发起无谓网络请求
+     */
+    fun markOnlineSearchAttempted(songId: Long) {
+        onlineSearchAttemptedSet.add(songId)
+    }
+
+    /**
+     * 检查该歌曲是否已经尝试过在线封面检索
+     */
+    fun isOnlineSearchAttempted(songId: Long): Boolean {
+        return onlineSearchAttemptedSet.contains(songId)
+    }
+
+    /**
+     * 重置歌曲在线检索状态 (例如用户手动点击重新匹配时)
+     */
+    fun resetOnlineSearchStatus(songId: Long) {
+        onlineSearchAttemptedSet.remove(songId)
+        noCoverSet.remove(songId)
+    }
+
+    /**
      * 清理所有封面缓存 (可在用户触发重新扫描时调用)
      */
     fun clearCache(context: Context) {
         memoryCache.evictAll()
         noCoverSet.clear()
+        onlineSearchAttemptedSet.clear()
         try {
             val dir = File(context.cacheDir, COVERS_DIR_NAME)
             if (dir.exists()) {

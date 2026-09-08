@@ -11,8 +11,8 @@ android {
         applicationId = "com.antigravity.equalizer"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -103,6 +103,9 @@ dependencies {
 
     // Coil 高性能图片加载 (用于专辑封面渲染)
     implementation("io.coil-kt:coil-compose:2.6.0")
+
+    // OkHttp 网络客户端 (用于 MusicBrainz 与 Cover Art Archive API)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")

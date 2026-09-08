@@ -276,6 +276,33 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         repository.removeExcludedFolder(folderPath)
     }
 
+    fun updateSongMetadata(
+        song: Song,
+        newTitle: String,
+        newArtist: String,
+        newAlbum: String,
+        newYear: Int = 0
+    ) {
+        viewModelScope.launch {
+            repository.updateSongMetadata(song, newTitle, newArtist, newAlbum, newYear)
+        }
+    }
+
+    suspend fun loadSongMetadata(song: Song): com.antigravity.equalizer.data.model.SongMetadata {
+        return repository.getSongMetadata(song)
+    }
+
+    fun saveFullSongMetadata(
+        song: Song,
+        metadata: com.antigravity.equalizer.data.model.SongMetadata,
+        onComplete: (() -> Unit)? = null
+    ) {
+        viewModelScope.launch {
+            repository.saveFullSongMetadata(song, metadata)
+            onComplete?.invoke()
+        }
+    }
+
     companion object {
         private const val PREFS_NAME = "music_library_ui_prefs"
         private const val KEY_TAB = "key_library_tab"

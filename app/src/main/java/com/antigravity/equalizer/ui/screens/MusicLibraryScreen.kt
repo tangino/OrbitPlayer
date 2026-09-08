@@ -44,6 +44,7 @@ import com.antigravity.equalizer.data.model.AlbumItem
 import com.antigravity.equalizer.data.model.ArtistItem
 import com.antigravity.equalizer.ui.components.AlbumItem
 import com.antigravity.equalizer.ui.components.MiniPlayerBar
+import com.antigravity.equalizer.ui.components.SelectAlbumCoverDialog
 import com.antigravity.equalizer.ui.components.SongItem
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.BorderStroke
@@ -55,7 +56,10 @@ import com.antigravity.equalizer.ui.components.PowerampViewModeTransitionContain
 import com.antigravity.equalizer.ui.theme.*
 import com.antigravity.equalizer.ui.utils.pinchToZoomViewMode
 import com.antigravity.equalizer.ui.utils.rememberPinchTransitionState
+import android.widget.Toast
 import com.antigravity.equalizer.ui.viewmodel.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.grid.LazyGridState
 
@@ -109,6 +113,9 @@ fun MusicLibraryScreen(
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val coverVer by com.antigravity.equalizer.utils.CoverHelper.coverVersion.collectAsState()
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
             configuration.screenWidthDp > configuration.screenHeightDp
 
@@ -139,6 +146,13 @@ fun MusicLibraryScreen(
     var showAddSongsToPlaylistDialog by remember { mutableStateOf(false) }
     var songToAddToPlaylist by remember { mutableStateOf<Song?>(null) }
     var activeSongForLongClickMenu by remember { mutableStateOf<Song?>(null) }
+    var showSelectAlbumCoverDialog by remember { mutableStateOf(false) }
+    var candidateCovers by remember { mutableStateOf<List<com.antigravity.equalizer.data.cover.MusicBrainzCoverService.AlbumCoverCandidate>>(emptyList()) }
+    var candidateArtistName by remember { mutableStateOf("") }
+    var candidateSong by remember { mutableStateOf<Song?>(null) }
+    var isApplyingCover by remember { mutableStateOf(false) }
+    var isSearchingCoverDialog by remember { mutableStateOf(false) }
+    var searchingSong by remember { mutableStateOf<Song?>(null) }
 
     // 文件夹下钻：当前展开的文件夹路径
     var openedFolderPath by remember { mutableStateOf<String?>(null) }
@@ -1475,7 +1489,11 @@ fun MusicLibraryScreen(
                     ) {
                         if (longClickedSong.albumArtUri != null) {
                             AsyncImage(
-                                model = longClickedSong.albumArtUri,
+                                model = ImageRequest.Builder(context)
+                                    .data(longClickedSong.albumArtUri)
+                                    .memoryCacheKey("${longClickedSong.albumArtUri}_$coverVer")
+                                    .diskCacheKey("${longClickedSong.albumArtUri}_$coverVer")
+                                    .build(),
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
@@ -1602,10 +1620,160 @@ fun MusicLibraryScreen(
                         color = OrbitTheme.colors.textPrimary
                     )
                 }
+
+                // 操作项 3：在线匹配高清封面 (MusicBrainz / Cover Art Archive)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable {
+                            val target = longClickedSong
+                            activeSongForLongClickMenu = null
+                            searchingSong = target
+                            isSearchingCoverDialog = true
+                            scope.launch {
+                                try {
+                                    com.antigravity.equalizer.utils.CoverHelper.resetOnlineSearchStatus(target.id)
+                                    val result = com.antigravity.equalizer.data.cover.MusicBrainzCoverService.checkAndFetchLargeCover(
+                                        context = context,
+                                        song = target,
+                                        force = true
+                                    )
+                                    withContext(Dispatchers.Main) {
+                                        isSearchingCoverDialog = false
+                                        when (result) {
+                                            is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.UpdatedLarge -> {
+                                                val sizeStr = "${result.netWidth}x${result.netHeight}"
+                                                Toast.makeText(
+                                                    context,
+                                                    context.getString(R.string.cover_update_success, sizeStr),
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                            is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.KeptExisting -> {
+                                                Toast.makeText(context, R.string.cover_already_highest, Toast.LENGTH_SHORT).show()
+                                            }
+                                            is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.ArtistAlbumsFound -> {
+                                                candidateCovers = result.candidates
+                                                candidateArtistName = result.artist
+                                                candidateSong = target
+                                                showSelectAlbumCoverDialog = true
+                                            }
+                                            is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.NotFound -> {
+                                                Toast.makeText(context, R.string.cover_not_found, Toast.LENGTH_SHORT).show()
+                                            }
+                                            else -> {
+                                                Toast.makeText(context, R.string.cover_search_failed, Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    withContext(Dispatchers.Main) {
+                                        isSearchingCoverDialog = false
+                                        Toast.makeText(context, R.string.cover_search_failed, Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                        }
+                        .padding(vertical = 12.dp, horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ImageSearch,
+                        contentDescription = null,
+                        tint = OrbitTheme.colors.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Text(
+                        text = stringResource(R.string.online_cover_match_manual),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = OrbitTheme.colors.textPrimary
+                    )
+                }
             }
         }
     }
 
+    // 正在检索封面 Loading 对话框
+    if (isSearchingCoverDialog && searchingSong != null) {
+        val s = searchingSong!!
+        AlertDialog(
+            onDismissRequest = { isSearchingCoverDialog = false },
+            text = {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        color = OrbitTheme.colors.primary,
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(36.dp)
+                    )
+                    Spacer(modifier = Modifier.width(18.dp))
+                    Column {
+                        Text(
+                            text = stringResource(R.string.cover_search_start),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = OrbitTheme.colors.textPrimary
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "${s.title} • ${s.artist}",
+                            fontSize = 12.sp,
+                            color = OrbitTheme.colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { isSearchingCoverDialog = false }) {
+                    Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
+                }
+            },
+            containerColor = OrbitTheme.colors.surfaceDialog,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    // 候选专辑封面选择对话框 (未检索到具体专辑时展示歌手所有专辑高清封面供用户挑选)
+    if (showSelectAlbumCoverDialog && candidateSong != null && candidateCovers.isNotEmpty()) {
+        val songToApply = candidateSong!!
+        SelectAlbumCoverDialog(
+            artistName = candidateArtistName,
+            candidates = candidateCovers,
+            isApplying = isApplyingCover,
+            onDismissRequest = {
+                showSelectAlbumCoverDialog = false
+            },
+            onConfirmSelection = { selectedCandidate ->
+                isApplyingCover = true
+                coroutineScope.launch {
+                    val success = com.antigravity.equalizer.data.cover.MusicBrainzCoverService.applyCandidateCover(
+                        context = context,
+                        songId = songToApply.id,
+                        candidate = selectedCandidate
+                    )
+                    withContext(Dispatchers.Main) {
+                        isApplyingCover = false
+                        if (success) {
+                            Toast.makeText(context, R.string.cover_apply_success, Toast.LENGTH_SHORT).show()
+                            showSelectAlbumCoverDialog = false
+                        } else {
+                            Toast.makeText(context, R.string.cover_apply_failed, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        )
+    }
 
 }
 

@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import com.antigravity.equalizer.data.model.Playlist
 import com.antigravity.equalizer.data.model.Song
+import com.antigravity.equalizer.data.model.SongMetadata
 
 data class PresetEntity(
     val id: String,
@@ -32,7 +33,7 @@ data class AppProfileEntity(
 )
 
 class AppDatabase private constructor(context: Context) :
-    SQLiteOpenHelper(context, "equalizer_music_v2.db", null, 4) {
+    SQLiteOpenHelper(context, "equalizer_music_v2.db", null, 5) {
 
     val equalizerDao = EqualizerDaoImpl(this)
     val songDao = SongDaoImpl(this)
@@ -130,6 +131,23 @@ class AppDatabase private constructor(context: Context) :
             )
             """.trimIndent()
         )
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS song_tags (
+                path TEXT PRIMARY KEY,
+                title TEXT,
+                track TEXT,
+                year TEXT,
+                genre TEXT,
+                artist TEXT,
+                album TEXT,
+                albumArtist TEXT,
+                composer TEXT,
+                comment TEXT
+            )
+            """.trimIndent()
+        )
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -150,6 +168,24 @@ class AppDatabase private constructor(context: Context) :
             try {
                 db.execSQL("ALTER TABLE song_stats ADD COLUMN isDisliked INTEGER NOT NULL DEFAULT 0")
             } catch (_: Exception) {}
+        }
+        if (oldVersion < 5) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS song_tags (
+                    path TEXT PRIMARY KEY,
+                    title TEXT,
+                    track TEXT,
+                    year TEXT,
+                    genre TEXT,
+                    artist TEXT,
+                    album TEXT,
+                    albumArtist TEXT,
+                    composer TEXT,
+                    comment TEXT
+                )
+                """.trimIndent()
+            )
         }
     }
 
@@ -416,6 +452,71 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
 
     fun clearAll() {
         helper.writableDatabase.delete("songs", null, null)
+    }
+
+    fun updateSongMetadata(songId: Long, title: String, artist: String, album: String, year: Int = 0) {
+        val db = helper.writableDatabase
+        val cv = ContentValues().apply {
+            put("title", title)
+            put("artist", artist)
+            put("album", album)
+            if (year > 0) {
+                put("year", year)
+            }
+        }
+        db.update("songs", cv, "id = ?", arrayOf(songId.toString()))
+    }
+
+    fun getSongMetadata(path: String): SongMetadata? {
+        val db = helper.readableDatabase
+        val sql = "SELECT title, track, year, genre, artist, album, albumArtist, composer, comment FROM song_tags WHERE path = ?"
+        db.rawQuery(sql, arrayOf(path)).use { c ->
+            if (c.moveToFirst()) {
+                return SongMetadata(
+                    title = c.getString(0).orEmpty(),
+                    track = c.getString(1).orEmpty(),
+                    year = c.getString(2).orEmpty(),
+                    genre = c.getString(3).orEmpty(),
+                    artist = c.getString(4).orEmpty(),
+                    album = c.getString(5).orEmpty(),
+                    albumArtist = c.getString(6).orEmpty(),
+                    composer = c.getString(7).orEmpty(),
+                    comment = c.getString(8).orEmpty()
+                )
+            }
+        }
+        return null
+    }
+
+    fun saveSongMetadata(path: String, songId: Long, metadata: SongMetadata) {
+        val db = helper.writableDatabase
+        val cvTags = ContentValues().apply {
+            put("path", path)
+            put("title", metadata.title)
+            put("track", metadata.track)
+            put("year", metadata.year)
+            put("genre", metadata.genre)
+            put("artist", metadata.artist)
+            put("album", metadata.album)
+            put("albumArtist", metadata.albumArtist)
+            put("composer", metadata.composer)
+            put("comment", metadata.comment)
+        }
+        db.insertWithOnConflict("song_tags", null, cvTags, SQLiteDatabase.CONFLICT_REPLACE)
+
+        val yearInt = metadata.year.toIntOrNull() ?: 0
+        val cvSong = ContentValues().apply {
+            put("title", metadata.title)
+            put("artist", metadata.artist)
+            put("album", metadata.album)
+            if (yearInt > 0) {
+                put("year", yearInt)
+            }
+        }
+        if (songId != 0L) {
+            db.update("songs", cvSong, "id = ?", arrayOf(songId.toString()))
+        }
+        db.update("songs", cvSong, "path = ?", arrayOf(path))
     }
 
     fun getAllPlaylists(): List<Playlist> {

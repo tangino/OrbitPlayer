@@ -43,6 +43,7 @@ class MusicPlaybackService : MediaSessionService() {
     private var stateObserverJob: Job? = null
     private var cachedCoverBitmap: Bitmap? = null
     private var lastCoverSongId: Long = -1L
+    private var lastAutoCoverSongId: Long = -1L
 
     @OptIn(UnstableApi::class)
     override fun onCreate() {
@@ -87,7 +88,37 @@ class MusicPlaybackService : MediaSessionService() {
                     val cover = if (song != null) loadCoverBitmap(song) else null
                     val notification = buildNeonCyanNotification(song, state.isPlaying, cover)
                     updateNotification(notification)
+
+                    // 仅当歌曲真正处于播放状态 (isPlaying == true) 时，才触发在线大尺寸封面检索 (MusicBrainz / Cover Art Archive)
+                    if (state.isPlaying && song != null && song.id != lastAutoCoverSongId) {
+                        lastAutoCoverSongId = song.id
+                        val prefs = getSharedPreferences("com.antigravity.equalizer_preferences", Context.MODE_PRIVATE)
+                        val isAutoMatchEnabled = prefs.getBoolean("key_auto_match_online_cover", true)
+                        if (isAutoMatchEnabled) {
+                            serviceScope.launch {
+                                com.antigravity.equalizer.data.cover.MusicBrainzCoverService.checkAndFetchLargeCover(
+                                    context = this@MusicPlaybackService,
+                                    song = song,
+                                    force = false
+                                )
+                            }
+                        }
+                    }
                 }
+        }
+
+        // 监听大尺寸封面更新通知，热重载通知栏封面
+        serviceScope.launch {
+            com.antigravity.equalizer.utils.CoverHelper.coverUpdatedFlow.collect { updatedSongId ->
+                val currentSong = playerManager.playbackState.value.currentSong
+                if (currentSong != null && currentSong.id == updatedSongId) {
+                    lastCoverSongId = -1L
+                    cachedCoverBitmap = null
+                    val newCover = loadCoverBitmap(currentSong)
+                    val notification = buildNeonCyanNotification(currentSong, playerManager.playbackState.value.isPlaying, newCover)
+                    updateNotification(notification)
+                }
+            }
         }
     }
 

@@ -72,7 +72,9 @@ import com.antigravity.equalizer.data.model.SongAttitude
 import com.antigravity.equalizer.data.model.VisualizerColorScheme
 import com.antigravity.equalizer.data.model.VisualizerStyle
 import com.antigravity.equalizer.ui.components.AppBackgroundLayer
+import com.antigravity.equalizer.ui.components.EditSongTagsDialog
 import com.antigravity.equalizer.ui.components.PowerampSpectrumVisualizer
+import com.antigravity.equalizer.ui.components.SelectAlbumCoverDialog
 import com.antigravity.equalizer.ui.theme.*
 import com.antigravity.equalizer.ui.utils.swipeToChangeSong
 import com.antigravity.equalizer.ui.utils.swipeVerticalGesture
@@ -126,6 +128,16 @@ fun NowPlayingScreen(
     var showAddToPlaylistDialog by remember { mutableStateOf(false) }
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
+    var showMoreOptionsMenu by remember { mutableStateOf(false) }
+    var showEditSongTagsDialog by remember { mutableStateOf(false) }
+    var currentSongMetadata by remember { mutableStateOf(com.antigravity.equalizer.data.model.SongMetadata()) }
+    var showSelectAlbumCoverDialog by remember { mutableStateOf(false) }
+    var candidateCovers by remember { mutableStateOf<List<com.antigravity.equalizer.data.cover.MusicBrainzCoverService.AlbumCoverCandidate>>(emptyList()) }
+    var candidateArtistName by remember { mutableStateOf("") }
+    var candidateSong by remember { mutableStateOf<com.antigravity.equalizer.data.model.Song?>(null) }
+    var isApplyingCover by remember { mutableStateOf(false) }
+    var isSearchingCoverDialog by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     // 当前播放队列弹层
     var showQueueBottomSheet by remember { mutableStateOf(false) }
@@ -135,6 +147,7 @@ fun NowPlayingScreen(
 
     // 实时异步加载并解析同目录下同名歌词文件
     var lyricLines by remember { mutableStateOf<List<LyricLine>>(emptyList()) }
+    val coverVer by com.antigravity.equalizer.utils.CoverHelper.coverVersion.collectAsState()
 
     LaunchedEffect(song?.id, song?.path) {
         if (song != null) {
@@ -408,13 +421,17 @@ fun NowPlayingScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         AnimatedContent(
-                            targetState = song?.albumArtUri,
+                            targetState = Pair(song?.albumArtUri, coverVer),
                             transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) },
                             label = "AlbumArtAnim"
-                        ) { artUri ->
+                        ) { (artUri, _) ->
                             if (artUri != null) {
                                 AsyncImage(
-                                    model = artUri,
+                                    model = coil.request.ImageRequest.Builder(LocalContext.current)
+                                        .data(artUri)
+                                        .memoryCacheKey("${artUri}_$coverVer")
+                                        .diskCacheKey("${artUri}_$coverVer")
+                                        .build(),
                                     contentDescription = song?.title,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()
@@ -676,12 +693,12 @@ fun NowPlayingScreen(
 
                 // 三点菜单
                 IconButton(
-                    onClick = { showAddToPlaylistDialog = true },
+                    onClick = { showMoreOptionsMenu = true },
                     modifier = Modifier.size(38.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.MoreVert,
-                        contentDescription = "More Options",
+                        contentDescription = stringResource(R.string.menu_more_options),
                         tint = OrbitTheme.colors.textSecondary,
                         modifier = Modifier.size(24.dp)
                     )
@@ -1242,6 +1259,271 @@ fun NowPlayingScreen(
                 }
             }
         }
+    }
+
+    // 播放页三点更多操作弹窗
+    if (showMoreOptionsMenu && song != null) {
+        val targetSong = song
+        AlertDialog(
+            onDismissRequest = { showMoreOptionsMenu = false },
+            title = {
+                Text(
+                    text = stringResource(R.string.menu_more_options),
+                    color = OrbitTheme.colors.textPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    // 当前歌曲与歌手简要提示
+                    Text(
+                        text = "${targetSong.title} • ${targetSong.artist}",
+                        fontSize = 12.sp,
+                        color = OrbitTheme.colors.primary,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+
+                    HorizontalDivider(color = OrbitTheme.colors.textSecondary.copy(alpha = 0.15f))
+
+                    // 1. 更新封面 (MusicBrainz / Cover Art Archive 在线检索大图)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                showMoreOptionsMenu = false
+                                isSearchingCoverDialog = true
+                                coroutineScope.launch {
+                                    try {
+                                        com.antigravity.equalizer.utils.CoverHelper.resetOnlineSearchStatus(targetSong.id)
+                                        val result = com.antigravity.equalizer.data.cover.MusicBrainzCoverService.checkAndFetchLargeCover(
+                                            context = context,
+                                            song = targetSong,
+                                            force = true
+                                        )
+                                        withContext(Dispatchers.Main) {
+                                            isSearchingCoverDialog = false
+                                            when (result) {
+                                                is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.UpdatedLarge -> {
+                                                    val sizeStr = "${result.netWidth}x${result.netHeight}"
+                                                    Toast.makeText(
+                                                        context,
+                                                        context.getString(R.string.cover_update_success, sizeStr),
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                                is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.KeptExisting -> {
+                                                    Toast.makeText(context, R.string.cover_already_highest, Toast.LENGTH_SHORT).show()
+                                                }
+                                                is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.ArtistAlbumsFound -> {
+                                                    candidateCovers = result.candidates
+                                                    candidateArtistName = result.artist
+                                                    candidateSong = targetSong
+                                                    showSelectAlbumCoverDialog = true
+                                                }
+                                                is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.NotFound -> {
+                                                    Toast.makeText(context, R.string.cover_not_found, Toast.LENGTH_SHORT).show()
+                                                }
+                                                else -> {
+                                                    Toast.makeText(context, R.string.cover_search_failed, Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        withContext(Dispatchers.Main) {
+                                            isSearchingCoverDialog = false
+                                            Toast.makeText(context, R.string.cover_search_failed, Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(vertical = 12.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ImageSearch,
+                            contentDescription = null,
+                            tint = OrbitTheme.colors.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = stringResource(R.string.menu_update_cover),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = OrbitTheme.colors.textPrimary
+                        )
+                    }
+
+                    // 2. 编辑歌曲标签
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                showMoreOptionsMenu = false
+                                coroutineScope.launch {
+                                    val meta = viewModel.loadSongMetadata(targetSong)
+                                    currentSongMetadata = meta
+                                    showEditSongTagsDialog = true
+                                }
+                            }
+                            .padding(vertical = 12.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = null,
+                            tint = OrbitTheme.colors.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = stringResource(R.string.menu_edit_tags),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = OrbitTheme.colors.textPrimary
+                        )
+                    }
+
+                    // 3. 添加到播放列表
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                showMoreOptionsMenu = false
+                                showAddToPlaylistDialog = true
+                            }
+                            .padding(vertical = 12.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.PlaylistPlay,
+                            contentDescription = null,
+                            tint = OrbitTheme.colors.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = stringResource(R.string.add_to_playlist),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = OrbitTheme.colors.textPrimary
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showMoreOptionsMenu = false }) {
+                    Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
+                }
+            },
+            containerColor = OrbitTheme.colors.surfaceDialog
+        )
+    }
+
+    // 编辑歌曲标签对话框 (Poweramp 风格全套元数据)
+    if (showEditSongTagsDialog && song != null) {
+        val targetSong = song
+        EditSongTagsDialog(
+            song = targetSong,
+            initialMetadata = currentSongMetadata,
+            onDismissRequest = { showEditSongTagsDialog = false },
+            onSaveMetadata = { newMeta ->
+                viewModel.saveFullSongMetadata(targetSong, newMeta) {
+                    Toast.makeText(context, R.string.tags_saved_success, Toast.LENGTH_SHORT).show()
+                }
+                showEditSongTagsDialog = false
+            }
+        )
+    }
+
+    // 正在检索封面 Loading 对话框
+    if (isSearchingCoverDialog && song != null) {
+        val s = song
+        AlertDialog(
+            onDismissRequest = { isSearchingCoverDialog = false },
+            text = {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(
+                        color = OrbitTheme.colors.primary,
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(36.dp)
+                    )
+                    Spacer(modifier = Modifier.width(18.dp))
+                    Column {
+                        Text(
+                            text = stringResource(R.string.cover_search_start),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = OrbitTheme.colors.textPrimary
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "${s.title} • ${s.artist}",
+                            fontSize = 12.sp,
+                            color = OrbitTheme.colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { isSearchingCoverDialog = false }) {
+                    Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
+                }
+            },
+            containerColor = OrbitTheme.colors.surfaceDialog,
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    // 候选专辑封面选择对话框 (未检索到具体专辑时展示歌手所有专辑高清封面供用户挑选)
+    if (showSelectAlbumCoverDialog && candidateSong != null && candidateCovers.isNotEmpty()) {
+        val songToApply = candidateSong!!
+        SelectAlbumCoverDialog(
+            artistName = candidateArtistName,
+            candidates = candidateCovers,
+            isApplying = isApplyingCover,
+            onDismissRequest = {
+                showSelectAlbumCoverDialog = false
+            },
+            onConfirmSelection = { selectedCandidate ->
+                isApplyingCover = true
+                coroutineScope.launch {
+                    val success = com.antigravity.equalizer.data.cover.MusicBrainzCoverService.applyCandidateCover(
+                        context = context,
+                        songId = songToApply.id,
+                        candidate = selectedCandidate
+                    )
+                    withContext(Dispatchers.Main) {
+                        isApplyingCover = false
+                        if (success) {
+                            Toast.makeText(context, R.string.cover_apply_success, Toast.LENGTH_SHORT).show()
+                            showSelectAlbumCoverDialog = false
+                        } else {
+                            Toast.makeText(context, R.string.cover_apply_failed, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        )
     }
 
     // 添加到播放列表对话框

@@ -627,6 +627,23 @@ class MusicPlayerManager private constructor(private val context: Context) {
         updateSongAttitude(songPath, isFavorite = isFavorite, isDisliked = false)
     }
 
+    fun updateSongMetadata(updatedSong: Song) {
+        _playbackState.update { current ->
+            val isCurrent = current.currentSong?.id == updatedSong.id
+            val newCurrentSong = if (isCurrent) updatedSong else current.currentSong
+            val updatedPlaylist = current.currentPlaylist.map {
+                if (it.id == updatedSong.id) updatedSong else it
+            }
+            if (isCurrent) {
+                saveLastPlayedSong(updatedSong, current.currentPositionMs, syncImmediately = true)
+            }
+            current.copy(
+                currentSong = newCurrentSong,
+                currentPlaylist = updatedPlaylist
+            )
+        }
+    }
+
     fun release() {
         stopProgressTracker()
         stopVisualizerWatchdog()

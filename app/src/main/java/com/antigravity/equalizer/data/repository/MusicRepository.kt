@@ -156,6 +156,51 @@ class MusicRepository private constructor(private val context: Context) {
         updateCollections(updatedList)
     }
 
+    suspend fun getSongMetadata(song: Song): com.antigravity.equalizer.data.model.SongMetadata = withContext(Dispatchers.IO) {
+        val fromDb = db.songDao.getSongMetadata(song.path)
+        com.antigravity.equalizer.data.model.SongMetadataHelper.extractInitialMetadata(song, fromDb)
+    }
+
+    suspend fun saveFullSongMetadata(
+        song: Song,
+        metadata: com.antigravity.equalizer.data.model.SongMetadata
+    ) = withContext(Dispatchers.IO) {
+        db.songDao.saveSongMetadata(song.path, song.id, metadata)
+        val yearInt = metadata.year.toIntOrNull() ?: song.year
+        val updatedSong = song.copy(
+            title = metadata.title.ifBlank { song.title },
+            artist = metadata.artist.ifBlank { song.artist },
+            album = metadata.album.ifBlank { song.album },
+            year = yearInt
+        )
+        val updatedList = _allSongs.value.map {
+            if (it.path == song.path || it.id == song.id) updatedSong else it
+        }
+        updateCollections(updatedList)
+        MusicPlayerManager.getInstance(context).updateSongMetadata(updatedSong)
+    }
+
+    suspend fun updateSongMetadata(
+        song: Song,
+        newTitle: String,
+        newArtist: String,
+        newAlbum: String,
+        newYear: Int = 0
+    ) = withContext(Dispatchers.IO) {
+        db.songDao.updateSongMetadata(song.id, newTitle, newArtist, newAlbum, newYear)
+        val updatedSong = song.copy(
+            title = newTitle,
+            artist = newArtist,
+            album = newAlbum,
+            year = if (newYear > 0) newYear else song.year
+        )
+        val updatedList = _allSongs.value.map {
+            if (it.id == song.id) updatedSong else it
+        }
+        updateCollections(updatedList)
+        MusicPlayerManager.getInstance(context).updateSongMetadata(updatedSong)
+    }
+
     private fun updateCollections(songs: List<Song>) {
         _allSongs.value = songs
         _favoriteSongs.value = songs.filter { it.isFavorite && !it.isDisliked }

@@ -88,7 +88,9 @@ data class EqualizerUiState(
     val backgroundBlurRadius: Float = 20f,
     val backgroundBlurStyle: String = "frosted_glass",
     val backgroundDimAlpha: Float = 0.35f,
-    val visualizerSingleColor: Boolean = false
+    val visualizerSingleColor: Boolean = false,
+    val autoMatchOnlineCover: Boolean = true,
+    val onlineCoverWifiOnly: Boolean = true
 )
 
 class EqualizerViewModel(application: Application) : AndroidViewModel(application) {
@@ -150,9 +152,13 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         val savedVizBarBorderColor = prefs.getLong(KEY_VIZ_BAR_BORDER_COLOR, 0xFFFFFFFFL)
         val savedVizBarBorderAlpha = prefs.getFloat(KEY_VIZ_BAR_BORDER_ALPHA, 0.8f)
         val savedVizBarBorderOnly = prefs.getBoolean(KEY_VIZ_BAR_BORDER_ONLY, false)
+        val savedAutoMatchOnlineCover = prefs.getBoolean(KEY_AUTO_MATCH_ONLINE_COVER, true)
+        val savedOnlineCoverWifiOnly = prefs.getBoolean(KEY_ONLINE_COVER_WIFI_ONLY, true)
 
         _uiState.update {
             it.copy(
+                autoMatchOnlineCover = savedAutoMatchOnlineCover,
+                onlineCoverWifiOnly = savedOnlineCoverWifiOnly,
                 selectedLanguage = savedLang,
                 themeMode = savedTheme,
                 persistentMiniPlayer = savedPersistentMiniPlayer,
@@ -760,6 +766,20 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         prefs.edit().putBoolean(KEY_VIZ_SINGLE_COLOR, enabled).apply()
     }
 
+    fun setAutoMatchOnlineCover(enabled: Boolean) {
+        _uiState.update { it.copy(autoMatchOnlineCover = enabled) }
+        prefs.edit().putBoolean(KEY_AUTO_MATCH_ONLINE_COVER, enabled).apply()
+        getApplication<Application>().getSharedPreferences("com.antigravity.equalizer_preferences", Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_AUTO_MATCH_ONLINE_COVER, enabled).apply()
+    }
+
+    fun setOnlineCoverWifiOnly(enabled: Boolean) {
+        _uiState.update { it.copy(onlineCoverWifiOnly = enabled) }
+        prefs.edit().putBoolean(KEY_ONLINE_COVER_WIFI_ONLY, enabled).apply()
+        getApplication<Application>().getSharedPreferences("com.antigravity.equalizer_preferences", Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_ONLINE_COVER_WIFI_ONLY, enabled).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "equalizer_ui_state_prefs"
         private const val KEY_EQ_ENABLED = "key_eq_enabled"
@@ -807,5 +827,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         private const val KEY_VIZ_BAR_BORDER_COLOR = "key_viz_bar_border_color"
         private const val KEY_VIZ_BAR_BORDER_ALPHA = "key_viz_bar_border_alpha"
         private const val KEY_VIZ_BAR_BORDER_ONLY = "key_viz_bar_border_only"
+        const val KEY_AUTO_MATCH_ONLINE_COVER = "key_auto_match_online_cover"
+        const val KEY_ONLINE_COVER_WIFI_ONLY = "key_online_cover_wifi_only"
     }
 }

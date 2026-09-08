@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 网络权限 (用于 MusicBrainz 与 Cover Art Archive 在线封面检索) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <!-- 音频读取与存储权限 (Android 13+ READ_MEDIA_AUDIO, 低版本 READ_EXTERNAL_STORAGE) -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
@@ -27,6 +31,7 @@
         android:name=".EqualizerApp"
         android:allowBackup="true"
         android:requestLegacyExternalStorage="true"
+        android:usesCleartextTraffic="true"
         android:resizeableActivity="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
