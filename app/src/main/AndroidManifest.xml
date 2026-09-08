@@ -126,6 +126,13 @@
             </intent-filter>
         </receiver>
 
+        <!-- 单曲专属高保真封面内容提供者 (杜绝 albumId 混淆串台) -->
+        <provider
+            android:name=".data.provider.AudioCoverProvider"
+            android:authorities="com.antigravity.equalizer.cover"
+            android:exported="true"
+            android:grantUriPermissions="true" />
+
     </application>
 
 </manifest>

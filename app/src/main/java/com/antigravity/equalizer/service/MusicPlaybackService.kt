@@ -120,33 +120,13 @@ class MusicPlaybackService : MediaSessionService() {
             return@withContext cachedCoverBitmap
         }
 
-        var bitmap: Bitmap? = null
-
-        // 1. 尝试从 MediaStore URI 解码
-        if (!song.albumArtUri.isNullOrBlank()) {
-            try {
-                contentResolver.openInputStream(Uri.parse(song.albumArtUri))?.use { stream ->
-                    bitmap = BitmapFactory.decodeStream(stream)
-                }
-            } catch (e: Exception) {
-                // ignore
-            }
-        }
-
-        // 2. 尝试从音频文件读取内置 ID3 封面
-        if (bitmap == null && song.path.isNotBlank()) {
-            try {
-                val retriever = MediaMetadataRetriever()
-                retriever.setDataSource(song.path)
-                val rawArt = retriever.embeddedPicture
-                if (rawArt != null && rawArt.isNotEmpty()) {
-                    bitmap = BitmapFactory.decodeByteArray(rawArt, 0, rawArt.size)
-                }
-                retriever.release()
-            } catch (e: Exception) {
-                // ignore
-            }
-        }
+        // 优先使用 CoverHelper 获取单曲专属高保真封面 (杜绝 albumId 混淆串台)
+        val bitmap = com.antigravity.equalizer.utils.CoverHelper.getCoverBitmap(
+            context = this@MusicPlaybackService,
+            songId = song.id,
+            path = song.path,
+            album = song.album
+        )
 
         // 3. 统一处理为定格圆角微光封面
         val processedBitmap = bitmap?.let { createRoundedBitmap(it, 20f) }

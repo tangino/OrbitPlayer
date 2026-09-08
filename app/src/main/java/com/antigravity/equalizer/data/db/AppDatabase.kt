@@ -276,17 +276,21 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
         """.trimIndent()
         helper.readableDatabase.rawQuery(sql, null).use { c ->
             while (c.moveToNext()) {
+                val songId = c.getLong(0)
+                val songPath = c.getString(6)
+                val songAlbum = c.getString(3)
+                val rawArt = c.getString(8)
                 list.add(
                     Song(
-                        id = c.getLong(0),
+                        id = songId,
                         title = c.getString(1),
                         artist = c.getString(2),
-                        album = c.getString(3),
+                        album = songAlbum,
                         albumId = c.getLong(4),
                         durationMs = c.getLong(5),
-                        path = c.getString(6),
+                        path = songPath,
                         size = c.getLong(7),
-                        albumArtUri = c.getString(8),
+                        albumArtUri = sanitizeAlbumArtUri(rawArt, songId, songPath, songAlbum),
                         folderPath = c.getString(9),
                         year = c.getInt(10),
                         mimeType = c.getString(11),
@@ -354,17 +358,21 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
         """.trimIndent()
         helper.readableDatabase.rawQuery(sql, null).use { c ->
             while (c.moveToNext()) {
+                val songId = c.getLong(0)
+                val songPath = c.getString(6)
+                val songAlbum = c.getString(3)
+                val rawArt = c.getString(8)
                 list.add(
                     Song(
-                        id = c.getLong(0),
+                        id = songId,
                         title = c.getString(1),
                         artist = c.getString(2),
-                        album = c.getString(3),
+                        album = songAlbum,
                         albumId = c.getLong(4),
                         durationMs = c.getLong(5),
-                        path = c.getString(6),
+                        path = songPath,
                         size = c.getLong(7),
-                        albumArtUri = c.getString(8),
+                        albumArtUri = sanitizeAlbumArtUri(rawArt, songId, songPath, songAlbum),
                         folderPath = c.getString(9),
                         year = c.getInt(10),
                         mimeType = c.getString(11),
@@ -475,17 +483,21 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
         """.trimIndent()
         helper.readableDatabase.rawQuery(sql, arrayOf(playlistId.toString())).use { c ->
             while (c.moveToNext()) {
+                val songId = c.getLong(0)
+                val songPath = c.getString(6)
+                val songAlbum = c.getString(3)
+                val rawArt = c.getString(8)
                 list.add(
                     Song(
-                        id = c.getLong(0),
+                        id = songId,
                         title = c.getString(1),
                         artist = c.getString(2),
-                        album = c.getString(3),
+                        album = songAlbum,
                         albumId = c.getLong(4),
                         durationMs = c.getLong(5),
-                        path = c.getString(6),
+                        path = songPath,
                         size = c.getLong(7),
-                        albumArtUri = c.getString(8),
+                        albumArtUri = sanitizeAlbumArtUri(rawArt, songId, songPath, songAlbum),
                         folderPath = c.getString(9),
                         year = c.getInt(10),
                         mimeType = c.getString(11),
@@ -496,5 +508,11 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
             }
         }
         return list
+    }
+    private fun sanitizeAlbumArtUri(rawArtUri: String?, songId: Long, path: String, album: String?): String {
+        if (rawArtUri.isNullOrBlank() || rawArtUri.contains("media/external/audio/albumart")) {
+            return com.antigravity.equalizer.data.provider.AudioCoverProvider.buildSongCoverUri(songId, path, album)
+        }
+        return rawArtUri
     }
 }

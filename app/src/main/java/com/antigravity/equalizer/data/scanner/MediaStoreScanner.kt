@@ -9,6 +9,7 @@ import android.provider.MediaStore
 import android.util.Log
 import com.antigravity.equalizer.data.db.AppDatabase
 import com.antigravity.equalizer.data.model.Song
+import com.antigravity.equalizer.data.provider.AudioCoverProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -83,10 +84,8 @@ class MediaStoreScanner(private val context: Context) {
                     val year = if (yearCol != -1) cursor.getInt(yearCol) else 0
                     val mime = if (mimeCol != -1) cursor.getString(mimeCol) ?: "audio/*" else "audio/*"
 
-                    val albumArtUri = ContentUris.withAppendedId(
-                        Uri.parse("content://media/external/audio/albumart"),
-                        albumId
-                    ).toString()
+                    // 使用单曲唯一绑定的专属封面 URI，彻底告别旧版按 albumId 共享引起的封面错乱与串台
+                    val albumArtUri = AudioCoverProvider.buildSongCoverUri(id, path, album)
 
                     val song = Song(
                         id = id,
@@ -227,17 +226,18 @@ class MediaStoreScanner(private val context: Context) {
                         // 忽略无法读取元数据的错误，使用文件名
                     }
 
-                    val song = Song(
-                        id = path.hashCode().toLong(),
-                        title = title,
-                        artist = artist,
-                        album = album,
-                        albumId = 0L,
-                        durationMs = durationMs,
-                        path = path,
-                        size = f.length(),
-                        albumArtUri = null,
-                        folderPath = f.parent ?: "",
+                        val songId = path.hashCode().toLong()
+                        val song = Song(
+                            id = songId,
+                            title = title,
+                            artist = artist,
+                            album = album,
+                            albumId = 0L,
+                            durationMs = durationMs,
+                            path = path,
+                            size = f.length(),
+                            albumArtUri = AudioCoverProvider.buildSongCoverUri(songId, path, album),
+                            folderPath = f.parent ?: "",
                         year = 0,
                         mimeType = "audio/*"
                     )
