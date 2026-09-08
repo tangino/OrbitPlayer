@@ -109,7 +109,8 @@ fun MusicLibraryScreen(
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
+            configuration.screenWidthDp > configuration.screenHeightDp
 
     val libraryState by viewModel.libraryUiState.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()

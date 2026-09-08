@@ -142,7 +142,8 @@ fun MainEqualizerScreen(
         containerColor = OrbitTheme.colors.background
     ) { innerPadding ->
         val configuration = LocalConfiguration.current
-        val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
+                configuration.screenWidthDp > configuration.screenHeightDp
 
         if (isLandscape) {
             // ========== 专业硬件混音台横屏分栏布局 (Studio Console Split Layout) ==========

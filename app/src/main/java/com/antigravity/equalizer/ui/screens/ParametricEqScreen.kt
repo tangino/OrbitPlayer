@@ -39,7 +39,8 @@ fun ParametricEqScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
+            configuration.screenWidthDp > configuration.screenHeightDp
 
     val freqs = remember(uiState.parametricBands) {
         FloatArray(uiState.parametricBands.size) { i -> uiState.parametricBands[i].frequency }

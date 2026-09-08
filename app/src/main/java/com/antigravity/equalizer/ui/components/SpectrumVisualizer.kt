@@ -51,6 +51,10 @@ fun PowerampSpectrumVisualizer(
     modifier: Modifier = Modifier,
     barWidthDp: Float = 5.0f,
     barAlpha: Float = 1.0f,
+    borderWidthDp: Float = 0.0f,
+    borderColor: Long = 0xFFFFFFFFL,
+    borderAlpha: Float = 0.8f,
+    borderOnly: Boolean = false,
     customColor: Long = 0xFF00E5FFL,
     customColor2: Long = 0xFF7C4DFFL,
     isSingleColor: Boolean = false,
@@ -208,6 +212,9 @@ fun PowerampSpectrumVisualizer(
                     val barW = ((totalW - (count - 1) * spacing) / count).coerceAtLeast(1.0f)
                     val capHeight = 2.2.dp.toPx()
                     val corner = CornerRadius(1.5.dp.toPx(), 1.5.dp.toPx())
+                    val strokeW = if (borderOnly && borderWidthDp < 0.2f) 1.4.dp.toPx() else borderWidthDp.dp.toPx()
+                    val hasBorder = (strokeW > 0.05f && borderAlpha > 0.01f) || borderOnly
+                    val borderStrokeColor = if (hasBorder) Color(borderColor).copy(alpha = borderAlpha.coerceIn(0f, 1f)) else Color.Transparent
 
                     for (i in 0 until count) {
                         val mag = displayBars[i]
@@ -217,29 +224,56 @@ fun PowerampSpectrumVisualizer(
                         val x = i * (barW + spacing)
                         val y = totalH - barH
 
-                        // 绘制单色纯色柱体 / 渐变发光柱体
-                        if (isSingleColor) {
-                            drawRoundRect(
-                                color = primaryColor,
-                                topLeft = Offset(x, y),
-                                size = Size(barW, barH),
-                                cornerRadius = corner
-                            )
-                        } else {
-                            drawRoundRect(
-                                brush = Brush.verticalGradient(
-                                    colors = listOf(
-                                        primaryColor,
-                                        secondaryColor.copy(alpha = 0.85f),
-                                        secondaryColor.copy(alpha = 0.35f)
+                        // 绘制单色纯色柱体 / 渐变发光柱体 (仅在未开启仅边框模式时填充)
+                        if (!borderOnly) {
+                            if (isSingleColor) {
+                                drawRoundRect(
+                                    color = primaryColor,
+                                    topLeft = Offset(x, y),
+                                    size = Size(barW, barH),
+                                    cornerRadius = corner
+                                )
+                            } else {
+                                drawRoundRect(
+                                    brush = Brush.verticalGradient(
+                                        colors = listOf(
+                                            primaryColor,
+                                            secondaryColor.copy(alpha = 0.85f),
+                                            secondaryColor.copy(alpha = 0.35f)
+                                        ),
+                                        startY = y,
+                                        endY = totalH
                                     ),
-                                    startY = y,
-                                    endY = totalH
-                                ),
-                                topLeft = Offset(x, y),
-                                size = Size(barW, barH),
-                                cornerRadius = corner
-                            )
+                                    topLeft = Offset(x, y),
+                                    size = Size(barW, barH),
+                                    cornerRadius = corner
+                                )
+                            }
+                        }
+
+                        // 绘制柱体精致圆角轮廓边框 (内缩 halfStroke 避免柱体间像素粘连)
+                        if (hasBorder) {
+                            val halfStroke = strokeW / 2f
+                            if (barW > strokeW && barH > strokeW) {
+                                drawRoundRect(
+                                    color = borderStrokeColor,
+                                    topLeft = Offset(x + halfStroke, y + halfStroke),
+                                    size = Size(barW - strokeW, barH - strokeW),
+                                    cornerRadius = CornerRadius(
+                                        (corner.x - halfStroke).coerceAtLeast(0f),
+                                        (corner.y - halfStroke).coerceAtLeast(0f)
+                                    ),
+                                    style = Stroke(width = strokeW)
+                                )
+                            } else {
+                                drawRoundRect(
+                                    color = borderStrokeColor,
+                                    topLeft = Offset(x, y),
+                                    size = Size(barW, barH),
+                                    cornerRadius = corner,
+                                    style = Stroke(width = strokeW)
+                                )
+                            }
                         }
 
                         // 绘制悬浮缓降峰值点 (Peak Cap)
@@ -335,6 +369,9 @@ fun PowerampSpectrumVisualizer(
                     val centerY = totalH / 2f
                     val capHeight = 2.0.dp.toPx()
                     val corner = CornerRadius(1.2.dp.toPx(), 1.2.dp.toPx())
+                    val strokeW = if (borderOnly && borderWidthDp < 0.2f) 1.4.dp.toPx() else borderWidthDp.dp.toPx()
+                    val hasBorder = (strokeW > 0.05f && borderAlpha > 0.01f) || borderOnly
+                    val borderStrokeColor = if (hasBorder) Color(borderColor).copy(alpha = borderAlpha.coerceIn(0f, 1f)) else Color.Transparent
 
                     for (i in 0 until count) {
                         val mag = displayBars[i]
@@ -342,26 +379,55 @@ fun PowerampSpectrumVisualizer(
 
                         val halfH = (mag * (centerY - capHeight - 3.dp.toPx())).coerceAtLeast(2f)
                         val x = i * (barW + spacing)
+                        val fullH = halfH * 2f
+                        val topY = centerY - halfH
 
-                        // 上下对称发光柱体 (单色纯色或双色渐变)
-                        if (isSingleColor) {
-                            drawRoundRect(
-                                color = primaryColor,
-                                topLeft = Offset(x, centerY - halfH),
-                                size = Size(barW, halfH * 2f),
-                                cornerRadius = corner
-                            )
-                        } else {
-                            drawRoundRect(
-                                brush = Brush.verticalGradient(
-                                    colors = listOf(primaryColor, secondaryColor),
-                                    startY = centerY - halfH,
-                                    endY = centerY + halfH
-                                ),
-                                topLeft = Offset(x, centerY - halfH),
-                                size = Size(barW, halfH * 2f),
-                                cornerRadius = corner
-                            )
+                        // 上下对称发光柱体 (仅在未开启仅边框模式时填充)
+                        if (!borderOnly) {
+                            if (isSingleColor) {
+                                drawRoundRect(
+                                    color = primaryColor,
+                                    topLeft = Offset(x, topY),
+                                    size = Size(barW, fullH),
+                                    cornerRadius = corner
+                                )
+                            } else {
+                                drawRoundRect(
+                                    brush = Brush.verticalGradient(
+                                        colors = listOf(primaryColor, secondaryColor),
+                                        startY = topY,
+                                        endY = centerY + halfH
+                                    ),
+                                    topLeft = Offset(x, topY),
+                                    size = Size(barW, fullH),
+                                    cornerRadius = corner
+                                )
+                            }
+                        }
+
+                        // 绘制对称柱体精致轮廓边框
+                        if (hasBorder) {
+                            val halfStroke = strokeW / 2f
+                            if (barW > strokeW && fullH > strokeW) {
+                                drawRoundRect(
+                                    color = borderStrokeColor,
+                                    topLeft = Offset(x + halfStroke, topY + halfStroke),
+                                    size = Size(barW - strokeW, fullH - strokeW),
+                                    cornerRadius = CornerRadius(
+                                        (corner.x - halfStroke).coerceAtLeast(0f),
+                                        (corner.y - halfStroke).coerceAtLeast(0f)
+                                    ),
+                                    style = Stroke(width = strokeW)
+                                )
+                            } else {
+                                drawRoundRect(
+                                    color = borderStrokeColor,
+                                    topLeft = Offset(x, topY),
+                                    size = Size(barW, fullH),
+                                    cornerRadius = corner,
+                                    style = Stroke(width = strokeW)
+                                )
+                            }
                         }
 
                         // 双向悬浮缓降峰值点

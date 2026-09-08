@@ -267,6 +267,16 @@
     <!-- Visualizer Bar Opacity & Custom App Background -->
     <string name="visualizer_bar_alpha_title">Visualizer Opacity</string>
     <string name="visualizer_bar_alpha_subtitle">Adjust opacity of spectrum bars and waveforms (10% - 100%)</string>
+
+    <!-- Spectrum Bar Border Stroke Customization -->
+    <string name="visualizer_bar_border_width_title">Bar Border Width</string>
+    <string name="visualizer_bar_border_width_subtitle">Adjust stroke width of spectrum bar outlines (0 for none)</string>
+    <string name="visualizer_bar_border_color_title">Bar Border Color</string>
+    <string name="visualizer_bar_border_color_subtitle">Select stroke color of spectrum bar outlines</string>
+    <string name="visualizer_bar_border_alpha_title">Bar Border Opacity</string>
+    <string name="visualizer_bar_border_alpha_subtitle">Adjust opacity of the outline stroke (0% - 100%)</string>
+    <string name="visualizer_bar_border_only_title">Border Outline Only</string>
+    <string name="visualizer_bar_border_only_subtitle">Disable inner fill and render wireframe outlines only</string>
     <string name="section_custom_background">Custom Background &amp; Acrylic Glass</string>
     <string name="custom_background_title">Custom App Background</string>
     <string name="custom_background_subtitle">Choose wallpaper from photos for full-app translucent immersion</string>

@@ -80,6 +80,10 @@ data class EqualizerUiState(
     val maximizedCoverAlpha: Float = 0.85f,
     val showCoverInQueue: Boolean = true,
     val visualizerBarAlpha: Float = 1.0f,
+    val visualizerBarBorderWidthDp: Float = 0.0f,
+    val visualizerBarBorderColor: Long = 0xFFFFFFFFL,
+    val visualizerBarBorderAlpha: Float = 0.8f,
+    val visualizerBarBorderOnly: Boolean = false,
     val customBackgroundPath: String? = null,
     val backgroundBlurRadius: Float = 20f,
     val backgroundBlurStyle: String = "frosted_glass",
@@ -142,6 +146,10 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         val savedBgBlurStyle = prefs.getString(KEY_BG_BLUR_STYLE, "frosted_glass") ?: "frosted_glass"
         val savedBgDimAlpha = prefs.getFloat(KEY_BG_DIM_ALPHA, 0.35f)
         val savedVizSingleColor = prefs.getBoolean(KEY_VIZ_SINGLE_COLOR, false)
+        val savedVizBarBorderWidth = prefs.getFloat(KEY_VIZ_BAR_BORDER_WIDTH_DP, 0.0f)
+        val savedVizBarBorderColor = prefs.getLong(KEY_VIZ_BAR_BORDER_COLOR, 0xFFFFFFFFL)
+        val savedVizBarBorderAlpha = prefs.getFloat(KEY_VIZ_BAR_BORDER_ALPHA, 0.8f)
+        val savedVizBarBorderOnly = prefs.getBoolean(KEY_VIZ_BAR_BORDER_ONLY, false)
 
         _uiState.update {
             it.copy(
@@ -170,6 +178,10 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
                 maximizedCoverAlpha = savedMaximizedCoverAlpha,
                 showCoverInQueue = savedShowCoverInQueue,
                 visualizerBarAlpha = savedVizBarAlpha,
+                visualizerBarBorderWidthDp = savedVizBarBorderWidth,
+                visualizerBarBorderColor = savedVizBarBorderColor,
+                visualizerBarBorderAlpha = savedVizBarBorderAlpha,
+                visualizerBarBorderOnly = savedVizBarBorderOnly,
                 customBackgroundPath = savedCustomBgPath,
                 backgroundBlurRadius = savedBgBlurRadius,
                 backgroundBlurStyle = savedBgBlurStyle,
@@ -660,6 +672,41 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         prefs.edit().putFloat(KEY_VIZ_BAR_ALPHA, clamped).apply()
     }
 
+    fun setVisualizerBarBorderWidth(width: Float) {
+        val clamped = width.coerceIn(0.0f, 4.0f)
+        _uiState.update { it.copy(visualizerBarBorderWidthDp = clamped) }
+        prefs.edit().putFloat(KEY_VIZ_BAR_BORDER_WIDTH_DP, clamped).apply()
+    }
+
+    fun setVisualizerBarBorderColor(color: Long) {
+        _uiState.update { it.copy(visualizerBarBorderColor = color) }
+        prefs.edit().putLong(KEY_VIZ_BAR_BORDER_COLOR, color).apply()
+    }
+
+    fun setVisualizerBarBorderAlpha(alpha: Float) {
+        val clamped = alpha.coerceIn(0.0f, 1.0f)
+        _uiState.update { it.copy(visualizerBarBorderAlpha = clamped) }
+        prefs.edit().putFloat(KEY_VIZ_BAR_BORDER_ALPHA, clamped).apply()
+    }
+
+    fun setVisualizerBarBorderOnly(enabled: Boolean) {
+        _uiState.update { current ->
+            val targetBorderWidth = if (enabled && current.visualizerBarBorderWidthDp < 0.2f) {
+                1.4f
+            } else {
+                current.visualizerBarBorderWidthDp
+            }
+            if (targetBorderWidth != current.visualizerBarBorderWidthDp) {
+                prefs.edit().putFloat(KEY_VIZ_BAR_BORDER_WIDTH_DP, targetBorderWidth).apply()
+            }
+            current.copy(
+                visualizerBarBorderOnly = enabled,
+                visualizerBarBorderWidthDp = targetBorderWidth
+            )
+        }
+        prefs.edit().putBoolean(KEY_VIZ_BAR_BORDER_ONLY, enabled).apply()
+    }
+
     fun setCustomBackgroundFromUri(uri: Uri, context: Context): Boolean {
         return try {
             val destFile = File(context.filesDir, "custom_app_background.jpg")
@@ -756,5 +803,9 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         private const val KEY_BG_BLUR_STYLE = "key_bg_blur_style"
         private const val KEY_BG_DIM_ALPHA = "key_bg_dim_alpha"
         private const val KEY_VIZ_SINGLE_COLOR = "key_viz_single_color"
+        private const val KEY_VIZ_BAR_BORDER_WIDTH_DP = "key_viz_bar_border_width_dp"
+        private const val KEY_VIZ_BAR_BORDER_COLOR = "key_viz_bar_border_color"
+        private const val KEY_VIZ_BAR_BORDER_ALPHA = "key_viz_bar_border_alpha"
+        private const val KEY_VIZ_BAR_BORDER_ONLY = "key_viz_bar_border_only"
     }
 }

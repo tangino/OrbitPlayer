@@ -507,6 +507,69 @@ fun SettingsScreen(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
                         )
 
+                        // 2.3 仅绘制柱状边框开关 (线框镂空模式)
+                        SettingsSwitchItem(
+                            icon = Icons.Default.CheckBoxOutlineBlank,
+                            title = stringResource(R.string.visualizer_bar_border_only_title),
+                            subtitle = stringResource(R.string.visualizer_bar_border_only_subtitle),
+                            checked = uiState.visualizerBarBorderOnly,
+                            onCheckedChange = { viewModel.setVisualizerBarBorderOnly(it) }
+                        )
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                        )
+
+                        // 2.4 柱状频谱边框宽度调节 (0.0dp ~ 4.0dp)
+                        SettingsSliderItem(
+                            icon = Icons.Default.CropSquare,
+                            title = stringResource(R.string.visualizer_bar_border_width_title),
+                            valueText = if (uiState.visualizerBarBorderWidthDp <= 0.05f) {
+                                stringResource(R.string.visualizer_style_off)
+                            } else {
+                                String.format(java.util.Locale.US, "%.1f dp", uiState.visualizerBarBorderWidthDp)
+                            },
+                            value = uiState.visualizerBarBorderWidthDp,
+                            valueRange = 0.0f..4.0f,
+                            onValueChange = { viewModel.setVisualizerBarBorderWidth(it) }
+                        )
+
+                        if (uiState.visualizerBarBorderOnly || uiState.visualizerBarBorderWidthDp > 0.05f) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                            )
+
+                            // 2.5 柱状频谱边框透明度调节 (0% ~ 100%)
+                            SettingsSliderItem(
+                                icon = Icons.Default.Tonality,
+                                title = stringResource(R.string.visualizer_bar_border_alpha_title),
+                                valueText = "${(uiState.visualizerBarBorderAlpha * 100).toInt()}%",
+                                value = uiState.visualizerBarBorderAlpha,
+                                valueRange = 0.0f..1.0f,
+                                onValueChange = { viewModel.setVisualizerBarBorderAlpha(it) }
+                            )
+
+                            HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                            )
+
+                            // 2.6 柱状频谱边框颜色选择
+                            SettingsColorPickerItem(
+                                icon = Icons.Default.BorderColor,
+                                title = stringResource(R.string.visualizer_bar_border_color_title),
+                                selectedColor = uiState.visualizerBarBorderColor,
+                                onColorSelected = { viewModel.setVisualizerBarBorderColor(it) }
+                            )
+                        }
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                        )
+
                         // 3. 悬浮顶峰缓降开关 (Peak Hold)
                         SettingsSwitchItem(
                             icon = Icons.Default.VerticalAlignTop,

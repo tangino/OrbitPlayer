@@ -71,6 +71,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // 监听系统配置（横竖屏旋转、分屏尺寸调节、车机投屏切换）动态变化，驱动 Compose 全局感知重绘
+    private val configurationState = mutableStateOf<Configuration?>(null)
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        configurationState.value = Configuration(newConfig)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         checkAndRequestPermissions()
@@ -86,9 +94,15 @@ class MainActivity : ComponentActivity() {
                 else -> Locale.getDefault()
             }
 
-            val currentConfig = LocalConfiguration.current
-            val updatedConfig = remember(targetLocale) {
-                Configuration(currentConfig).apply {
+            val systemConfig = configurationState.value ?: LocalConfiguration.current
+            val updatedConfig = remember(
+                systemConfig.orientation,
+                systemConfig.screenWidthDp,
+                systemConfig.screenHeightDp,
+                systemConfig.densityDpi,
+                targetLocale
+            ) {
+                Configuration(systemConfig).apply {
                     setLocale(targetLocale)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                         setLocales(LocaleList(targetLocale))
@@ -97,7 +111,7 @@ class MainActivity : ComponentActivity() {
             }
 
             val currentContext = LocalContext.current
-            val localizedContext = remember(targetLocale) {
+            val localizedContext = remember(updatedConfig, targetLocale) {
                 currentContext.createConfigurationContext(updatedConfig)
             }
 

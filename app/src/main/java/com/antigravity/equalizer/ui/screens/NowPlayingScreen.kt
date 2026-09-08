@@ -235,7 +235,8 @@ fun NowPlayingScreen(
         containerColor = OrbitTheme.colors.background
     ) { innerPadding ->
         val configuration = LocalConfiguration.current
-        val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
+                configuration.screenWidthDp > configuration.screenHeightDp
 
         // 1. 封面与大频谱可视化无缝切换视图 (大频谱横向占满页面四周留空，封面保持精致正方形)
         val coverView: @Composable () -> Unit = {
@@ -285,6 +286,10 @@ fun NowPlayingScreen(
                             isPlaying = playbackState.isPlaying,
                             barWidthDp = equalizerUiState.visualizerBarWidthDp,
                             barAlpha = equalizerUiState.visualizerBarAlpha,
+                            borderWidthDp = equalizerUiState.visualizerBarBorderWidthDp,
+                            borderColor = equalizerUiState.visualizerBarBorderColor,
+                            borderAlpha = equalizerUiState.visualizerBarBorderAlpha,
+                            borderOnly = equalizerUiState.visualizerBarBorderOnly,
                             customColor = equalizerUiState.visualizerCustomColor,
                             customColor2 = equalizerUiState.visualizerCustomColor2,
                             isSingleColor = equalizerUiState.visualizerSingleColor,
@@ -700,6 +705,10 @@ fun NowPlayingScreen(
                     isPlaying = playbackState.isPlaying,
                     barWidthDp = equalizerUiState.visualizerBarWidthDp,
                     barAlpha = equalizerUiState.visualizerBarAlpha,
+                    borderWidthDp = equalizerUiState.visualizerBarBorderWidthDp,
+                    borderColor = equalizerUiState.visualizerBarBorderColor,
+                    borderAlpha = equalizerUiState.visualizerBarBorderAlpha,
+                    borderOnly = equalizerUiState.visualizerBarBorderOnly,
                     customColor = equalizerUiState.visualizerCustomColor,
                     customColor2 = equalizerUiState.visualizerCustomColor2,
                     isSingleColor = equalizerUiState.visualizerSingleColor,
@@ -2000,7 +2009,8 @@ private fun MaximizedVisualizerOverlay(
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
+            configuration.screenWidthDp > configuration.screenHeightDp
     val currentStyle = if (equalizerUiState.visualizerStyle == VisualizerStyle.OFF) {
         VisualizerStyle.BARS_WITH_PEAKS
     } else {
@@ -2041,6 +2051,10 @@ private fun MaximizedVisualizerOverlay(
             isPlaying = playbackState.isPlaying,
             barWidthDp = equalizerUiState.visualizerBarWidthDp,
             barAlpha = equalizerUiState.visualizerBarAlpha,
+            borderWidthDp = equalizerUiState.visualizerBarBorderWidthDp,
+            borderColor = equalizerUiState.visualizerBarBorderColor,
+            borderAlpha = equalizerUiState.visualizerBarBorderAlpha,
+            borderOnly = equalizerUiState.visualizerBarBorderOnly,
             customColor = equalizerUiState.visualizerCustomColor,
             customColor2 = equalizerUiState.visualizerCustomColor2,
             isSingleColor = equalizerUiState.visualizerSingleColor,

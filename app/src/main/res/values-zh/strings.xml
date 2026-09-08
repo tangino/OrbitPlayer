@@ -267,6 +267,16 @@
     <!-- 频谱条透明度与全局自定义背景 -->
     <string name="visualizer_bar_alpha_title">频谱条透明度</string>
     <string name="visualizer_bar_alpha_subtitle">调整柱状条及频谱曲线的不透明度 (10% - 100%)</string>
+
+    <!-- 柱状频谱边框描边定制 -->
+    <string name="visualizer_bar_border_width_title">柱状频谱边框宽度</string>
+    <string name="visualizer_bar_border_width_subtitle">调节柱条轮廓描边线条粗细 (0 为无边框)</string>
+    <string name="visualizer_bar_border_color_title">柱状频谱边框颜色</string>
+    <string name="visualizer_bar_border_color_subtitle">设置柱条描边轮廓色彩</string>
+    <string name="visualizer_bar_border_alpha_title">柱状频谱边框透明度</string>
+    <string name="visualizer_bar_border_alpha_subtitle">调整描边轮廓的不透明度 (0% - 100%)</string>
+    <string name="visualizer_bar_border_only_title">仅绘制柱状边框 (线框镂空)</string>
+    <string name="visualizer_bar_border_only_subtitle">关闭柱体内部填充，仅渲染极客描边线条轮廓</string>
     <string name="section_custom_background">沉浸背景与毛玻璃</string>
     <string name="custom_background_title">自定义程序背景</string>
     <string name="custom_background_subtitle">从系统相册选取壁纸作为全应用沉浸式透光背景</string>
