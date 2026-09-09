@@ -151,7 +151,6 @@ fun MusicLibraryScreen(
     var candidateArtistName by remember { mutableStateOf("") }
     var candidateSong by remember { mutableStateOf<Song?>(null) }
     var isApplyingCover by remember { mutableStateOf(false) }
-    var isSearchingCoverDialog by remember { mutableStateOf(false) }
     var searchingSong by remember { mutableStateOf<Song?>(null) }
 
     // 文件夹下钻：当前展开的文件夹路径
@@ -1621,7 +1620,7 @@ fun MusicLibraryScreen(
                     )
                 }
 
-                // 操作项 3：在线匹配高清封面 (MusicBrainz / Cover Art Archive)
+                // 操作项 3：选择封面 (弹窗内提供预览、下载/重新下载以及保存)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1629,64 +1628,23 @@ fun MusicLibraryScreen(
                         .clickable {
                             val target = longClickedSong
                             activeSongForLongClickMenu = null
-                            searchingSong = target
-                            isSearchingCoverDialog = true
-                            scope.launch {
-                                try {
-                                    com.antigravity.equalizer.utils.CoverHelper.resetOnlineSearchStatus(target.id)
-                                    val result = com.antigravity.equalizer.data.cover.MusicBrainzCoverService.checkAndFetchLargeCover(
-                                        context = context,
-                                        song = target,
-                                        force = true
-                                    )
-                                    withContext(Dispatchers.Main) {
-                                        isSearchingCoverDialog = false
-                                        when (result) {
-                                            is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.UpdatedLarge -> {
-                                                val sizeStr = "${result.netWidth}x${result.netHeight}"
-                                                Toast.makeText(
-                                                    context,
-                                                    context.getString(R.string.cover_update_success, sizeStr),
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
-                                            }
-                                            is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.KeptExisting -> {
-                                                Toast.makeText(context, R.string.cover_already_highest, Toast.LENGTH_SHORT).show()
-                                            }
-                                            is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.ArtistAlbumsFound -> {
-                                                candidateCovers = result.candidates
-                                                candidateArtistName = result.artist
-                                                candidateSong = target
-                                                showSelectAlbumCoverDialog = true
-                                            }
-                                            is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.NotFound -> {
-                                                Toast.makeText(context, R.string.cover_not_found, Toast.LENGTH_SHORT).show()
-                                            }
-                                            else -> {
-                                                Toast.makeText(context, R.string.cover_search_failed, Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    withContext(Dispatchers.Main) {
-                                        isSearchingCoverDialog = false
-                                        Toast.makeText(context, R.string.cover_search_failed, Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            }
+                            candidateSong = target
+                            candidateArtistName = target.artist
+                            candidateCovers = emptyList()
+                            showSelectAlbumCoverDialog = true
                         }
                         .padding(vertical = 12.dp, horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Default.ImageSearch,
+                        imageVector = Icons.Default.CloudDownload,
                         contentDescription = null,
                         tint = OrbitTheme.colors.primary,
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(14.dp))
                     Text(
-                        text = stringResource(R.string.online_cover_match_manual),
+                        text = stringResource(R.string.menu_select_cover),
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
                         color = OrbitTheme.colors.textPrimary
@@ -1696,62 +1654,66 @@ fun MusicLibraryScreen(
         }
     }
 
-    // 正在检索封面 Loading 对话框
-    if (isSearchingCoverDialog && searchingSong != null) {
-        val s = searchingSong!!
-        AlertDialog(
-            onDismissRequest = { isSearchingCoverDialog = false },
-            text = {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    CircularProgressIndicator(
-                        color = OrbitTheme.colors.primary,
-                        strokeWidth = 3.dp,
-                        modifier = Modifier.size(36.dp)
-                    )
-                    Spacer(modifier = Modifier.width(18.dp))
-                    Column {
-                        Text(
-                            text = stringResource(R.string.cover_search_start),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = OrbitTheme.colors.textPrimary
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "${s.title} • ${s.artist}",
-                            fontSize = 12.sp,
-                            color = OrbitTheme.colors.textSecondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { isSearchingCoverDialog = false }) {
-                    Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
-                }
-            },
-            containerColor = OrbitTheme.colors.surfaceDialog,
-            shape = RoundedCornerShape(16.dp)
-        )
-    }
-
-    // 候选专辑封面选择对话框 (未检索到具体专辑时展示歌手所有专辑高清封面供用户挑选)
-    if (showSelectAlbumCoverDialog && candidateSong != null && candidateCovers.isNotEmpty()) {
+    // 候选专辑封面选择对话框 (展示已有封面或在线检索封面，支持下载/重新下载并保存)
+    if (showSelectAlbumCoverDialog && candidateSong != null) {
         val songToApply = candidateSong!!
+        val hasDownloadedCover = remember(songToApply.id, coverVer) {
+            com.antigravity.equalizer.utils.CoverHelper.hasDownloadedCover(context, songToApply.id)
+        }
+        val isDownloadingCover = searchingSong?.id == songToApply.id
+
         SelectAlbumCoverDialog(
-            artistName = candidateArtistName,
+            song = songToApply,
+            artistName = candidateArtistName.ifBlank { songToApply.artist },
             candidates = candidateCovers,
+            hasDownloadedCover = hasDownloadedCover,
+            isDownloading = isDownloadingCover,
             isApplying = isApplyingCover,
             onDismissRequest = {
                 showSelectAlbumCoverDialog = false
+            },
+            onDownload = {
+                searchingSong = songToApply
+                scope.launch {
+                    try {
+                        com.antigravity.equalizer.utils.CoverHelper.resetOnlineSearchStatus(songToApply.id)
+                        val result = com.antigravity.equalizer.data.cover.MusicBrainzCoverService.checkAndFetchLargeCover(
+                            context = context,
+                            song = songToApply,
+                            force = true
+                        )
+                        withContext(Dispatchers.Main) {
+                            searchingSong = null
+                            when (result) {
+                                is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.UpdatedLarge -> {
+                                    val sizeStr = "${result.netWidth}x${result.netHeight}"
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.cover_update_success, sizeStr),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    showSelectAlbumCoverDialog = false
+                                }
+                                is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.ArtistAlbumsFound -> {
+                                    Toast.makeText(context, R.string.cover_found_choose, Toast.LENGTH_SHORT).show()
+                                    candidateCovers = result.candidates
+                                    candidateArtistName = result.artist
+                                }
+                                is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.NotFound -> {
+                                    Toast.makeText(context, R.string.cover_not_found, Toast.LENGTH_SHORT).show()
+                                }
+                                else -> {
+                                    Toast.makeText(context, R.string.cover_search_failed, Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            searchingSong = null
+                            Toast.makeText(context, R.string.cover_search_failed, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
             },
             onConfirmSelection = { selectedCandidate ->
                 isApplyingCover = true

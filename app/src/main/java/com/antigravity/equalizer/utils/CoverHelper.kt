@@ -266,6 +266,16 @@ object CoverHelper {
     }
 
     /**
+     * 判断指定歌曲是否已下载过本地专属封面文件
+     */
+    fun hasDownloadedCover(context: Context, songId: Long): Boolean {
+        if (songId == 0L) return false
+        val coversDir = File(context.cacheDir, COVERS_DIR_NAME)
+        val cacheFile = File(coversDir, "cover_${songId}.jpg")
+        return cacheFile.exists() && cacheFile.length() > 128
+    }
+
+    /**
      * 清理所有封面缓存 (可在用户触发重新扫描时调用)
      */
     fun clearCache(context: Context) {

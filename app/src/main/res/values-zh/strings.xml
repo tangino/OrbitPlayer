@@ -331,5 +331,16 @@
     <string name="tag_composer_label">作曲家</string>
     <string name="tag_comment_label">注释</string>
     <string name="edit_tags_title">编辑标签</string>
+    <string name="menu_redownload_cover">重新下载封面</string>
+    <string name="menu_download_cover">下载封面</string>
+    <string name="menu_select_cover">选择封面</string>
+    <string name="btn_save_cover">保存</string>
+    <string name="btn_download_cover">下载</string>
+    <string name="btn_redownload_cover">重新下载</string>
+    <string name="cover_current_preview">当前使用的封面</string>
+    <string name="cover_empty_candidates_hint">点击下方“%1$s”联网搜索并下载专辑封面</string>
+    <string name="cover_downloading">正在下载封面...</string>
+    <string name="cover_found_choose">已检索到在线封面，请选择是否使用</string>
+    <string name="select_album_cover_subtitle_specific">为您检索到以下在线封面，请选择是否应用：</string>
 </resources>
 

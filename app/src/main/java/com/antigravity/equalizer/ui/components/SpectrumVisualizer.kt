@@ -73,7 +73,7 @@ fun PowerampSpectrumVisualizer(
             val refColor = if (isSingleColor) customColor else customColor2
             val hsv = FloatArray(3)
             android.graphics.Color.colorToHSV((refColor and 0xFFFFFFFFL).toInt(), hsv)
-            val peakHsv = floatArrayOf(hsv[0], (hsv[1] * 0.35f).coerceIn(0f, 1f), 1.0f)
+            val peakHsv = floatArrayOf(hsv[0], (hsv[1] * 0.20f).coerceIn(0f, 0.35f), 1.0f)
             val peakCol = Color(android.graphics.Color.HSVToColor(peakHsv))
             Triple(base, sec, peakCol)
         }
@@ -237,9 +237,9 @@ fun PowerampSpectrumVisualizer(
                                 drawRoundRect(
                                     brush = Brush.verticalGradient(
                                         colors = listOf(
-                                            primaryColor,
-                                            secondaryColor.copy(alpha = 0.85f),
-                                            secondaryColor.copy(alpha = 0.35f)
+                                            secondaryColor,
+                                            primaryColor.copy(alpha = 0.95f),
+                                            primaryColor
                                         ),
                                         startY = y,
                                         endY = totalH
@@ -325,8 +325,8 @@ fun PowerampSpectrumVisualizer(
                         path = fillPath,
                         brush = Brush.verticalGradient(
                             colors = listOf(
-                                primaryColor.copy(alpha = 0.50f),
-                                secondaryColor.copy(alpha = 0.20f),
+                                secondaryColor.copy(alpha = 0.50f),
+                                primaryColor.copy(alpha = 0.20f),
                                 Color.Transparent
                             ),
                             startY = 0f,
@@ -394,7 +394,7 @@ fun PowerampSpectrumVisualizer(
                             } else {
                                 drawRoundRect(
                                     brush = Brush.verticalGradient(
-                                        colors = listOf(primaryColor, secondaryColor),
+                                        colors = listOf(secondaryColor, primaryColor, secondaryColor),
                                         startY = topY,
                                         endY = centerY + halfH
                                     ),

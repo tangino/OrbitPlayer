@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -628,6 +629,18 @@ fun SettingsScreen(
                         )
 
                         // 5. 自定义颜色与色卡快速点选区
+                        val isCustomScheme = uiState.visualizerColorScheme == com.antigravity.equalizer.data.model.VisualizerColorScheme.CUSTOM
+                        val activeColor1 = when (uiState.visualizerColorScheme) {
+                            com.antigravity.equalizer.data.model.VisualizerColorScheme.FOLLOW_THEME -> OrbitTheme.colors.primary.toArgb().toLong() and 0xFFFFFFFFL
+                            com.antigravity.equalizer.data.model.VisualizerColorScheme.CUSTOM -> uiState.visualizerCustomColor
+                            else -> uiState.visualizerColorScheme.primaryColor.toArgb().toLong() and 0xFFFFFFFFL
+                        }
+                        val activeColor2 = when (uiState.visualizerColorScheme) {
+                            com.antigravity.equalizer.data.model.VisualizerColorScheme.FOLLOW_THEME -> OrbitTheme.colors.secondary.toArgb().toLong() and 0xFFFFFFFFL
+                            com.antigravity.equalizer.data.model.VisualizerColorScheme.CUSTOM -> uiState.visualizerCustomColor2
+                            else -> uiState.visualizerColorScheme.secondaryColor.toArgb().toLong() and 0xFFFFFFFFL
+                        }
+
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -647,11 +660,11 @@ fun SettingsScreen(
                                             .background(
                                                 if (uiState.visualizerSingleColor) {
                                                     Brush.linearGradient(
-                                                        listOf(Color(uiState.visualizerCustomColor), Color(uiState.visualizerCustomColor))
+                                                        listOf(Color(activeColor1), Color(activeColor1))
                                                     )
                                                 } else {
                                                     Brush.verticalGradient(
-                                                        listOf(Color(uiState.visualizerCustomColor2), Color(uiState.visualizerCustomColor))
+                                                        listOf(Color(activeColor2), Color(activeColor1))
                                                     )
                                                 }
                                             )
@@ -669,7 +682,7 @@ fun SettingsScreen(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
-                            // 颜色 1：主色 / 单色
+                            // 颜色 1：主色 / 单色（底端）
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -688,7 +701,7 @@ fun SettingsScreen(
                                         modifier = Modifier
                                             .size(22.dp)
                                             .clip(CircleShape)
-                                            .background(Color(uiState.visualizerCustomColor))
+                                            .background(Color(activeColor1))
                                             .border(1.5.dp, Color.White.copy(alpha = 0.5f), CircleShape)
                                     )
                                     Spacer(modifier = Modifier.width(10.dp))
@@ -704,7 +717,7 @@ fun SettingsScreen(
                                             color = if (editingColorIndex == 1) OrbitTheme.colors.primary else OrbitTheme.colors.textPrimary
                                         )
                                         Text(
-                                            text = String.format("#%06X", 0xFFFFFF and uiState.visualizerCustomColor.toInt()),
+                                            text = String.format("#%06X", 0xFFFFFF and activeColor1.toInt()),
                                             fontSize = 10.sp,
                                             color = OrbitTheme.colors.textSecondary
                                         )
@@ -737,110 +750,137 @@ fun SettingsScreen(
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(10.dp))
                                         .background(if (editingColorIndex == 2) OrbitTheme.colors.primary.copy(alpha = 0.08f) else Color.Transparent)
-                                        .clickable {
-                                            editingColorIndex = 2
-                                            showColorPickerDialog = true
-                                        }
-                                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(22.dp)
-                                                .clip(CircleShape)
-                                                .background(Color(uiState.visualizerCustomColor2))
-                                                .border(1.5.dp, Color.White.copy(alpha = 0.5f), CircleShape)
-                                        )
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Column {
-                                            Text(
-                                                text = stringResource(R.string.visualizer_color2_title),
-                                                fontSize = 12.sp,
-                                                fontWeight = if (editingColorIndex == 2) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (editingColorIndex == 2) OrbitTheme.colors.primary else OrbitTheme.colors.textPrimary
-                                            )
-                                            Text(
-                                                text = String.format("#%06X", 0xFFFFFF and uiState.visualizerCustomColor2.toInt()),
-                                                fontSize = 10.sp,
-                                                color = OrbitTheme.colors.textSecondary
-                                            )
-                                        }
+                                    .clickable {
+                                        editingColorIndex = 2
+                                        showColorPickerDialog = true
                                     }
-
-                                    FilledTonalButton(
-                                        onClick = {
-                                            editingColorIndex = 2
-                                            showColorPickerDialog = true
-                                        },
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                                        colors = ButtonDefaults.filledTonalButtonColors(
-                                            containerColor = OrbitTheme.colors.surface,
-                                            contentColor = OrbitTheme.colors.primary
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(22.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(activeColor2))
+                                            .border(1.5.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            text = stringResource(R.string.visualizer_color2_title),
+                                            fontSize = 12.sp,
+                                            fontWeight = if (editingColorIndex == 2) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (editingColorIndex == 2) OrbitTheme.colors.primary else OrbitTheme.colors.textPrimary
                                         )
-                                    ) {
-                                        Icon(Icons.Default.ColorLens, contentDescription = null, modifier = Modifier.size(14.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(stringResource(R.string.color_picker_title), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            text = String.format("#%06X", 0xFFFFFF and activeColor2.toInt()),
+                                            fontSize = 10.sp,
+                                            color = OrbitTheme.colors.textSecondary
+                                        )
                                     }
                                 }
-                            }
 
-                            // 色卡横滑列表 (用户点击色卡直接应用到当前激活选中的颜色项)
-                            if (uiState.customVisualizerColors.isNotEmpty()) {
-                                Spacer(modifier = Modifier.height(10.dp))
-                                LazyRow(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                FilledTonalButton(
+                                    onClick = {
+                                        editingColorIndex = 2
+                                        showColorPickerDialog = true
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = OrbitTheme.colors.surface,
+                                        contentColor = OrbitTheme.colors.primary
+                                    )
                                 ) {
-                                    items(uiState.customVisualizerColors) { colorLong ->
-                                        val isColor1 = uiState.visualizerCustomColor == colorLong
-                                        val isColor2 = uiState.visualizerCustomColor2 == colorLong
-                                        val isSelected = if (uiState.visualizerSingleColor) isColor1 else (isColor1 || isColor2)
-                                        Box(
-                                            modifier = Modifier
-                                                .size(28.dp)
-                                                .clip(CircleShape)
-                                                .background(Color(colorLong))
-                                                .border(
-                                                    width = if (isSelected) 2.5.dp else 1.dp,
-                                                    color = if (isSelected) OrbitTheme.colors.primary else Color.White.copy(alpha = 0.35f),
-                                                    shape = CircleShape
-                                                )
-                                                .clickable {
+                                    Icon(Icons.Default.ColorLens, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(stringResource(R.string.color_picker_title), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        // 色卡横滑列表 (用户点击色卡直接应用到当前激活选中的颜色项)
+                        if (uiState.customVisualizerColors.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = if (uiState.visualizerSingleColor || editingColorIndex == 1) {
+                                        "点选色卡直接应用至：【底端主色】"
+                                    } else {
+                                        "点选色卡直接应用至：【顶端次色】"
+                                    },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = OrbitTheme.colors.primary
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                items(uiState.customVisualizerColors) { colorLong ->
+                                    val isColor1 = activeColor1 == colorLong
+                                    val isColor2 = activeColor2 == colorLong
+                                    val isSelected = if (uiState.visualizerSingleColor) isColor1 else (isColor1 || isColor2)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(colorLong))
+                                            .border(
+                                                width = if (isSelected) 2.5.dp else 1.dp,
+                                                color = if (isSelected) OrbitTheme.colors.primary else Color.White.copy(alpha = 0.35f),
+                                                shape = CircleShape
+                                            )
+                                            .clickable {
+                                                if (!isCustomScheme) {
+                                                    if (uiState.visualizerSingleColor || editingColorIndex == 1) {
+                                                        viewModel.setVisualizerCustomColor2(activeColor2)
+                                                        viewModel.setVisualizerCustomColor(colorLong)
+                                                    } else {
+                                                        viewModel.setVisualizerCustomColor(activeColor1)
+                                                        viewModel.setVisualizerCustomColor2(colorLong)
+                                                    }
+                                                } else {
                                                     if (uiState.visualizerSingleColor || editingColorIndex == 1) {
                                                         viewModel.setVisualizerCustomColor(colorLong)
                                                     } else {
                                                         viewModel.setVisualizerCustomColor2(colorLong)
                                                     }
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            if (isSelected) {
-                                                if (uiState.visualizerSingleColor) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Check,
-                                                        contentDescription = null,
-                                                        tint = Color.White,
-                                                        modifier = Modifier.size(14.dp)
-                                                    )
-                                                } else {
-                                                    Text(
-                                                        text = if (isColor1 && isColor2) "1+2" else if (isColor1) "1" else "2",
-                                                        fontSize = 9.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = Color.White
-                                                    )
                                                 }
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (isSelected) {
+                                            if (uiState.visualizerSingleColor) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = if (isColor1 && isColor2) "1+2" else if (isColor1) "1" else "2",
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White
+                                                )
                                             }
                                         }
                                     }
                                 }
                             }
                         }
+                    }
 
                         HorizontalDivider(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
@@ -1432,30 +1472,70 @@ fun SettingsScreen(
 
     // 自定义频谱 HSV 色盘对话框
     if (showColorPickerDialog) {
-        val currentInitialColor = if (editingColorIndex == 1) uiState.visualizerCustomColor else uiState.visualizerCustomColor2
-        com.antigravity.equalizer.ui.components.ColorPickerDialog(
-            initialColor = currentInitialColor,
-            customColors = uiState.customVisualizerColors,
-            onColorConfirmed = { chosenColor ->
-                if (editingColorIndex == 1) {
-                    viewModel.setVisualizerCustomColor(chosenColor)
-                } else {
-                    viewModel.setVisualizerCustomColor2(chosenColor)
-                }
-            },
-            onSaveToCustomColors = { colorToAdd ->
-                viewModel.addCustomVisualizerColor(colorToAdd)
-                if (editingColorIndex == 1) {
-                    viewModel.setVisualizerCustomColor(colorToAdd)
-                } else {
-                    viewModel.setVisualizerCustomColor2(colorToAdd)
-                }
-            },
-            onRemoveCustomColor = { colorToRemove ->
-                viewModel.removeCustomVisualizerColor(colorToRemove)
-            },
-            onDismissRequest = { showColorPickerDialog = false }
-        )
+        val isCustomScheme = uiState.visualizerColorScheme == com.antigravity.equalizer.data.model.VisualizerColorScheme.CUSTOM
+        val activeColor1 = when (uiState.visualizerColorScheme) {
+            com.antigravity.equalizer.data.model.VisualizerColorScheme.FOLLOW_THEME -> OrbitTheme.colors.primary.toArgb().toLong() and 0xFFFFFFFFL
+            com.antigravity.equalizer.data.model.VisualizerColorScheme.CUSTOM -> uiState.visualizerCustomColor
+            else -> uiState.visualizerColorScheme.primaryColor.toArgb().toLong() and 0xFFFFFFFFL
+        }
+        val activeColor2 = when (uiState.visualizerColorScheme) {
+            com.antigravity.equalizer.data.model.VisualizerColorScheme.FOLLOW_THEME -> OrbitTheme.colors.secondary.toArgb().toLong() and 0xFFFFFFFFL
+            com.antigravity.equalizer.data.model.VisualizerColorScheme.CUSTOM -> uiState.visualizerCustomColor2
+            else -> uiState.visualizerColorScheme.secondaryColor.toArgb().toLong() and 0xFFFFFFFFL
+        }
+        val currentInitialColor = if (editingColorIndex == 1) activeColor1 else activeColor2
+        val dialogTitle = if (editingColorIndex == 1) {
+            stringResource(R.string.visualizer_color1_title)
+        } else {
+            stringResource(R.string.visualizer_color2_title)
+        }
+
+        key(editingColorIndex) {
+            com.antigravity.equalizer.ui.components.ColorPickerDialog(
+                initialColor = currentInitialColor,
+                customColors = uiState.customVisualizerColors,
+                title = "${stringResource(R.string.color_picker_title)} - $dialogTitle",
+                onColorConfirmed = { chosenColor ->
+                    if (!isCustomScheme) {
+                        if (editingColorIndex == 1) {
+                            viewModel.setVisualizerCustomColor2(activeColor2)
+                            viewModel.setVisualizerCustomColor(chosenColor)
+                        } else {
+                            viewModel.setVisualizerCustomColor(activeColor1)
+                            viewModel.setVisualizerCustomColor2(chosenColor)
+                        }
+                    } else {
+                        if (editingColorIndex == 1) {
+                            viewModel.setVisualizerCustomColor(chosenColor)
+                        } else {
+                            viewModel.setVisualizerCustomColor2(chosenColor)
+                        }
+                    }
+                },
+                onSaveToCustomColors = { colorToAdd ->
+                    viewModel.addCustomVisualizerColor(colorToAdd)
+                    if (!isCustomScheme) {
+                        if (editingColorIndex == 1) {
+                            viewModel.setVisualizerCustomColor2(activeColor2)
+                            viewModel.setVisualizerCustomColor(colorToAdd)
+                        } else {
+                            viewModel.setVisualizerCustomColor(activeColor1)
+                            viewModel.setVisualizerCustomColor2(colorToAdd)
+                        }
+                    } else {
+                        if (editingColorIndex == 1) {
+                            viewModel.setVisualizerCustomColor(colorToAdd)
+                        } else {
+                            viewModel.setVisualizerCustomColor2(colorToAdd)
+                        }
+                    }
+                },
+                onRemoveCustomColor = { colorToRemove ->
+                    viewModel.removeCustomVisualizerColor(colorToRemove)
+                },
+                onDismissRequest = { showColorPickerDialog = false }
+            )
+        }
     }
 
     // 添加扫描/排除文件夹弹窗

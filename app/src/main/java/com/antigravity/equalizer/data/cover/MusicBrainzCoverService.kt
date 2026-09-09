@@ -130,6 +130,9 @@ object MusicBrainzCoverService {
 
             Log.i(TAG, "Starting cover search for: '${song.title}' - '${song.artist}', local dims: ${localDims?.first}x${localDims?.second}")
 
+            // 收集精确命中的在线封面 URL
+            val matchedCoverUrls = mutableListOf<String>()
+
             // 1. 优先级 1：通过音乐标签向 MusicBrainz / CAA 检索具体专辑
             var mbCoverUrls = searchCoverUrlsFromMusicBrainzByTags(song.title, song.artist, song.album)
 
@@ -139,51 +142,105 @@ object MusicBrainzCoverService {
                 Log.d(TAG, "Tag search returned 0 results for song ${song.id}, falling back to file name: $fileName")
                 mbCoverUrls = searchCoverUrlsFromMusicBrainzByFileName(fileName)
             }
+            matchedCoverUrls.addAll(mbCoverUrls)
 
-            // 3. 尺寸对比与大图更新 (MusicBrainz / CAA 官方源)
-            if (mbCoverUrls.isNotEmpty()) {
-                for (url in mbCoverUrls.take(3)) {
-                    val matchResult = testAndApplyCover(context, song.id, url, localArea, localDims)
-                    if (matchResult != null) {
-                        return@withContext matchResult
-                    }
-                }
-            }
-
-            // 4. 优先级 3：高可用全球 CDN 镜像通道检索单曲高清封面 (覆盖华语及 CAA 缺失的歌曲)
+            // 3. 优先级 3：高可用全球 CDN 镜像通道检索单曲高清封面 (覆盖华语及 CAA 缺失的歌曲)
             val fallbackCoverUrl = searchSingleSongCoverGlobal(song.title, song.artist)
             if (!fallbackCoverUrl.isNullOrBlank()) {
-                val matchResult = testAndApplyCover(context, song.id, fallbackCoverUrl, localArea, localDims)
-                if (matchResult != null) {
-                    return@withContext matchResult
-                }
+                matchedCoverUrls.add(fallbackCoverUrl)
             }
 
-            // 5. 优先级 4：具体专辑仍无封面或未找到，提取歌手名，聚合检索该歌手名下所有已发行专辑封面供用户挑选
             val candidateArtist = cleanTagValue(song.artist).ifBlank {
                 val split = parseArtistAndTitleFromFileName(cleanFileName(File(song.path).nameWithoutExtension))
                 split?.first?.let { cleanTagValue(it) }.orEmpty()
             }
 
-            if (candidateArtist.isNotBlank()) {
-                Log.i(TAG, "Specific album cover not found, aggregating all albums for artist '$candidateArtist'")
-                val candidateAlbums = aggregateArtistAlbums(candidateArtist)
-                if (candidateAlbums.isNotEmpty()) {
-                    Log.i(TAG, "Found ${candidateAlbums.size} album cover candidates for artist '$candidateArtist'")
+            // 若为后台自动匹配模式 (force == false)，仅在尺寸更大时静默升级
+            if (!force) {
+                for (url in matchedCoverUrls.distinct().take(3)) {
+                    val matchResult = testAndApplyCover(context, song.id, url, localArea, localDims)
+                    if (matchResult != null) {
+                        return@withContext matchResult
+                    }
+                }
+            } else {
+                // 用户手动触发模式 (force == true)：只要搜索到封面，无论大小均下载并作为候选保存，供用户自主选择是否使用
+                val candidates = mutableListOf<AlbumCoverCandidate>()
+                val albName = if (song.album.isNotBlank() && !song.album.startsWith("Unknown", ignoreCase = true) && !song.album.startsWith("未知")) {
+                    song.album
+                } else {
+                    song.title
+                }
+
+                for ((idx, url) in matchedCoverUrls.distinct().withIndex()) {
+                    val verifiedCandidate = fetchImageCandidate(context, song.id, idx, url, albName)
+                    if (verifiedCandidate != null) {
+                        candidates.add(verifiedCandidate)
+                    }
+                }
+
+                // 聚合歌手名下的其他专辑候选封面
+                if (candidateArtist.isNotBlank()) {
+                    val artistAlbums = aggregateArtistAlbums(candidateArtist)
+                    for (albumCandidate in artistAlbums) {
+                        if (candidates.none { it.coverUrl == albumCandidate.coverUrl }) {
+                            candidates.add(albumCandidate)
+                        }
+                    }
+                }
+
+                if (candidates.isNotEmpty()) {
+                    Log.i(TAG, "Manual search found ${candidates.size} candidate covers for song ${song.id}")
                     return@withContext MatchResult.ArtistAlbumsFound(
-                        artist = candidateArtist,
-                        candidates = candidateAlbums
+                        artist = if (candidateArtist.isNotBlank()) candidateArtist else song.artist,
+                        candidates = candidates
                     )
                 }
             }
 
-            // 6. 最终未检索到任何结果，停止匹配并标记
+            // 最终未检索到任何结果，停止匹配并标记
             Log.i(TAG, "No online cover found for song: ${song.title} (${song.path})")
             CoverHelper.markOnlineSearchAttempted(song.id)
             MatchResult.NotFound
         } catch (e: Exception) {
             Log.e(TAG, "Error matching online cover for song ${song.id}", e)
             MatchResult.Error
+        }
+    }
+
+    /**
+     * 校验网络图片有效性并下载获取真实像素尺寸，封装为候选模型
+     */
+    private fun fetchImageCandidate(
+        context: Context,
+        songId: Long,
+        idx: Int,
+        url: String,
+        title: String
+    ): AlbumCoverCandidate? {
+        val tempFile = File(context.cacheDir, "temp_cand_probe_${songId}_${idx}_${System.currentTimeMillis()}.tmp")
+        return try {
+            val downloadOk = downloadToFile(url, tempFile)
+            if (!downloadOk || !tempFile.exists() || tempFile.length() < 256) return null
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(tempFile.absolutePath, options)
+            val w = options.outWidth
+            val h = options.outHeight
+            if (w <= 0 || h <= 0) return null
+            AlbumCoverCandidate(
+                releaseId = "matched_${songId}_$idx",
+                albumTitle = title,
+                releaseDate = "${w}x${h}",
+                coverUrl = url,
+                thumbnailUrl = url
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Probe cover error for url: $url", e)
+            null
+        } finally {
+            if (tempFile.exists()) {
+                tempFile.delete()
+            }
         }
     }
 

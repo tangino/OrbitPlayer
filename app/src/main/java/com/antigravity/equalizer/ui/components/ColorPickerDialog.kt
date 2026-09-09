@@ -39,6 +39,7 @@ import com.antigravity.equalizer.ui.theme.OrbitTheme
 fun ColorPickerDialog(
     initialColor: Long,
     customColors: List<Long>,
+    title: String? = null,
     onColorConfirmed: (Long) -> Unit,
     onSaveToCustomColors: (Long) -> Unit,
     onRemoveCustomColor: ((Long) -> Unit)? = null,
@@ -51,9 +52,17 @@ fun ColorPickerDialog(
         hsv
     }
 
-    var hue by remember { mutableFloatStateOf(initialHsv[0]) } // 0f ~ 360f
-    var saturation by remember { mutableFloatStateOf(initialHsv[1].coerceIn(0.1f, 1f)) } // 0f ~ 1f
-    var value by remember { mutableFloatStateOf(initialHsv[2].coerceIn(0.1f, 1f)) } // 0f ~ 1f
+    var hue by remember(initialColor) { mutableFloatStateOf(initialHsv[0]) } // 0f ~ 360f
+    var saturation by remember(initialColor) { mutableFloatStateOf(initialHsv[1].coerceIn(0.1f, 1f)) } // 0f ~ 1f
+    var value by remember(initialColor) { mutableFloatStateOf(initialHsv[2].coerceIn(0.1f, 1f)) } // 0f ~ 1f
+
+    LaunchedEffect(initialColor) {
+        val hsv = FloatArray(3)
+        android.graphics.Color.colorToHSV((initialColor and 0xFFFFFFFFL).toInt(), hsv)
+        hue = hsv[0]
+        saturation = hsv[1].coerceIn(0.1f, 1f)
+        value = hsv[2].coerceIn(0.1f, 1f)
+    }
 
     val currentColorInt = remember(hue, saturation, value) {
         android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, value))
@@ -91,8 +100,8 @@ fun ColorPickerDialog(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = stringResource(R.string.color_picker_title),
-                        fontSize = 18.sp,
+                        text = title ?: stringResource(R.string.color_picker_title),
+                        fontSize = 17.sp,
                         fontWeight = FontWeight.Bold,
                         color = OrbitTheme.colors.textPrimary
                     )
