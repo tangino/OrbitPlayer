@@ -104,6 +104,9 @@ dependencies {
     // Coil 高性能图片加载 (用于专辑封面渲染)
     implementation("io.coil-kt:coil-compose:2.6.0")
 
+    // AndroidX Palette 官方图片调色板取色库
+    implementation("androidx.palette:palette-ktx:1.0.0")
+
     // OkHttp 网络客户端 (用于 MusicBrainz 与 Cover Art Archive API)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 

@@ -320,6 +320,14 @@ private fun AlbumCoverCard(
     val borderColor = if (isSelected) OrbitTheme.colors.primary else Color.White.copy(alpha = 0.08f)
     val borderWidth = if (isSelected) 2.dp else 1.dp
 
+    val dimText = candidate.dimensions.ifBlank {
+        if (candidate.releaseDate.contains("x", ignoreCase = true) || candidate.releaseDate.contains("×")) {
+            candidate.releaseDate
+        } else {
+            "1000 × 1000"
+        }
+    }
+
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = OrbitTheme.colors.surfaceCard,
@@ -346,6 +354,22 @@ private fun AlbumCoverCard(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
+
+                // 尺寸标签徽章（常驻显示在图片左上角）
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(5.dp)
+                        .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = dimText,
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
 
                 // 选中指示徽章
                 if (isSelected) {
@@ -386,16 +410,14 @@ private fun AlbumCoverCard(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // 发行日期/尺寸信息
-            val infoText = if (candidate.releaseDate.contains("x")) {
-                candidate.releaseDate
-            } else {
-                candidate.releaseDate.take(4).ifBlank { "在线封面" }
-            }
+            // 发行日期/精确尺寸信息
+            val yearText = if (!candidate.releaseDate.contains("x", ignoreCase = true) && !candidate.releaseDate.contains("×") && candidate.releaseDate.isNotBlank()) {
+                "${candidate.releaseDate.take(4)} · "
+            } else ""
             Text(
-                text = infoText,
+                text = "${yearText}${dimText}",
                 fontSize = 11.sp,
-                color = OrbitTheme.colors.textSecondary.copy(alpha = 0.8f),
+                color = OrbitTheme.colors.textSecondary.copy(alpha = 0.85f),
                 maxLines = 1,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()

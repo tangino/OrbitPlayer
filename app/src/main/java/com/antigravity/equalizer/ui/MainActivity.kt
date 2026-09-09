@@ -285,6 +285,9 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onToggleCoverInQueue = { show ->
                                     equalizerViewModel.setShowCoverInQueue(show)
+                                },
+                                onToggleFollowCoverColor = { follow ->
+                                    equalizerViewModel.setFollowCoverColorInMaximized(follow)
                                 }
                             )
                         }

@@ -65,7 +65,7 @@ data class EqualizerUiState(
     val visualizerEnabled: Boolean = true,
     val visualizerStyle: VisualizerStyle = VisualizerStyle.BARS_WITH_PEAKS,
     val visualizerPeakDecayEnabled: Boolean = true,
-    val visualizerColorScheme: VisualizerColorScheme = VisualizerColorScheme.FOLLOW_THEME,
+    val visualizerColorScheme: VisualizerColorScheme = VisualizerColorScheme.FOLLOW_BACKGROUND,
     val showNowPlayingVisualizer: Boolean = false,
     val visualizerBarWidthDp: Float = 5.0f,
     val visualizerCustomColor: Long = 0xFF00E5FFL,
@@ -89,6 +89,9 @@ data class EqualizerUiState(
     val backgroundBlurStyle: String = "frosted_glass",
     val backgroundDimAlpha: Float = 0.35f,
     val visualizerSingleColor: Boolean = false,
+    val backgroundExtractedLightColor: Long? = null,
+    val backgroundExtractedDarkColor: Long? = null,
+    val followCoverColorInMaximized: Boolean = false,
     val autoMatchOnlineCover: Boolean = true,
     val onlineCoverWifiOnly: Boolean = true
 )
@@ -118,7 +121,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         val savedVizEnabled = prefs.getBoolean(KEY_VIZ_ENABLED, true)
         val savedVizStyle = VisualizerStyle.fromId(prefs.getString(KEY_VIZ_STYLE, VisualizerStyle.BARS_WITH_PEAKS.id))
         val savedVizPeakDecay = prefs.getBoolean(KEY_VIZ_PEAK_DECAY, true)
-        val savedVizColor = VisualizerColorScheme.fromId(prefs.getString(KEY_VIZ_COLOR, VisualizerColorScheme.FOLLOW_THEME.id))
+        val savedVizColor = VisualizerColorScheme.fromId(prefs.getString(KEY_VIZ_COLOR, VisualizerColorScheme.FOLLOW_BACKGROUND.id))
         val savedShowNowPlayingVisualizer = prefs.getBoolean(KEY_SHOW_NOW_PLAYING_VISUALIZER, false)
         val savedBarWidthDp = prefs.getFloat(KEY_VIZ_BAR_WIDTH_DP, 5.0f)
         val savedCustomColor = prefs.getLong(KEY_VIZ_CUSTOM_COLOR, 0xFF00E5FFL)
@@ -198,6 +201,10 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
 
         // 2. 自动恢复上次保存的 UI 状态与均衡器参数
         restoreEqualizerUiState()
+
+        if (savedCustomBgPath != null) {
+            extractAndApplyBackgroundColors(savedCustomBgPath)
+        }
 
         // 3. 加载预设列表
         viewModelScope.launch {
@@ -667,6 +674,13 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         prefs.edit().putFloat(KEY_MAXIMIZED_COVER_ALPHA, clamped).apply()
     }
 
+    /**
+     * 设置最大化页面下频谱颜色是否实时跟随当前专辑封面（仅在内存中生效，不持久化）
+     */
+    fun setFollowCoverColorInMaximized(follow: Boolean) {
+        _uiState.update { it.copy(followCoverColorInMaximized = follow) }
+    }
+
     fun setShowCoverInQueue(show: Boolean) {
         _uiState.update { it.copy(showCoverInQueue = show) }
         prefs.edit().putBoolean(KEY_SHOW_COVER_IN_QUEUE, show).apply()
@@ -724,6 +738,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
             val absPath = destFile.absolutePath
             _uiState.update { it.copy(customBackgroundPath = absPath) }
             prefs.edit().putString(KEY_CUSTOM_BG_PATH, absPath).apply()
+            extractAndApplyBackgroundColors(absPath)
             true
         } catch (e: Exception) {
             e.printStackTrace()
@@ -742,6 +757,28 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         }
         _uiState.update { it.copy(customBackgroundPath = null) }
         prefs.edit().remove(KEY_CUSTOM_BG_PATH).apply()
+        extractAndApplyBackgroundColors(null)
+    }
+
+    private fun extractAndApplyBackgroundColors(path: String?) {
+        viewModelScope.launch {
+            val extracted = com.antigravity.equalizer.utils.PaletteHelper.extractColorsFromImage(path)
+            if (extracted != null) {
+                _uiState.update {
+                    it.copy(
+                        backgroundExtractedLightColor = extracted.lightColor,
+                        backgroundExtractedDarkColor = extracted.darkColor
+                    )
+                }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        backgroundExtractedLightColor = null,
+                        backgroundExtractedDarkColor = null
+                    )
+                }
+            }
+        }
     }
 
     fun setBackgroundBlurRadius(radius: Float) {

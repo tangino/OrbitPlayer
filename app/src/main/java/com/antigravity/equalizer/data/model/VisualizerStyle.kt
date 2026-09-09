@@ -45,9 +45,9 @@ enum class VisualizerColorScheme(
     val secondaryColor: Color,
     val peakColor: Color
 ) {
-    FOLLOW_THEME(
-        id = "follow_theme",
-        titleRes = R.string.visualizer_color_follow_theme,
+    FOLLOW_BACKGROUND(
+        id = "follow_background",
+        titleRes = R.string.visualizer_color_follow_background,
         primaryColor = Color(0xFF00E5FF),
         secondaryColor = Color(0xFF7C4DFF),
         peakColor = Color(0xFFFFFFFF)
@@ -83,7 +83,7 @@ enum class VisualizerColorScheme(
 
     companion object {
         fun fromId(id: String?): VisualizerColorScheme {
-            return values().find { it.id == id } ?: FOLLOW_THEME
+            return values().find { it.id == id } ?: FOLLOW_BACKGROUND
         }
     }
 }

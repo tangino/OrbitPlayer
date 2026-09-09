@@ -382,11 +382,65 @@ class MusicPlayerManager private constructor(private val context: Context) {
         }
     }
 
+    /**
+     * 高稳健性直接切歌调度引擎：自动修复队列脱节、IDLE状态自动唤醒准备并同步前台状态
+     */
+    private fun seekToTrack(targetIndex: Int) {
+        val playlist = _playbackState.value.currentPlaylist
+        if (playlist.isEmpty()) return
+        val safeIndex = targetIndex.coerceIn(0, playlist.size - 1)
+        val targetSong = playlist[safeIndex]
+
+        hasRecordedPlayForCurrentSong = false
+        _playbackState.update {
+            it.copy(
+                currentIndex = safeIndex,
+                currentSong = targetSong,
+                currentPositionMs = 0L,
+                durationMs = targetSong.durationMs,
+                progress = 0f
+            )
+        }
+
+        try {
+            // 如果底层 ExoPlayer 内部媒体项数量与播放列表脱节（例如冷启动或部分加载），立即完整同步
+            if (player.mediaItemCount != playlist.size) {
+                val mediaItems = playlist.map { createMediaItem(it) }
+                player.setMediaItems(mediaItems, safeIndex, 0L)
+                player.prepare()
+            } else {
+                player.seekTo(safeIndex, 0L)
+            }
+
+            if (player.playbackState == Player.STATE_IDLE) {
+                player.prepare()
+            }
+            player.play()
+            com.antigravity.equalizer.service.MusicPlaybackService.start(context)
+            saveLastPlayedSong(targetSong, 0L)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to seek to track at index $safeIndex, recovering...", e)
+            try {
+                val mediaItems = playlist.map { createMediaItem(it) }
+                player.setMediaItems(mediaItems, safeIndex, 0L)
+                player.prepare()
+                player.play()
+            } catch (_: Exception) {}
+        }
+    }
+
     fun playNext() {
         val playlist = _playbackState.value.currentPlaylist
         if (playlist.isEmpty()) return
 
-        val currentIndex = player.currentMediaItemIndex
+        val currentIndex = if (player.currentMediaItemIndex in playlist.indices) {
+            player.currentMediaItemIndex
+        } else if (_playbackState.value.currentIndex in playlist.indices) {
+            _playbackState.value.currentIndex
+        } else {
+            0
+        }
+
         if (currentIndex in playlist.indices) {
             if (playHistory.peekLast() != currentIndex) {
                 playHistory.addLast(currentIndex)
@@ -399,25 +453,17 @@ class MusicPlayerManager private constructor(private val context: Context) {
         // 自定义智能随机策略调度
         if (_playbackState.value.isShuffleEnabled && playlist.size > 1) {
             val nextIndex = pickNextShuffleIndex(playlist, currentIndex)
-            player.seekTo(nextIndex, 0L)
-            if (!player.isPlaying) player.play()
+            seekToTrack(nextIndex)
             return
         }
 
-        if (player.hasNextMediaItem()) {
-            player.seekToNextMediaItem()
-            if (!player.isPlaying) player.play()
+        // 顺序模式：无论循环模式如何，用户手动点击切歌必定平滑推进到下一曲（到达末尾自动循环回首曲）
+        val nextIndex = if (playlist.size > 1) {
+            (currentIndex + 1) % playlist.size
         } else {
-            val repeatMode = _playbackState.value.repeatMode
-            if (repeatMode == RepeatMode.ALL && playlist.isNotEmpty()) {
-                player.seekTo(0, 0L)
-                player.play()
-            } else if (repeatMode != RepeatMode.OFF && playlist.size > 1) {
-                val nextIndex = (currentIndex + 1) % playlist.size
-                player.seekTo(nextIndex, 0L)
-                player.play()
-            }
+            0
         }
+        seekToTrack(nextIndex)
     }
 
     fun playPrevious() {
@@ -434,20 +480,21 @@ class MusicPlayerManager private constructor(private val context: Context) {
         if (playHistory.isNotEmpty()) {
             val prevIndex = playHistory.removeLast()
             if (prevIndex in playlist.indices && prevIndex != player.currentMediaItemIndex) {
-                player.seekTo(prevIndex, 0L)
-                if (!player.isPlaying) player.play()
+                seekToTrack(prevIndex)
                 return
             }
         }
 
-        if (player.hasPreviousMediaItem()) {
-            player.seekToPreviousMediaItem()
-            if (!player.isPlaying) player.play()
-        } else if (playlist.size > 1) {
-            val prevIndex = if (_playbackState.value.currentIndex - 1 < 0) playlist.size - 1 else _playbackState.value.currentIndex - 1
-            player.seekTo(prevIndex, 0L)
-            player.play()
+        val currentIndex = if (player.currentMediaItemIndex in playlist.indices) {
+            player.currentMediaItemIndex
+        } else if (_playbackState.value.currentIndex in playlist.indices) {
+            _playbackState.value.currentIndex
+        } else {
+            0
         }
+
+        val prevIndex = if (currentIndex - 1 < 0) playlist.size - 1 else currentIndex - 1
+        seekToTrack(prevIndex)
     }
 
     fun seekTo(positionMs: Long) {

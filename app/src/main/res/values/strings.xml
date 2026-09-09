@@ -230,7 +230,7 @@
     <string name="visualizer_peak_decay_subtitle">Peak points hold at maximum and fall off with gravity physics</string>
     <string name="visualizer_color_title">Visualizer Color Scheme</string>
     <string name="visualizer_color_subtitle">Select spectrum glow and gradient neon color</string>
-    <string name="visualizer_color_follow_theme">Follow Theme Accent</string>
+    <string name="visualizer_color_follow_background">Adaptive to Background (Dual-Color)</string>
     <string name="visualizer_color_neon_cyan_purple">Neon Cyan &amp; Purple</string>
     <string name="visualizer_color_fire_amber">Cyber Fire Amber</string>
     <string name="visualizer_color_electric_green">Electric Green</string>
@@ -263,6 +263,8 @@
     <string name="maximized_hide_controls">Hide Controls</string>
     <string name="maximized_cover_alpha">Cover Opacity</string>
     <string name="maximized_cover_alpha_desc">Adjust the opacity of the album cover when visualizer is maximized</string>
+    <string name="maximized_follow_cover_color">Follow Album Cover Color</string>
+    <string name="maximized_follow_cover_dual_only_hint">Only available in dual-color spectrum mode</string>
 
     <!-- Visualizer Bar Opacity & Custom App Background -->
     <string name="visualizer_bar_alpha_title">Visualizer Opacity</string>
@@ -338,8 +340,9 @@
     <string name="btn_download_cover">Download</string>
     <string name="btn_redownload_cover">Re-download</string>
     <string name="cover_current_preview">Current Cover</string>
-    <string name="cover_empty_candidates_hint">Click '%1$s' below to search and download online album covers</string>
+    <string name="cover_empty_candidates_hint">Click \'%1$s\' below to search and download online album covers</string>
     <string name="cover_downloading">Downloading cover...</string>
     <string name="cover_found_choose">Online cover found, please choose whether to apply</string>
     <string name="select_album_cover_subtitle_specific">Found the following online cover(s), choose whether to apply:</string>
+    <string name="cover_fetch_completed_hint">Found %1$d online cover(s). You can open cover selection now.</string>
 </resources>

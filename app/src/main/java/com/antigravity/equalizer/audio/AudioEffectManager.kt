@@ -4,7 +4,6 @@ import android.content.Context
 import android.media.audiofx.BassBoost as AndroidBassBoost
 import android.media.audiofx.DynamicsProcessing
 import android.media.audiofx.Equalizer
-import android.media.audiofx.Visualizer
 import android.os.Build
 import android.util.Log
 import com.antigravity.equalizer.native.NativeDSP
@@ -53,8 +52,7 @@ class AudioEffectManager private constructor(private val context: Context) {
         val sessionId: Int,
         var systemEqualizer: Equalizer? = null,
         var systemBassBoost: AndroidBassBoost? = null,
-        var dynamicsProcessing: DynamicsProcessing? = null,
-        var visualizer: Visualizer? = null
+        var dynamicsProcessing: DynamicsProcessing? = null
     )
 
     init {
@@ -136,20 +134,6 @@ class AudioEffectManager private constructor(private val context: Context) {
             Log.w(TAG, "Failed to create BassBoost for session $sessionId: ${e.message}")
         }
 
-        // 4. 初始化 Visualizer 频谱
-        try {
-            val visualizer = Visualizer(sessionId)
-            visualizer.captureSize = Visualizer.getCaptureSizeRange()[1]
-            visualizer.setDataCaptureListener(object : Visualizer.OnDataCaptureListener {
-                override fun onWaveFormDataCapture(v: Visualizer?, waveform: ByteArray?, samplingRate: Int) {}
-                override fun onFftDataCapture(v: Visualizer?, fft: ByteArray?, samplingRate: Int) {}
-            }, Visualizer.getMaxCaptureRate() / 2, false, true)
-            visualizer.enabled = true
-            effects.visualizer = visualizer
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to create Visualizer for session $sessionId: ${e.message}")
-        }
-
         activeSessions[sessionId] = effects
     }
 
@@ -180,13 +164,6 @@ class AudioEffectManager private constructor(private val context: Context) {
             effects.dynamicsProcessing?.release()
         } catch (e: Exception) {
             Log.e(TAG, "Error releasing DynamicsProcessing for session $sessionId", e)
-        }
-
-        try {
-            effects.visualizer?.enabled = false
-            effects.visualizer?.release()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error releasing Visualizer for session $sessionId", e)
         }
     }
 

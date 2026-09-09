@@ -102,6 +102,7 @@ fun NowPlayingScreen(
     onToggleMaximizedShowControls: (Boolean) -> Unit = {},
     onSetMaximizedCoverAlpha: (Float) -> Unit = {},
     onToggleCoverInQueue: (Boolean) -> Unit = {},
+    onToggleFollowCoverColor: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -306,6 +307,8 @@ fun NowPlayingScreen(
                             customColor = equalizerUiState.visualizerCustomColor,
                             customColor2 = equalizerUiState.visualizerCustomColor2,
                             isSingleColor = equalizerUiState.visualizerSingleColor,
+                            backgroundLightColor = equalizerUiState.backgroundExtractedLightColor,
+                            backgroundDarkColor = equalizerUiState.backgroundExtractedDarkColor,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -756,6 +759,8 @@ fun NowPlayingScreen(
                     customColor = equalizerUiState.visualizerCustomColor,
                     customColor2 = equalizerUiState.visualizerCustomColor2,
                     isSingleColor = equalizerUiState.visualizerSingleColor,
+                    backgroundLightColor = equalizerUiState.backgroundExtractedLightColor,
+                    backgroundDarkColor = equalizerUiState.backgroundExtractedDarkColor,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(if (isLandscape) 40.dp else 46.dp)
@@ -1327,8 +1332,14 @@ fun NowPlayingScreen(
                             .clickable {
                                 showMoreOptionsMenu = false
                                 candidateSong = targetSong
-                                candidateArtistName = targetSong.artist
-                                candidateCovers = emptyList()
+                                val cached = com.antigravity.equalizer.data.cover.MusicBrainzCoverService.getCachedCandidates(targetSong.id)
+                                if (cached != null) {
+                                    candidateArtistName = cached.first
+                                    candidateCovers = cached.second
+                                } else {
+                                    candidateArtistName = targetSong.artist
+                                    candidateCovers = emptyList()
+                                }
                                 showSelectAlbumCoverDialog = true
                             }
                             .padding(vertical = 12.dp, horizontal = 8.dp),
@@ -1451,6 +1462,9 @@ fun NowPlayingScreen(
                 showSelectAlbumCoverDialog = false
             },
             onDownload = {
+                // 1. 立即关闭选择封面弹窗
+                showSelectAlbumCoverDialog = false
+                // 2. 激活封面位置的下载进度提示遮罩
                 isDownloadingCover = true
                 coroutineScope.launch {
                     try {
@@ -1463,19 +1477,22 @@ fun NowPlayingScreen(
                         withContext(Dispatchers.Main) {
                             isDownloadingCover = false
                             when (result) {
+                                is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.ArtistAlbumsFound -> {
+                                    candidateCovers = result.candidates
+                                    candidateArtistName = result.artist
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.cover_fetch_completed_hint, result.candidates.size),
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
                                 is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.UpdatedLarge -> {
-                                    val sizeStr = "${result.netWidth}x${result.netHeight}"
+                                    val sizeStr = "${result.netWidth} × ${result.netHeight}"
                                     Toast.makeText(
                                         context,
                                         context.getString(R.string.cover_update_success, sizeStr),
                                         Toast.LENGTH_SHORT
                                     ).show()
-                                    showSelectAlbumCoverDialog = false
-                                }
-                                is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.ArtistAlbumsFound -> {
-                                    Toast.makeText(context, R.string.cover_found_choose, Toast.LENGTH_SHORT).show()
-                                    candidateCovers = result.candidates
-                                    candidateArtistName = result.artist
                                 }
                                 is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.NotFound -> {
                                     Toast.makeText(context, R.string.cover_not_found, Toast.LENGTH_SHORT).show()
@@ -1693,6 +1710,7 @@ fun NowPlayingScreen(
             onToggleMaximizedCoverPosition = onToggleMaximizedCoverPosition,
             onToggleMaximizedShowControls = onToggleMaximizedShowControls,
             onSetMaximizedCoverAlpha = onSetMaximizedCoverAlpha,
+            onToggleFollowCoverColor = onToggleFollowCoverColor,
             onTogglePlay = { viewModel.togglePlayPause() },
             onPlayNext = { viewModel.playNext() },
             onPlayPrevious = { viewModel.playPrevious() },
@@ -2275,12 +2293,53 @@ private fun MaximizedVisualizerOverlay(
     onToggleMaximizedCoverPosition: (Boolean) -> Unit,
     onToggleMaximizedShowControls: (Boolean) -> Unit,
     onSetMaximizedCoverAlpha: (Float) -> Unit,
+    onToggleFollowCoverColor: (Boolean) -> Unit = {},
     onTogglePlay: () -> Unit,
     onPlayNext: () -> Unit,
     onPlayPrevious: () -> Unit,
     onSeekTo: (Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val coverVer by com.antigravity.equalizer.utils.CoverHelper.coverVersion.collectAsState()
+    var coverExtractedColors by remember { mutableStateOf<com.antigravity.equalizer.utils.PaletteHelper.ExtractedColors?>(null) }
+
+    // 播放时实时从当前专辑封面文件中异步提取亮色与暗色 (不进行持久化)
+    LaunchedEffect(song?.id, song?.path, song?.album, coverVer) {
+        if (song != null) {
+            val coverFile = com.antigravity.equalizer.utils.CoverHelper.getOrExtractCoverFile(context, song.id, song.path, song.album)
+            if (coverFile != null && coverFile.exists() && coverFile.length() > 0L) {
+                coverExtractedColors = com.antigravity.equalizer.utils.PaletteHelper.extractColorsFromImage(coverFile.absolutePath)
+            } else {
+                coverExtractedColors = null
+            }
+        } else {
+            coverExtractedColors = null
+        }
+    }
+
+    val isDualColor = !equalizerUiState.visualizerSingleColor
+    // 仅在双色频谱模式且当前歌曲成功提取到封面颜色时生效；无封面时自动平滑回退到设置中的颜色
+    val isFollowingCover = equalizerUiState.followCoverColorInMaximized && isDualColor && coverExtractedColors != null
+
+    val effectiveColorScheme = if (isFollowingCover) {
+        VisualizerColorScheme.FOLLOW_BACKGROUND
+    } else {
+        equalizerUiState.visualizerColorScheme
+    }
+
+    val effectiveLightColor = if (isFollowingCover) {
+        coverExtractedColors!!.lightColor
+    } else {
+        equalizerUiState.backgroundExtractedLightColor
+    }
+
+    val effectiveDarkColor = if (isFollowingCover) {
+        coverExtractedColors!!.darkColor
+    } else {
+        equalizerUiState.backgroundExtractedDarkColor
+    }
+
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
             configuration.screenWidthDp > configuration.screenHeightDp
@@ -2319,7 +2378,7 @@ private fun MaximizedVisualizerOverlay(
             magnitudes = visualizerFrame.rawMagnitudes,
             peaks = visualizerFrame.peakCaps,
             style = currentStyle,
-            colorScheme = equalizerUiState.visualizerColorScheme,
+            colorScheme = effectiveColorScheme,
             peakDecayEnabled = equalizerUiState.visualizerPeakDecayEnabled,
             isPlaying = playbackState.isPlaying,
             barWidthDp = equalizerUiState.visualizerBarWidthDp,
@@ -2331,6 +2390,8 @@ private fun MaximizedVisualizerOverlay(
             customColor = equalizerUiState.visualizerCustomColor,
             customColor2 = equalizerUiState.visualizerCustomColor2,
             isSingleColor = equalizerUiState.visualizerSingleColor,
+            backgroundLightColor = effectiveLightColor,
+            backgroundDarkColor = effectiveDarkColor,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(
@@ -2492,6 +2553,28 @@ private fun MaximizedVisualizerOverlay(
                             imageVector = if (equalizerUiState.maximizedShowControls) Icons.Default.PlayCircle else Icons.Default.PlayDisabled,
                             contentDescription = stringResource(if (equalizerUiState.maximizedShowControls) R.string.maximized_hide_controls else R.string.maximized_show_controls),
                             tint = if (equalizerUiState.maximizedShowControls) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // 频谱颜色跟随专辑封面 (仅在双色频谱时可用，非持久化实时提取)
+                    val dualOnlyHint = stringResource(R.string.maximized_follow_cover_dual_only_hint)
+                    IconButton(
+                        onClick = {
+                            if (!isDualColor) {
+                                android.widget.Toast.makeText(context, dualOnlyHint, android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                onToggleFollowCoverColor(!equalizerUiState.followCoverColorInMaximized)
+                            }
+                        },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .alpha(if (isDualColor) 1.0f else 0.38f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Palette,
+                            contentDescription = stringResource(R.string.maximized_follow_cover_color),
+                            tint = if (equalizerUiState.followCoverColorInMaximized && isDualColor) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
                             modifier = Modifier.size(20.dp)
                         )
                     }

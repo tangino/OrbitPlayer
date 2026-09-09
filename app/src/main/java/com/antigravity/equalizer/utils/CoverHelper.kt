@@ -26,7 +26,7 @@ import java.util.Collections
 object CoverHelper {
 
     private const val TAG = "CoverHelper"
-    private const val COVERS_DIR_NAME = "covers"
+    private const val COVERS_DIR_NAME = "audio_covers_v2"
 
     // 内存 Bitmap 缓存 (上限约 24MB)
     private val memoryCache: LruCache<Long, Bitmap> by lazy {
@@ -54,8 +54,19 @@ object CoverHelper {
     val coverVersion: kotlinx.coroutines.flow.StateFlow<Long> = _coverVersion
 
     /**
+     * 获取单曲专属的本地缓存文件对象
+     */
+    fun getSafeCoverFile(context: Context, songId: Long): File {
+        val coversDir = File(context.cacheDir, COVERS_DIR_NAME).apply {
+            if (!exists()) mkdirs()
+        }
+        return File(coversDir, "cover_v2_${songId}.jpg")
+    }
+
+    /**
      * 获取或按需提取歌曲专属封面缓存文件
      */
+    @Suppress("UNUSED_PARAMETER")
     fun getOrExtractCoverFile(
         context: Context,
         songId: Long,
@@ -64,10 +75,7 @@ object CoverHelper {
     ): File? {
         if (songId == 0L || path.isNullOrBlank()) return null
 
-        val coversDir = File(context.cacheDir, COVERS_DIR_NAME).apply {
-            if (!exists()) mkdirs()
-        }
-        val cacheFile = File(coversDir, "cover_${songId}.jpg")
+        val cacheFile = getSafeCoverFile(context, songId)
 
         // 1. 若本地专属缓存已存在且有效，直接秒开返回
         if (cacheFile.exists() && cacheFile.length() > 128) {
@@ -105,7 +113,7 @@ object CoverHelper {
 
         val parentDir = audioFile.parentFile
 
-        // 4. 优先级 2：检查同目录下专属同名图片 (如 SongName.jpg / SongName.png)
+        // 4. 优先级 2：检查同目录下专属严格同名图片 (如 SongName.jpg / SongName.png)
         if (parentDir != null && parentDir.exists() && parentDir.isDirectory) {
             val baseName = audioFile.nameWithoutExtension
             val candidateExts = listOf("jpg", "jpeg", "png", "webp")
@@ -115,25 +123,9 @@ object CoverHelper {
                     return sameNameImg
                 }
             }
-
-            // 5. 优先级 3：仅当歌曲拥有明确专辑名 (非空且非 Unknown) 时，检查同目录下 album 封面
-            val hasExplicitAlbum = !album.isNullOrBlank() &&
-                    album != "Unknown Album" &&
-                    album != "<unknown>" &&
-                    album != "未知专辑"
-
-            if (hasExplicitAlbum) {
-                val albumCandidates = listOf("cover.jpg", "cover.png", "folder.jpg", "album.jpg")
-                for (name in albumCandidates) {
-                    val albumImg = File(parentDir, name)
-                    if (albumImg.exists() && albumImg.length() > 128) {
-                        return albumImg
-                    }
-                }
-            }
         }
 
-        // 6. 确定无封面，记入集合，坚决返回 null，杜绝跨曲借调错乱
+        // 5. 确定无专属封面，记入集合，坚决返回 null，杜绝同目录公共 cover.jpg/folder.jpg 借调错乱
         noCoverSet.add(songId)
         return null
     }
@@ -208,12 +200,9 @@ object CoverHelper {
         if (songId == 0L || !sourceFile.exists() || sourceFile.length() < 128) return false
 
         try {
-            val coversDir = File(context.cacheDir, COVERS_DIR_NAME).apply {
-                if (!exists()) mkdirs()
-            }
-            val targetFile = File(coversDir, "cover_${songId}.jpg")
+            val targetFile = getSafeCoverFile(context, songId)
 
-            // 复制临时大图文件至缓存文件
+            // 复制临时大图文件至专属缓存文件
             sourceFile.inputStream().use { input ->
                 FileOutputStream(targetFile).use { output ->
                     input.copyTo(output)
@@ -231,6 +220,11 @@ object CoverHelper {
             } else {
                 memoryCache.remove(songId)
             }
+
+            // 清除 Coil 内存缓存，避免展示旧图片
+            try {
+                coil.Coil.imageLoader(context).memoryCache?.clear()
+            } catch (_: Exception) {}
 
             // 发送更新通知
             _coverVersion.value = System.currentTimeMillis()
@@ -266,12 +260,11 @@ object CoverHelper {
     }
 
     /**
-     * 判断指定歌曲是否已下载过本地专属封面文件
+     * 判断指定歌曲是否已下载/提取过本地专属封面文件
      */
     fun hasDownloadedCover(context: Context, songId: Long): Boolean {
         if (songId == 0L) return false
-        val coversDir = File(context.cacheDir, COVERS_DIR_NAME)
-        val cacheFile = File(coversDir, "cover_${songId}.jpg")
+        val cacheFile = getSafeCoverFile(context, songId)
         return cacheFile.exists() && cacheFile.length() > 128
     }
 
@@ -286,6 +279,11 @@ object CoverHelper {
             val dir = File(context.cacheDir, COVERS_DIR_NAME)
             if (dir.exists()) {
                 dir.deleteRecursively()
+            }
+            // 兼容清理旧版缓存目录
+            val oldDir = File(context.cacheDir, "covers")
+            if (oldDir.exists()) {
+                oldDir.deleteRecursively()
             }
         } catch (e: Exception) {
             Log.w(TAG, "Clear cover cache error", e)

@@ -230,7 +230,7 @@
     <string name="visualizer_peak_decay_subtitle">峰值达到最高点时暂留并带有重力加速度坠落效果</string>
     <string name="visualizer_color_title">频谱配色方案</string>
     <string name="visualizer_color_subtitle">选择频谱光晕与渐变发光色彩</string>
-    <string name="visualizer_color_follow_theme">跟随主题高亮</string>
+    <string name="visualizer_color_follow_background">跟随背景自适应 (双色)</string>
     <string name="visualizer_color_neon_cyan_purple">霓虹青紫</string>
     <string name="visualizer_color_fire_amber">电音烈焰</string>
     <string name="visualizer_color_electric_green">极客荧光绿</string>
@@ -263,6 +263,8 @@
     <string name="maximized_hide_controls">隐藏控制条</string>
     <string name="maximized_cover_alpha">封面透明度</string>
     <string name="maximized_cover_alpha_desc">调整最大化时专辑封面的不透明度</string>
+    <string name="maximized_follow_cover_color">频谱颜色跟随专辑封面</string>
+    <string name="maximized_follow_cover_dual_only_hint">仅在双色频谱模式下可用</string>
 
     <!-- 频谱条透明度与全局自定义背景 -->
     <string name="visualizer_bar_alpha_title">频谱条透明度</string>
@@ -342,5 +344,6 @@
     <string name="cover_downloading">正在下载封面...</string>
     <string name="cover_found_choose">已检索到在线封面，请选择是否使用</string>
     <string name="select_album_cover_subtitle_specific">为您检索到以下在线封面，请选择是否应用：</string>
+    <string name="cover_fetch_completed_hint">已获取到 %1$d 张候选封面，可重新打开选择</string>
 </resources>
 

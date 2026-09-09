@@ -609,7 +609,7 @@ fun SettingsScreen(
                             scheme to stringResource(scheme.titleRes)
                         }
                         val currentColorLabel = colorOptions.find { it.first == uiState.visualizerColorScheme }?.second
-                            ?: stringResource(R.string.visualizer_color_follow_theme)
+                            ?: stringResource(R.string.visualizer_color_follow_background)
 
                         SettingsDropdownItem(
                             icon = Icons.Default.Palette,
@@ -619,7 +619,7 @@ fun SettingsScreen(
                             options = colorOptions.map { it.second },
                             onOptionSelected = { selectedLabel ->
                                 val target = colorOptions.find { it.second == selectedLabel }?.first
-                                    ?: com.antigravity.equalizer.data.model.VisualizerColorScheme.FOLLOW_THEME
+                                    ?: com.antigravity.equalizer.data.model.VisualizerColorScheme.FOLLOW_BACKGROUND
                                 viewModel.setVisualizerColorScheme(target)
                                 if (target == com.antigravity.equalizer.data.model.VisualizerColorScheme.CUSTOM) {
                                     editingColorIndex = 1
@@ -631,12 +631,12 @@ fun SettingsScreen(
                         // 5. 自定义颜色与色卡快速点选区
                         val isCustomScheme = uiState.visualizerColorScheme == com.antigravity.equalizer.data.model.VisualizerColorScheme.CUSTOM
                         val activeColor1 = when (uiState.visualizerColorScheme) {
-                            com.antigravity.equalizer.data.model.VisualizerColorScheme.FOLLOW_THEME -> OrbitTheme.colors.primary.toArgb().toLong() and 0xFFFFFFFFL
+                            com.antigravity.equalizer.data.model.VisualizerColorScheme.FOLLOW_BACKGROUND -> uiState.backgroundExtractedLightColor ?: (OrbitTheme.colors.primary.toArgb().toLong() and 0xFFFFFFFFL)
                             com.antigravity.equalizer.data.model.VisualizerColorScheme.CUSTOM -> uiState.visualizerCustomColor
                             else -> uiState.visualizerColorScheme.primaryColor.toArgb().toLong() and 0xFFFFFFFFL
                         }
                         val activeColor2 = when (uiState.visualizerColorScheme) {
-                            com.antigravity.equalizer.data.model.VisualizerColorScheme.FOLLOW_THEME -> OrbitTheme.colors.secondary.toArgb().toLong() and 0xFFFFFFFFL
+                            com.antigravity.equalizer.data.model.VisualizerColorScheme.FOLLOW_BACKGROUND -> uiState.backgroundExtractedDarkColor ?: (OrbitTheme.colors.secondary.toArgb().toLong() and 0xFFFFFFFFL)
                             com.antigravity.equalizer.data.model.VisualizerColorScheme.CUSTOM -> uiState.visualizerCustomColor2
                             else -> uiState.visualizerColorScheme.secondaryColor.toArgb().toLong() and 0xFFFFFFFFL
                         }
@@ -1215,30 +1215,6 @@ fun SettingsScreen(
                                 )
                             }
                         }
-
-                        HorizontalDivider(color = GridLineColor)
-
-                        // 4. MusicBrainz / Cover Art Archive 在线大尺寸封面自动匹配开关
-                        SettingsSwitchItem(
-                            icon = Icons.Default.ImageSearch,
-                            title = stringResource(R.string.online_cover_auto_match_title),
-                            subtitle = stringResource(R.string.online_cover_auto_match_subtitle),
-                            checked = uiState.autoMatchOnlineCover,
-                            onCheckedChange = { viewModel.setAutoMatchOnlineCover(it) }
-                        )
-
-                        if (uiState.autoMatchOnlineCover) {
-                            HorizontalDivider(color = GridLineColor)
-
-                            // 5. 仅在 Wi-Fi 网络下自动匹配
-                            SettingsSwitchItem(
-                                icon = Icons.Default.Wifi,
-                                title = stringResource(R.string.online_cover_wifi_only_title),
-                                subtitle = stringResource(R.string.online_cover_wifi_only_subtitle),
-                                checked = uiState.onlineCoverWifiOnly,
-                                onCheckedChange = { viewModel.setOnlineCoverWifiOnly(it) }
-                            )
-                        }
                     }
                 }
             }
@@ -1474,12 +1450,12 @@ fun SettingsScreen(
     if (showColorPickerDialog) {
         val isCustomScheme = uiState.visualizerColorScheme == com.antigravity.equalizer.data.model.VisualizerColorScheme.CUSTOM
         val activeColor1 = when (uiState.visualizerColorScheme) {
-            com.antigravity.equalizer.data.model.VisualizerColorScheme.FOLLOW_THEME -> OrbitTheme.colors.primary.toArgb().toLong() and 0xFFFFFFFFL
+            com.antigravity.equalizer.data.model.VisualizerColorScheme.FOLLOW_BACKGROUND -> uiState.backgroundExtractedLightColor ?: (OrbitTheme.colors.primary.toArgb().toLong() and 0xFFFFFFFFL)
             com.antigravity.equalizer.data.model.VisualizerColorScheme.CUSTOM -> uiState.visualizerCustomColor
             else -> uiState.visualizerColorScheme.primaryColor.toArgb().toLong() and 0xFFFFFFFFL
         }
         val activeColor2 = when (uiState.visualizerColorScheme) {
-            com.antigravity.equalizer.data.model.VisualizerColorScheme.FOLLOW_THEME -> OrbitTheme.colors.secondary.toArgb().toLong() and 0xFFFFFFFFL
+            com.antigravity.equalizer.data.model.VisualizerColorScheme.FOLLOW_BACKGROUND -> uiState.backgroundExtractedDarkColor ?: (OrbitTheme.colors.secondary.toArgb().toLong() and 0xFFFFFFFFL)
             com.antigravity.equalizer.data.model.VisualizerColorScheme.CUSTOM -> uiState.visualizerCustomColor2
             else -> uiState.visualizerColorScheme.secondaryColor.toArgb().toLong() and 0xFFFFFFFFL
         }

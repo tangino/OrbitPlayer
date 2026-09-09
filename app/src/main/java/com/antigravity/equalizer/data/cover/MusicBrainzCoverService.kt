@@ -59,8 +59,22 @@ object MusicBrainzCoverService {
         val albumTitle: String,
         val releaseDate: String = "",
         val coverUrl: String,
-        val thumbnailUrl: String
+        val thumbnailUrl: String,
+        val dimensions: String = "1000 × 1000"
     )
+
+    // 缓存每首歌获取到的候选封面列表，便于用户在后台下载完成后随时重新打开弹窗展示
+    private val candidateCache = java.util.concurrent.ConcurrentHashMap<Long, Pair<String, List<AlbumCoverCandidate>>>()
+
+    fun getCachedCandidates(songId: Long): Pair<String, List<AlbumCoverCandidate>>? = candidateCache[songId]
+
+    fun setCachedCandidates(songId: Long, artist: String, candidates: List<AlbumCoverCandidate>) {
+        candidateCache[songId] = Pair(artist, candidates)
+    }
+
+    fun clearCachedCandidates(songId: Long) {
+        candidateCache.remove(songId)
+    }
 
     /**
      * 封面匹配与更新结果
@@ -191,8 +205,10 @@ object MusicBrainzCoverService {
 
                 if (candidates.isNotEmpty()) {
                     Log.i(TAG, "Manual search found ${candidates.size} candidate covers for song ${song.id}")
+                    val finalArtist = if (candidateArtist.isNotBlank()) candidateArtist else song.artist
+                    setCachedCandidates(song.id, finalArtist, candidates)
                     return@withContext MatchResult.ArtistAlbumsFound(
-                        artist = if (candidateArtist.isNotBlank()) candidateArtist else song.artist,
+                        artist = finalArtist,
                         candidates = candidates
                     )
                 }
@@ -230,9 +246,10 @@ object MusicBrainzCoverService {
             AlbumCoverCandidate(
                 releaseId = "matched_${songId}_$idx",
                 albumTitle = title,
-                releaseDate = "${w}x${h}",
+                releaseDate = "${w} × ${h}",
                 coverUrl = url,
-                thumbnailUrl = url
+                thumbnailUrl = url,
+                dimensions = "${w} × ${h}"
             )
         } catch (e: Exception) {
             Log.w(TAG, "Probe cover error for url: $url", e)
@@ -696,7 +713,8 @@ object MusicBrainzCoverService {
                                 albumTitle = title,
                                 releaseDate = releaseDate,
                                 coverUrl = fullCover,
-                                thumbnailUrl = thumbCover
+                                thumbnailUrl = thumbCover,
+                                dimensions = "1000 × 1000"
                             )
                         )
                     }
@@ -747,7 +765,8 @@ object MusicBrainzCoverService {
                                     albumTitle = title,
                                     releaseDate = year,
                                     coverUrl = fullCover,
-                                    thumbnailUrl = thumbCover
+                                    thumbnailUrl = thumbCover,
+                                    dimensions = "1000 × 1000"
                                 )
                             )
                         }

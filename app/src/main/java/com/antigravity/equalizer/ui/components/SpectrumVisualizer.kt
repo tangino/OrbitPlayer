@@ -24,6 +24,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.toArgb
 import com.antigravity.equalizer.R
 import com.antigravity.equalizer.data.model.VisualizerColorScheme
 import com.antigravity.equalizer.data.model.VisualizerStyle
@@ -58,14 +59,23 @@ fun PowerampSpectrumVisualizer(
     customColor: Long = 0xFF00E5FFL,
     customColor2: Long = 0xFF7C4DFFL,
     isSingleColor: Boolean = false,
+    backgroundLightColor: Long? = null,
+    backgroundDarkColor: Long? = null,
     onClick: (() -> Unit)? = null
 ) {
     if (style == VisualizerStyle.OFF) return
 
     val themeColors = OrbitTheme.colors
     val (primaryColor, secondaryColor, peakColor) = when (colorScheme) {
-        VisualizerColorScheme.FOLLOW_THEME -> {
-            Triple(themeColors.primary, if (isSingleColor) themeColors.primary else themeColors.secondary, themeColors.tertiary)
+        VisualizerColorScheme.FOLLOW_BACKGROUND -> {
+            val light = backgroundLightColor?.let { Color(it) } ?: themeColors.primary
+            val dark = backgroundDarkColor?.let { Color(it) } ?: themeColors.secondary
+            val refColor = if (isSingleColor) light else dark
+            val hsv = FloatArray(3)
+            android.graphics.Color.colorToHSV(refColor.toArgb(), hsv)
+            val peakHsv = floatArrayOf(hsv[0], (hsv[1] * 0.20f).coerceIn(0f, 0.35f), 1.0f)
+            val peakCol = Color(android.graphics.Color.HSVToColor(peakHsv))
+            Triple(light, if (isSingleColor) light else dark, peakCol)
         }
         VisualizerColorScheme.CUSTOM -> {
             val base = Color(customColor)

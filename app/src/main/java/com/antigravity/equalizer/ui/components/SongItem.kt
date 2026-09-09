@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import coil.size.Size
 import com.antigravity.equalizer.data.model.Song
@@ -51,6 +52,7 @@ fun SongItem(
     viewMode: LibraryViewMode,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    coverVersion: Long = 0L,
     onLongClick: (() -> Unit)? = null,
     onFavoriteClick: (() -> Unit)? = null,
     trailingContent: (@Composable () -> Unit)? = null
@@ -81,6 +83,8 @@ fun SongItem(
         else -> 6.dp
     }
 
+    val artUri = song.albumArtUri ?: com.antigravity.equalizer.data.provider.AudioCoverProvider.buildSongCoverUri(song.id, song.path, song.album)
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -106,10 +110,12 @@ fun SongItem(
                         .background(colors.surfaceCard),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (song.albumArtUri != null) {
-                        AsyncImage(
+                    if (artUri.isNotBlank()) {
+                        SubcomposeAsyncImage(
                             model = ImageRequest.Builder(context)
-                                .data(song.albumArtUri)
+                                .data(artUri)
+                                .memoryCacheKey("${artUri}_$coverVersion")
+                                .diskCacheKey("${artUri}_$coverVersion")
                                 .size(
                                     when (viewMode) {
                                         LibraryViewMode.GRID_4_COL -> Size(120, 120)
@@ -122,7 +128,33 @@ fun SongItem(
                                 .build(),
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize(),
+                            loading = {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.MusicNote,
+                                        contentDescription = null,
+                                        tint = colors.textSecondary.copy(alpha = 0.45f),
+                                        modifier = Modifier.size(if (viewMode == LibraryViewMode.GRID_4_COL) 20.dp else 32.dp)
+                                    )
+                                }
+                            },
+                            error = {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.MusicNote,
+                                        contentDescription = null,
+                                        tint = colors.textSecondary.copy(alpha = 0.45f),
+                                        modifier = Modifier.size(if (viewMode == LibraryViewMode.GRID_4_COL) 20.dp else 32.dp)
+                                    )
+                                }
+                            }
                         )
                     } else {
                         Icon(
@@ -238,17 +270,45 @@ fun SongItem(
                             .background(colors.surface),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (song.albumArtUri != null) {
-                            AsyncImage(
+                        if (artUri.isNotBlank()) {
+                            SubcomposeAsyncImage(
                                 model = ImageRequest.Builder(context)
-                                    .data(song.albumArtUri)
+                                    .data(artUri)
+                                    .memoryCacheKey("${artUri}_$coverVersion")
+                                    .diskCacheKey("${artUri}_$coverVersion")
                                     .size(if (viewMode == LibraryViewMode.LIST_LARGE_ART) Size(180, 180) else Size(120, 120))
                                     .allowHardware(true)
                                     .crossfade(false)
                                     .build(),
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxSize(),
+                                loading = {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.MusicNote,
+                                            contentDescription = null,
+                                            tint = colors.textSecondary.copy(alpha = 0.45f),
+                                            modifier = Modifier.size(if (viewMode == LibraryViewMode.LIST_LARGE_ART) 28.dp else 22.dp)
+                                        )
+                                    }
+                                },
+                                error = {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.MusicNote,
+                                            contentDescription = null,
+                                            tint = colors.textSecondary.copy(alpha = 0.45f),
+                                            modifier = Modifier.size(if (viewMode == LibraryViewMode.LIST_LARGE_ART) 28.dp else 22.dp)
+                                        )
+                                    }
+                                }
                             )
                         } else {
                             Icon(

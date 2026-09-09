@@ -21,6 +21,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import coil.size.Size
 import com.antigravity.equalizer.data.model.AlbumItem
@@ -38,9 +39,11 @@ fun AlbumItem(
     viewMode: LibraryViewMode,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    isCurrent: Boolean = false
+    isCurrent: Boolean = false,
+    coverVersion: Long = 0L
 ) {
     val context = LocalContext.current
+    val artUri = album.albumArtUri ?: com.antigravity.equalizer.data.provider.AudioCoverProvider.buildSongCoverUri(album.id, "", album.title)
     val isGrid = viewMode == LibraryViewMode.GRID_2_COL ||
             viewMode == LibraryViewMode.GRID_3_COL ||
             viewMode == LibraryViewMode.GRID_4_COL
@@ -88,10 +91,12 @@ fun AlbumItem(
                         .background(colors.surfaceCard),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (album.albumArtUri != null) {
-                        AsyncImage(
+                    if (artUri.isNotBlank()) {
+                        SubcomposeAsyncImage(
                             model = ImageRequest.Builder(context)
-                                .data(album.albumArtUri)
+                                .data(artUri)
+                                .memoryCacheKey("${artUri}_$coverVersion")
+                                .diskCacheKey("${artUri}_$coverVersion")
                                 .size(
                                     when (viewMode) {
                                         LibraryViewMode.GRID_4_COL -> Size(120, 120)
@@ -104,7 +109,33 @@ fun AlbumItem(
                                 .build(),
                             contentDescription = album.title,
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize(),
+                            loading = {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Album,
+                                        contentDescription = null,
+                                        tint = TextSecondary.copy(alpha = 0.45f),
+                                        modifier = Modifier.size(if (viewMode == LibraryViewMode.GRID_4_COL) 20.dp else 34.dp)
+                                    )
+                                }
+                            },
+                            error = {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Album,
+                                        contentDescription = null,
+                                        tint = TextSecondary.copy(alpha = 0.45f),
+                                        modifier = Modifier.size(if (viewMode == LibraryViewMode.GRID_4_COL) 20.dp else 34.dp)
+                                    )
+                                }
+                            }
                         )
                     } else {
                         Icon(
@@ -167,17 +198,45 @@ fun AlbumItem(
                             .background(colors.surfaceCard),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (album.albumArtUri != null) {
-                            AsyncImage(
+                        if (artUri.isNotBlank()) {
+                            SubcomposeAsyncImage(
                                 model = ImageRequest.Builder(context)
-                                    .data(album.albumArtUri)
+                                    .data(artUri)
+                                    .memoryCacheKey("${artUri}_$coverVersion")
+                                    .diskCacheKey("${artUri}_$coverVersion")
                                     .size(if (viewMode == LibraryViewMode.LIST_LARGE_ART) Size(180, 180) else Size(120, 120))
                                     .allowHardware(true)
                                     .crossfade(false)
                                     .build(),
                                 contentDescription = album.title,
                                 contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxSize(),
+                                loading = {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Album,
+                                            contentDescription = null,
+                                            tint = TextSecondary.copy(alpha = 0.45f),
+                                            modifier = Modifier.size(if (viewMode == LibraryViewMode.LIST_LARGE_ART) 28.dp else 22.dp)
+                                        )
+                                    }
+                                },
+                                error = {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Album,
+                                            contentDescription = null,
+                                            tint = TextSecondary.copy(alpha = 0.45f),
+                                            modifier = Modifier.size(if (viewMode == LibraryViewMode.LIST_LARGE_ART) 28.dp else 22.dp)
+                                        )
+                                    }
+                                }
                             )
                         } else {
                             Icon(

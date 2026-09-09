@@ -47,11 +47,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.antigravity.equalizer.audio.PlaybackState
+import com.antigravity.equalizer.data.provider.AudioCoverProvider
 import com.antigravity.equalizer.ui.theme.*
 import com.antigravity.equalizer.ui.utils.swipeToChangeSong
+import com.antigravity.equalizer.utils.CoverHelper
 
 /**
  * 殿堂级 Hi-Fi 拟物悬浮音乐播放 Dock (Master Glassmorphic Floating Music Bar)
@@ -71,6 +76,9 @@ fun MiniPlayerBar(
     modifier: Modifier = Modifier
 ) {
     val song = playbackState.currentSong ?: return
+    val context = LocalContext.current
+    val coverVer by CoverHelper.coverVersion.collectAsState()
+    val artUri = song.albumArtUri ?: AudioCoverProvider.buildSongCoverUri(song.id, song.path, song.album)
     val colors = OrbitTheme.colors
     val isPlaying = playbackState.isPlaying
 
@@ -224,9 +232,14 @@ fun MiniPlayerBar(
                             ),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (song.albumArtUri != null) {
+                        if (artUri.isNotBlank()) {
                             AsyncImage(
-                                model = song.albumArtUri,
+                                model = ImageRequest.Builder(context)
+                                    .data(artUri)
+                                    .memoryCacheKey("${artUri}_$coverVer")
+                                    .diskCacheKey("${artUri}_$coverVer")
+                                    .crossfade(false)
+                                    .build(),
                                 contentDescription = song.title,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()

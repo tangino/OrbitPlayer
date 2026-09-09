@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -239,6 +240,16 @@ fun MusicLibraryScreen(
         }
     }
 
+    // 🎯 优化单曲点击：如果该歌曲已经是当前播放歌曲，则直接打开播放页面，不再重头播放；否则从该歌曲开始播放
+    fun handleSongItemClick(songs: List<Song>, index: Int) {
+        val clickedSong = songs.getOrNull(index) ?: return
+        if (playbackState.currentSong?.id == clickedSong.id) {
+            viewModel.setNowPlayingExpanded(true)
+        } else {
+            viewModel.playSong(songs, index)
+        }
+    }
+
     // 全 Tab 通用 Pinch 手势控制器与修饰符
     val pinchTransitionState = rememberPinchTransitionState()
     val pinchGestureModifier = Modifier.pinchToZoomViewMode(
@@ -314,17 +325,6 @@ fun MusicLibraryScreen(
                                     contentDescription = "Search",
                                     tint = if (libraryState.isSearching) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary
                                 )
-                            }
-
-                            // 🎯 定位当前播放歌曲
-                            if (playbackState.currentSong != null) {
-                                IconButton(onClick = { locateCurrentPlayingSong() }) {
-                                    Icon(
-                                        imageVector = Icons.Default.MyLocation,
-                                        contentDescription = "Locate Playing Track",
-                                        tint = OrbitTheme.colors.primary
-                                    )
-                                }
                             }
                         }
 
@@ -525,7 +525,8 @@ fun MusicLibraryScreen(
                                     isPlaying = playbackState.isPlaying,
                                     isCurrent = playbackState.currentSong?.id == song.id,
                                     viewMode = currentViewMode,
-                                    onClick = { viewModel.playSong(folderSongs, index) },
+                                    coverVersion = coverVer,
+                                    onClick = { handleSongItemClick(folderSongs, index) },
                                     onFavoriteClick = { viewModel.cycleSongAttitude(song) },
                                     onLongClick = { activeSongForLongClickMenu = song }
                                 )
@@ -561,7 +562,8 @@ fun MusicLibraryScreen(
                                     isPlaying = playbackState.isPlaying,
                                     isCurrent = playbackState.currentSong?.id == song.id,
                                     viewMode = currentViewMode,
-                                    onClick = { viewModel.playSong(albumSongs, index) },
+                                    coverVersion = coverVer,
+                                    onClick = { handleSongItemClick(albumSongs, index) },
                                     onFavoriteClick = { viewModel.cycleSongAttitude(song) },
                                     onLongClick = { activeSongForLongClickMenu = song }
                                 )
@@ -597,7 +599,8 @@ fun MusicLibraryScreen(
                                     isPlaying = playbackState.isPlaying,
                                     isCurrent = playbackState.currentSong?.id == song.id,
                                     viewMode = currentViewMode,
-                                    onClick = { viewModel.playSong(artistSongs, index) },
+                                    coverVersion = coverVer,
+                                    onClick = { handleSongItemClick(artistSongs, index) },
                                     onFavoriteClick = { viewModel.cycleSongAttitude(song) },
                                     onLongClick = { activeSongForLongClickMenu = song }
                                 )
@@ -631,7 +634,8 @@ fun MusicLibraryScreen(
                                             isPlaying = playbackState.isPlaying,
                                             isCurrent = playbackState.currentSong?.id == song.id,
                                             viewMode = currentViewMode,
-                                            onClick = { viewModel.playSong(filteredSongs, index) },
+                                            coverVersion = coverVer,
+                                            onClick = { handleSongItemClick(filteredSongs, index) },
                                             onFavoriteClick = { viewModel.cycleSongAttitude(song) },
                                             onLongClick = { activeSongForLongClickMenu = song }
                                         )
@@ -700,6 +704,7 @@ fun MusicLibraryScreen(
                                             album = album,
                                             viewMode = currentViewMode,
                                             isCurrent = isAlbumPlaying,
+                                            coverVersion = coverVer,
                                             onClick = {
                                                 openedAlbum = album
                                             }
@@ -892,7 +897,8 @@ fun MusicLibraryScreen(
                                                 isPlaying = playbackState.isPlaying,
                                                 isCurrent = playbackState.currentSong?.id == song.id,
                                                 viewMode = libraryState.viewMode,
-                                                onClick = { viewModel.playSong(playlistSongs, index) },
+                                                coverVersion = coverVer,
+                                                onClick = { handleSongItemClick(playlistSongs, index) },
                                                 onFavoriteClick = { viewModel.cycleSongAttitude(song) },
                                                 onLongClick = { activeSongForLongClickMenu = song },
                                                 trailingContent = {
@@ -1138,7 +1144,33 @@ fun MusicLibraryScreen(
             }
         }
 
-
+            // 🎯 悬浮定位当前播放歌曲图标 (悬浮在底部播放条上方一点，屏幕右边)
+            AnimatedVisibility(
+                visible = playbackState.currentSong != null,
+                enter = fadeIn(tween(220)) + scaleIn(tween(220), initialScale = 0.8f),
+                exit = fadeOut(tween(160)) + scaleOut(tween(160), targetScale = 0.8f),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 106.dp)
+            ) {
+                Surface(
+                    onClick = { locateCurrentPlayingSong() },
+                    shape = CircleShape,
+                    color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.94f),
+                    border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f)),
+                    shadowElevation = 8.dp,
+                    modifier = Modifier.size(46.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.MyLocation,
+                            contentDescription = "Locate Playing Track",
+                            tint = OrbitTheme.colors.primary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -1599,7 +1631,7 @@ fun MusicLibraryScreen(
                             activeSongForLongClickMenu = null
                             val idx = filteredSongs.indexOfFirst { it.id == target.id }
                             if (idx >= 0) {
-                                viewModel.playSong(filteredSongs, idx)
+                                handleSongItemClick(filteredSongs, idx)
                             }
                         }
                         .padding(vertical = 12.dp, horizontal = 8.dp),
@@ -1629,8 +1661,14 @@ fun MusicLibraryScreen(
                             val target = longClickedSong
                             activeSongForLongClickMenu = null
                             candidateSong = target
-                            candidateArtistName = target.artist
-                            candidateCovers = emptyList()
+                            val cached = com.antigravity.equalizer.data.cover.MusicBrainzCoverService.getCachedCandidates(target.id)
+                            if (cached != null) {
+                                candidateArtistName = cached.first
+                                candidateCovers = cached.second
+                            } else {
+                                candidateArtistName = target.artist
+                                candidateCovers = emptyList()
+                            }
                             showSelectAlbumCoverDialog = true
                         }
                         .padding(vertical = 12.dp, horizontal = 8.dp),
@@ -1673,6 +1711,8 @@ fun MusicLibraryScreen(
                 showSelectAlbumCoverDialog = false
             },
             onDownload = {
+                // 1. 立即关闭选择封面弹窗
+                showSelectAlbumCoverDialog = false
                 searchingSong = songToApply
                 scope.launch {
                     try {
@@ -1685,19 +1725,22 @@ fun MusicLibraryScreen(
                         withContext(Dispatchers.Main) {
                             searchingSong = null
                             when (result) {
+                                is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.ArtistAlbumsFound -> {
+                                    candidateCovers = result.candidates
+                                    candidateArtistName = result.artist
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.cover_fetch_completed_hint, result.candidates.size),
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
                                 is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.UpdatedLarge -> {
-                                    val sizeStr = "${result.netWidth}x${result.netHeight}"
+                                    val sizeStr = "${result.netWidth} × ${result.netHeight}"
                                     Toast.makeText(
                                         context,
                                         context.getString(R.string.cover_update_success, sizeStr),
                                         Toast.LENGTH_SHORT
                                     ).show()
-                                    showSelectAlbumCoverDialog = false
-                                }
-                                is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.ArtistAlbumsFound -> {
-                                    Toast.makeText(context, R.string.cover_found_choose, Toast.LENGTH_SHORT).show()
-                                    candidateCovers = result.candidates
-                                    candidateArtistName = result.artist
                                 }
                                 is com.antigravity.equalizer.data.cover.MusicBrainzCoverService.MatchResult.NotFound -> {
                                     Toast.makeText(context, R.string.cover_not_found, Toast.LENGTH_SHORT).show()
