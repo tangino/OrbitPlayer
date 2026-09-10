@@ -119,20 +119,33 @@ object PaletteHelper {
 
     /**
      * 亮色可见度保护：
-     * 保证在磨砂或暗调背景上呈现璀璨夺目的高光状态 (Value >= 0.85, Saturation >= 0.40)
+     * 1. 智能识别黑白/单色唱盘：当原色饱和度 < 0.12 时，识别为黑白摄影艺术封面，
+     *    赋予发烧级黑胶白金冷银高光 (#E9EFF2)，消除色相 0° 红色噪点偏色；
+     * 2. 彩色唱盘：保留封面原本色相，温和自适应提纯饱和度与明度。
      */
     private fun ensureLightVisibility(color: Int): Int {
         val hsv = FloatArray(3)
         AndroidColor.colorToHSV(color, hsv)
-        hsv[1] = hsv[1].coerceIn(0.40f, 0.95f) // 饱和度保障
-        hsv[2] = hsv[2].coerceIn(0.85f, 1.0f)  // 明度保底高光
+        val rawSaturation = hsv[1]
+
+        if (rawSaturation < 0.12f) {
+            // 黑白/单色摄影：赋予高贵通透的发烧白金冷银光泽 (Platinum Silver)
+            hsv[0] = 210f   // 微量冷铝合金冷调色相
+            hsv[1] = (rawSaturation * 0.35f).coerceIn(0.02f, 0.05f) // 保持近乎纯粹的银白质感
+            hsv[2] = 0.95f  // 95% 极致通透高光
+        } else {
+            // 彩色封面：保留原汁原味色相，温和保障发色充盈与高光清晰
+            hsv[1] = (rawSaturation * 1.15f).coerceIn(0.38f, 0.95f)
+            hsv[2] = hsv[2].coerceIn(0.85f, 1.0f)
+        }
         return AndroidColor.HSVToColor(hsv)
     }
 
     /**
      * 暗色可见度保护：
-     * 1. 限制暗色明度在 0.35f ~ 0.60f 之间，防止过暗直接与背景融为一体导致频谱截断；
-     * 2. 若暗色与亮色色相和明度过于接近（如纯单色图），自动将暗色进行反差偏移。
+     * 1. 黑白唱盘：赋予深邃沉稳的钛金灰 (Titanium Slate)，形成纯正的高级黑白灰双色发烧质感；
+     * 2. 彩色唱盘：限制暗色明度在 0.35f ~ 0.60f 之间，防止过暗直接与背景融为一体；
+     *    若暗色与亮色色相过于接近，自动进行 35° 色相偏移创造自然渐变。
      */
     private fun ensureDarkVisibility(darkColor: Int, lightColor: Int): Int {
         val darkHsv = FloatArray(3)
@@ -140,14 +153,23 @@ object PaletteHelper {
         AndroidColor.colorToHSV(darkColor, darkHsv)
         AndroidColor.colorToHSV(lightColor, lightHsv)
 
-        // 限制在可见暗色区间，既具有暗调特征又清晰可见
-        darkHsv[1] = darkHsv[1].coerceIn(0.45f, 0.95f)
-        darkHsv[2] = darkHsv[2].coerceIn(0.35f, 0.60f)
+        val isAchromatic = lightHsv[1] < 0.10f || darkHsv[1] < 0.12f
 
-        // 色差过小时，进行色相偏移，创造舒适的双色渐变
-        val hueDiff = abs(darkHsv[0] - lightHsv[0])
-        if (hueDiff < 20f || hueDiff > 340f) {
-            darkHsv[0] = (darkHsv[0] + 35f) % 360f
+        if (isAchromatic) {
+            // 黑白/单色唱盘暗部：深邃钛金灰
+            darkHsv[0] = 215f
+            darkHsv[1] = 0.06f
+            darkHsv[2] = 0.45f
+        } else {
+            // 彩色封面暗部：限制在清晰可见暗色区间
+            darkHsv[1] = darkHsv[1].coerceIn(0.40f, 0.95f)
+            darkHsv[2] = darkHsv[2].coerceIn(0.35f, 0.60f)
+
+            // 色差过小时，进行色相偏移，创造舒适的双色渐变
+            val hueDiff = abs(darkHsv[0] - lightHsv[0])
+            if (hueDiff < 20f || hueDiff > 340f) {
+                darkHsv[0] = (darkHsv[0] + 35f) % 360f
+            }
         }
 
         return AndroidColor.HSVToColor(darkHsv)
