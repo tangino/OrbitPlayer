@@ -24,27 +24,32 @@ if not exist "%EMULATOR_BIN%" (
 )
 
 :: 2. Check running emulator
+set "RUNNING_EMULATOR="
 for /f "tokens=1,2" %%A in ('"%ADB_BIN%" devices') do (
-    echo %%A | findstr /R "emulator-[0-9]+" >nul
-    if !ERRORLEVEL! equ 0 (
-        if "%%B"=="device" (
-            echo [HINT] Emulator already running (%%A).
-            "%ADB_BIN%" devices
-            exit /b 0
+    if "%%B"=="device" (
+        echo %%A | findstr /R "^emulator-" >nul 2>&1
+        if not errorlevel 1 (
+            set "RUNNING_EMULATOR=%%A"
         )
     )
+)
+
+if defined RUNNING_EMULATOR (
+    echo [HINT] Emulator already running: %RUNNING_EMULATOR%
+    "%ADB_BIN%" devices
+    exit /b 0
 )
 
 :: 3. Select AVD
 set "AVD_NAME=%~1"
 if not defined AVD_NAME (
-    for /f "tokens=*" %%A in ('"%EMULATOR_BIN%" -list-avds') do (
+    for /f "tokens=*" %%A in ('"%EMULATOR_BIN%" -list-avds 2^>nul') do (
         if not defined AVD_NAME set "AVD_NAME=%%A"
     )
 )
 
 if not defined AVD_NAME (
-    echo [ERROR] No Android Virtual Device (AVD) found.
+    echo [ERROR] No Android Virtual Device ^(AVD^) found.
     echo Please create one using Android Studio Device Manager.
     exit /b 1
 )
