@@ -2,7 +2,10 @@ package com.antigravity.equalizer.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material.icons.automirrored.filled.MenuOpen
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,8 +24,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.*
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
@@ -110,6 +115,7 @@ fun rememberSynchronizedGridStateHolder(): SynchronizedGridStateHolder {
 @Composable
 fun MusicLibraryScreen(
     viewModel: MusicPlayerViewModel,
+    isTabletMode: Boolean = false,
     onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -119,6 +125,7 @@ fun MusicLibraryScreen(
     val coverVer by com.antigravity.equalizer.utils.CoverHelper.coverVersion.collectAsState()
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
             configuration.screenWidthDp > configuration.screenHeightDp
+    val useTabletLayout = isTabletMode && (isLandscape || configuration.screenWidthDp >= 600)
 
     val libraryState by viewModel.libraryUiState.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
@@ -258,210 +265,236 @@ fun MusicLibraryScreen(
         onViewModeChange = { viewModel.setViewMode(it) }
     )
 
-    Scaffold(
-        topBar = {
-            Column(modifier = Modifier.background(OrbitTheme.colors.background)) {
-                TopAppBar(
-                    title = {
-                        if (openedFolderPath != null) {
-                            // 文件夹下钻标题
-                            Column {
-                                val folderName = openedFolderPath!!.substringAfterLast("/").ifEmpty { "Folder" }
-                                Text(folderName, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = OrbitTheme.colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(openedFolderPath!!, fontSize = 11.sp, color = OrbitTheme.colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                        } else if (openedAlbum != null) {
-                            // 专辑下钻标题
-                            Column {
-                                Text(openedAlbum!!.title, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = OrbitTheme.colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text("${openedAlbum!!.artist} • ${openedAlbum!!.songCount} tracks", fontSize = 11.sp, color = OrbitTheme.colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                        } else if (openedArtist != null) {
-                            // 艺术家下钻标题
-                            Column {
-                                Text(openedArtist!!.name, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = OrbitTheme.colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text("${openedArtist!!.albumCount} albums • ${openedArtist!!.songCount} tracks", fontSize = 11.sp, color = OrbitTheme.colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                        } else {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.MusicNote,
-                                    contentDescription = null,
-                                    tint = OrbitTheme.colors.primary,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Text(
-                                    text = "Music Library",
-                                    fontSize = 20.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = OrbitTheme.colors.textPrimary
-                                )
-                            }
-                        }
-                    },
-                    navigationIcon = {
-                        if (openedFolderPath != null || openedAlbum != null || openedArtist != null) {
-                            IconButton(onClick = {
-                                openedFolderPath = null
-                                openedAlbum = null
-                                openedArtist = null
-                            }) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = "Back",
-                                    tint = OrbitTheme.colors.textPrimary
-                                )
-                            }
-                        }
-                    },
-                    actions = {
-                        if (openedFolderPath == null && openedAlbum == null && openedArtist == null) {
-                            IconButton(onClick = { viewModel.toggleSearch() }) {
-                                Icon(
-                                    imageVector = if (libraryState.isSearching) Icons.Default.Close else Icons.Default.Search,
-                                    contentDescription = "Search",
-                                    tint = if (libraryState.isSearching) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary
-                                )
-                            }
-                        }
+    // 定位正在播放歌曲的悬浮按钮
+    @Composable
+    fun LocatePlayingSongFab(fabModifier: Modifier = Modifier) {
+        AnimatedVisibility(
+            visible = playbackState.currentSong != null,
+            enter = fadeIn(tween(220)) + scaleIn(tween(220), initialScale = 0.8f),
+            exit = fadeOut(tween(160)) + scaleOut(tween(160), targetScale = 0.8f),
+            modifier = fabModifier
+        ) {
+            Surface(
+                onClick = { locateCurrentPlayingSong() },
+                shape = CircleShape,
+                color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.94f),
+                border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f)),
+                shadowElevation = 8.dp,
+                modifier = Modifier.size(46.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.MyLocation,
+                        contentDescription = "Locate Playing Track",
+                        tint = OrbitTheme.colors.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        }
+    }
 
-                        // 一键切换 6 档视图模式
-                        IconButton(onClick = { viewModel.cycleViewMode() }) {
-                            val icon = when (libraryState.viewMode) {
-                                LibraryViewMode.LIST_NO_ART -> Icons.AutoMirrored.Filled.FormatListBulleted
-                                LibraryViewMode.LIST_SMALL_ART -> Icons.AutoMirrored.Filled.ViewList
-                                LibraryViewMode.LIST_LARGE_ART -> Icons.Default.ViewAgenda
-                                LibraryViewMode.GRID_2_COL -> Icons.Default.GridView
-                                LibraryViewMode.GRID_3_COL -> Icons.Default.GridOn
-                                LibraryViewMode.GRID_4_COL -> Icons.Default.Apps
-                            }
-                            Icon(imageVector = icon, contentDescription = "View Mode", tint = OrbitTheme.colors.primary)
+    // 手机端顶部标题栏与 Tab / 搜索栏
+    val mobileTopBar: @Composable () -> Unit = {
+        Column(modifier = Modifier.background(OrbitTheme.colors.background)) {
+            TopAppBar(
+                title = {
+                    if (openedFolderPath != null) {
+                        // 文件夹下钻标题
+                        Column {
+                            val folderName = openedFolderPath!!.substringAfterLast("/").ifEmpty { "Folder" }
+                            Text(folderName, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = OrbitTheme.colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(openedFolderPath!!, fontSize = 11.sp, color = OrbitTheme.colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-
-                        // 扫描本地媒体
-                        IconButton(onClick = { viewModel.scanMedia() }) {
+                    } else if (openedAlbum != null) {
+                        // 专辑下钻标题
+                        Column {
+                            Text(openedAlbum!!.title, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = OrbitTheme.colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${openedAlbum!!.artist} • ${openedAlbum!!.songCount} tracks", fontSize = 11.sp, color = OrbitTheme.colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    } else if (openedArtist != null) {
+                        // 艺术家下钻标题
+                        Column {
+                            Text(openedArtist!!.name, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = OrbitTheme.colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("${openedArtist!!.albumCount} albums • ${openedArtist!!.songCount} tracks", fontSize = 11.sp, color = OrbitTheme.colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    } else {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             Icon(
-                                imageVector = Icons.Default.Sync,
-                                contentDescription = "Scan",
-                                tint = if (isScanning) OrbitTheme.colors.tertiary else OrbitTheme.colors.textSecondary
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = null,
+                                tint = OrbitTheme.colors.primary,
+                                modifier = Modifier.size(24.dp)
                             )
-                        }
-
-                        // 程序设置入口 (取代原首页均衡器按钮)
-                        IconButton(onClick = onOpenSettings) {
-                            Icon(imageVector = Icons.Default.Settings, contentDescription = "Settings", tint = OrbitTheme.colors.primary)
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = OrbitTheme.colors.background)
-                )
-
-                // 媒体库 Tab 分页栏 (下钻时隐藏 Tab 保持沉浸)
-                if (openedFolderPath == null && openedAlbum == null && openedArtist == null) {
-                    ScrollableTabRow(
-                        selectedTabIndex = libraryState.currentTab.ordinal,
-                        containerColor = OrbitTheme.colors.background,
-                        contentColor = OrbitTheme.colors.primary,
-                        edgePadding = 16.dp,
-                        indicator = { tabPositions ->
-                            TabRowDefaults.SecondaryIndicator(
-                                modifier = Modifier.tabIndicatorOffset(tabPositions[libraryState.currentTab.ordinal]),
-                                color = OrbitTheme.colors.primary
-                            )
-                        }
-                    ) {
-                        LibraryTab.values().forEach { tab ->
-                            Tab(
-                                selected = libraryState.currentTab == tab,
-                                onClick = {
-                                    openedFolderPath = null
-                                    openedAlbum = null
-                                    openedArtist = null
-                                    viewModel.setTab(tab)
-                                },
-                                text = {
-                                    Text(
-                                        text = getTabTitle(tab),
-                                        fontWeight = if (libraryState.currentTab == tab) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (libraryState.currentTab == tab) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                                        fontSize = 13.sp
-                                    )
-                                }
+                            Text(
+                                text = "Music Library",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = OrbitTheme.colors.textPrimary
                             )
                         }
                     }
-                }
+                },
+                navigationIcon = {
+                    if (openedFolderPath != null || openedAlbum != null || openedArtist != null) {
+                        IconButton(onClick = {
+                            openedFolderPath = null
+                            openedAlbum = null
+                            openedArtist = null
+                        }) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = OrbitTheme.colors.textPrimary
+                            )
+                        }
+                    }
+                },
+                actions = {
+                    if (openedFolderPath == null && openedAlbum == null && openedArtist == null) {
+                        IconButton(onClick = { viewModel.toggleSearch() }) {
+                            Icon(
+                                imageVector = if (libraryState.isSearching) Icons.Default.Close else Icons.Default.Search,
+                                contentDescription = "Search",
+                                tint = if (libraryState.isSearching) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary
+                            )
+                        }
+                    }
 
-                // 🎯 搜索框置于 Tab 分页栏和音乐列表之间 (支持丝滑垂直展开与即时检索)
-                AnimatedVisibility(
-                    visible = libraryState.isSearching,
-                    enter = expandVertically() + fadeIn(),
-                    exit = shrinkVertically() + fadeOut()
+                    // 一键切换 6 档视图模式
+                    IconButton(onClick = { viewModel.cycleViewMode() }) {
+                        val icon = when (libraryState.viewMode) {
+                            LibraryViewMode.LIST_NO_ART -> Icons.AutoMirrored.Filled.FormatListBulleted
+                            LibraryViewMode.LIST_SMALL_ART -> Icons.AutoMirrored.Filled.ViewList
+                            LibraryViewMode.LIST_LARGE_ART -> Icons.Default.ViewAgenda
+                            LibraryViewMode.GRID_2_COL -> Icons.Default.GridView
+                            LibraryViewMode.GRID_3_COL -> Icons.Default.GridOn
+                            LibraryViewMode.GRID_4_COL -> Icons.Default.Apps
+                        }
+                        Icon(imageVector = icon, contentDescription = "View Mode", tint = OrbitTheme.colors.primary)
+                    }
+
+                    // 扫描本地媒体
+                    IconButton(onClick = { viewModel.scanMedia() }) {
+                        Icon(
+                            imageVector = Icons.Default.Sync,
+                            contentDescription = "Scan",
+                            tint = if (isScanning) OrbitTheme.colors.tertiary else OrbitTheme.colors.textSecondary
+                        )
+                    }
+
+                    // 程序设置入口 (取代原首页均衡器按钮)
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(imageVector = Icons.Default.Settings, contentDescription = "Settings", tint = OrbitTheme.colors.primary)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = OrbitTheme.colors.background)
+            )
+
+            // 媒体库 Tab 分页栏 (下钻时隐藏 Tab 保持沉浸)
+            if (openedFolderPath == null && openedAlbum == null && openedArtist == null) {
+                ScrollableTabRow(
+                    selectedTabIndex = libraryState.currentTab.ordinal,
+                    containerColor = OrbitTheme.colors.background,
+                    contentColor = OrbitTheme.colors.primary,
+                    edgePadding = 16.dp,
+                    indicator = { tabPositions ->
+                        TabRowDefaults.SecondaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(tabPositions[libraryState.currentTab.ordinal]),
+                            color = OrbitTheme.colors.primary
+                        )
+                    }
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 6.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = libraryState.searchQuery,
-                            onValueChange = { viewModel.setSearchQuery(it) },
-                            placeholder = {
+                    LibraryTab.values().forEach { tab ->
+                        Tab(
+                            selected = libraryState.currentTab == tab,
+                            onClick = {
+                                openedFolderPath = null
+                                openedAlbum = null
+                                openedArtist = null
+                                viewModel.setTab(tab)
+                            },
+                            text = {
                                 Text(
-                                    text = stringResource(R.string.search_hint),
-                                    fontSize = 13.sp,
-                                    color = OrbitTheme.colors.textSecondary
+                                    text = getTabTitle(tab),
+                                    fontWeight = if (libraryState.currentTab == tab) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (libraryState.currentTab == tab) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                                    fontSize = 13.sp
                                 )
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Search,
-                                    contentDescription = "Search",
-                                    tint = OrbitTheme.colors.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            },
-                            trailingIcon = {
-                                if (libraryState.searchQuery.isNotEmpty()) {
-                                    IconButton(
-                                        onClick = { viewModel.setSearchQuery("") },
-                                        modifier = Modifier.size(24.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Clear,
-                                            contentDescription = "Clear",
-                                            tint = OrbitTheme.colors.textSecondary,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                }
-                            },
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = OrbitTheme.colors.surfaceCard,
-                                unfocusedContainerColor = OrbitTheme.colors.surfaceCard,
-                                focusedBorderColor = OrbitTheme.colors.primary.copy(alpha = 0.7f),
-                                unfocusedBorderColor = Color.Transparent,
-                                cursorColor = OrbitTheme.colors.primary,
-                                focusedTextColor = OrbitTheme.colors.textPrimary,
-                                unfocusedTextColor = OrbitTheme.colors.textPrimary
-                            ),
-                            modifier = Modifier.fillMaxWidth()
+                            }
                         )
                     }
                 }
             }
-        },
-        containerColor = OrbitTheme.colors.background
-    ) { innerPadding ->
-        Box(
-            modifier = modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
+
+            // 🎯 搜索框置于 Tab 分页栏和音乐列表之间 (支持丝滑垂直展开与即时检索)
+            AnimatedVisibility(
+                visible = libraryState.isSearching,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                ) {
+                    OutlinedTextField(
+                        value = libraryState.searchQuery,
+                        onValueChange = { viewModel.setSearchQuery(it) },
+                        placeholder = {
+                            Text(
+                                text = stringResource(R.string.search_hint),
+                                fontSize = 13.sp,
+                                color = OrbitTheme.colors.textSecondary
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = "Search",
+                                tint = OrbitTheme.colors.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        },
+                        trailingIcon = {
+                            if (libraryState.searchQuery.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { viewModel.setSearchQuery("") },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Clear,
+                                        contentDescription = "Clear",
+                                        tint = OrbitTheme.colors.textSecondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = OrbitTheme.colors.surfaceCard,
+                            unfocusedContainerColor = OrbitTheme.colors.surfaceCard,
+                            focusedBorderColor = OrbitTheme.colors.primary.copy(alpha = 0.7f),
+                            unfocusedBorderColor = Color.Transparent,
+                            cursorColor = OrbitTheme.colors.primary,
+                            focusedTextColor = OrbitTheme.colors.textPrimary,
+                            unfocusedTextColor = OrbitTheme.colors.textPrimary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+    }
+
+    // 核心音乐库内容视图 (支持 Pinch 缩放与 6 档视图切换)
+    @Composable
+    fun LibraryMainContent(bottomPadding: androidx.compose.ui.unit.Dp = 98.dp) {
             PowerampViewModeTransitionContainer(
                 viewMode = libraryState.viewMode,
                 pinchState = pinchTransitionState,
@@ -469,27 +502,63 @@ fun MusicLibraryScreen(
                     .fillMaxSize()
                     .then(pinchGestureModifier)
             ) { currentViewMode ->
-                val columnsCount = when (currentViewMode) {
-                    LibraryViewMode.LIST_NO_ART,
-                    LibraryViewMode.LIST_SMALL_ART,
-                    LibraryViewMode.LIST_LARGE_ART -> 1
-                    LibraryViewMode.GRID_2_COL -> if (isLandscape) 4 else 2
-                    LibraryViewMode.GRID_3_COL -> if (isLandscape) 5 else 3
-                    LibraryViewMode.GRID_4_COL -> if (isLandscape) 6 else 4
+                val columnsCount = when {
+                    useTabletLayout -> {
+                        when (currentViewMode) {
+                            // 平板模式下：列表一律采用「双栏列表」(2列)
+                            LibraryViewMode.LIST_NO_ART,
+                            LibraryViewMode.LIST_SMALL_ART,
+                            LibraryViewMode.LIST_LARGE_ART -> 2
+                            // 平板模式下：Grid 封面缩小放更多内容 (6~8列，默认GRID_3_COL为7列)
+                            LibraryViewMode.GRID_2_COL -> 6
+                            LibraryViewMode.GRID_3_COL -> 7
+                            LibraryViewMode.GRID_4_COL -> 8
+                        }
+                    }
+                    isLandscape -> {
+                        when (currentViewMode) {
+                            LibraryViewMode.LIST_NO_ART,
+                            LibraryViewMode.LIST_SMALL_ART,
+                            LibraryViewMode.LIST_LARGE_ART -> 1
+                            LibraryViewMode.GRID_2_COL -> 4
+                            LibraryViewMode.GRID_3_COL -> 5
+                            LibraryViewMode.GRID_4_COL -> 6
+                        }
+                    }
+                    else -> {
+                        when (currentViewMode) {
+                            LibraryViewMode.LIST_NO_ART,
+                            LibraryViewMode.LIST_SMALL_ART,
+                            LibraryViewMode.LIST_LARGE_ART -> 1
+                            LibraryViewMode.GRID_2_COL -> 2
+                            LibraryViewMode.GRID_3_COL -> 3
+                            LibraryViewMode.GRID_4_COL -> 4
+                        }
+                    }
                 }
 
-                val hSpacing = when (currentViewMode) {
-                    LibraryViewMode.GRID_4_COL -> 6.dp
-                    LibraryViewMode.GRID_3_COL -> 8.dp
-                    LibraryViewMode.GRID_2_COL -> 10.dp
+                val isTabletList = useTabletLayout && (
+                    currentViewMode == LibraryViewMode.LIST_NO_ART ||
+                    currentViewMode == LibraryViewMode.LIST_SMALL_ART ||
+                    currentViewMode == LibraryViewMode.LIST_LARGE_ART
+                )
+
+                val hSpacing = when {
+                    isTabletList -> 10.dp
+                    useTabletLayout -> 8.dp
+                    currentViewMode == LibraryViewMode.GRID_4_COL -> 5.dp
+                    currentViewMode == LibraryViewMode.GRID_3_COL -> 6.dp
+                    currentViewMode == LibraryViewMode.GRID_2_COL -> 8.dp
                     else -> 0.dp
                 }
 
-                val vSpacing = when (currentViewMode) {
-                    LibraryViewMode.GRID_4_COL -> 6.dp
-                    LibraryViewMode.GRID_3_COL -> 8.dp
-                    LibraryViewMode.GRID_2_COL -> 10.dp
-                    LibraryViewMode.LIST_LARGE_ART -> 6.dp
+                val vSpacing = when {
+                    isTabletList -> 4.dp
+                    useTabletLayout -> 8.dp
+                    currentViewMode == LibraryViewMode.GRID_4_COL -> 5.dp
+                    currentViewMode == LibraryViewMode.GRID_3_COL -> 6.dp
+                    currentViewMode == LibraryViewMode.GRID_2_COL -> 8.dp
+                    currentViewMode == LibraryViewMode.LIST_LARGE_ART -> 6.dp
                     else -> 3.dp
                 }
 
@@ -1143,33 +1212,240 @@ fun MusicLibraryScreen(
                 }
             }
         }
+    }
 
-            // 🎯 悬浮定位当前播放歌曲图标 (悬浮在底部播放条上方一点，屏幕右边)
-            AnimatedVisibility(
-                visible = playbackState.currentSong != null,
-                enter = fadeIn(tween(220)) + scaleIn(tween(220), initialScale = 0.8f),
-                exit = fadeOut(tween(160)) + scaleOut(tween(160), targetScale = 0.8f),
+    // 平板侧边栏展开/折叠状态管理
+    var isSideNavExpanded by rememberSaveable { mutableStateOf(true) }
+    val sideNavWidth by animateDpAsState(
+        targetValue = if (isSideNavExpanded) 230.dp else 72.dp,
+        animationSpec = tween(durationMillis = 220),
+        label = "SideNavWidth"
+    )
+
+    if (useTabletLayout) {
+        // ── 平板专属横屏双栏媒体库 UI ──
+        Row(
+            modifier = modifier
+                .fillMaxSize()
+                .background(OrbitTheme.colors.background)
+        ) {
+            TabletSideNavRail(
+                currentTab = libraryState.currentTab,
+                onTabSelected = { tab ->
+                    openedFolderPath = null
+                    openedAlbum = null
+                    openedArtist = null
+                    viewModel.setTab(tab)
+                },
+                songCount = filteredSongs.size,
+                folderCount = folders.size,
+                albumCount = albums.size,
+                artistCount = artists.size,
+                playlistCount = playlists.size,
+                isScanning = isScanning,
+                isExpanded = isSideNavExpanded,
+                onToggleExpand = { isSideNavExpanded = !isSideNavExpanded },
+                onScanMedia = { viewModel.scanMedia() },
+                onOpenSettings = onOpenSettings,
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 16.dp, bottom = 106.dp)
+                    .width(sideNavWidth)
+                    .fillMaxHeight()
+            )
+
+            // 纵向分割细线
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(1.dp)
+                    .background(OrbitTheme.colors.surfaceCard.copy(alpha = 0.6f))
+            )
+
+            // 右侧主视图区
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
             ) {
-                Surface(
-                    onClick = { locateCurrentPlayingSong() },
-                    shape = CircleShape,
-                    color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.94f),
-                    border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f)),
-                    shadowElevation = 8.dp,
-                    modifier = Modifier.size(46.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.MyLocation,
-                            contentDescription = "Locate Playing Track",
-                            tint = OrbitTheme.colors.primary,
-                            modifier = Modifier.size(22.dp)
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // 仅在下钻（文件夹/专辑/艺术家）时展示返回面包屑栏；未下钻时不展示任何TopBar且不保留空间
+                    val isDrillDown = openedFolderPath != null || openedAlbum != null || openedArtist != null
+                    if (isDrillDown) {
+                        TabletDrillDownTopBar(
+                            openedFolderPath = openedFolderPath,
+                            openedAlbum = openedAlbum,
+                            openedArtist = openedArtist,
+                            onBack = {
+                                openedFolderPath = null
+                                openedAlbum = null
+                                openedArtist = null
+                            }
                         )
                     }
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    ) {
+                        LibraryMainContent(bottomPadding = 98.dp)
+
+                        // 🎯 平板专属右下角悬浮控制按钮组（搜索输入框在搜索按钮左侧悬浮展开、双栏/Grid切换、定位当前播放）
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(end = 24.dp, bottom = 106.dp),
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // 1. 浮动搜索行：搜索框在搜索图标旁边(左侧)悬浮展开
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                AnimatedVisibility(
+                                    visible = libraryState.isSearching,
+                                    enter = fadeIn(tween(180)) + expandHorizontally(tween(220), expandFrom = Alignment.End),
+                                    exit = fadeOut(tween(140)) + shrinkHorizontally(tween(180), shrinkTowards = Alignment.End)
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(23.dp),
+                                        color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.96f),
+                                        border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.55f)),
+                                        shadowElevation = 8.dp,
+                                        modifier = Modifier
+                                            .padding(end = 10.dp)
+                                            .width(280.dp)
+                                            .height(46.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(horizontal = 14.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Search,
+                                                contentDescription = null,
+                                                tint = OrbitTheme.colors.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            androidx.compose.foundation.text.BasicTextField(
+                                                value = libraryState.searchQuery,
+                                                onValueChange = { viewModel.setSearchQuery(it) },
+                                                singleLine = true,
+                                                textStyle = androidx.compose.ui.text.TextStyle(
+                                                    color = OrbitTheme.colors.textPrimary,
+                                                    fontSize = 14.sp
+                                                ),
+                                                decorationBox = { innerTextField ->
+                                                    if (libraryState.searchQuery.isEmpty()) {
+                                                        Text(
+                                                            text = stringResource(R.string.search_hint),
+                                                            fontSize = 13.sp,
+                                                            color = OrbitTheme.colors.textSecondary
+                                                        )
+                                                    }
+                                                    innerTextField()
+                                                },
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            if (libraryState.searchQuery.isNotEmpty()) {
+                                                IconButton(
+                                                    onClick = { viewModel.setSearchQuery("") },
+                                                    modifier = Modifier.size(24.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Close,
+                                                        contentDescription = "Clear",
+                                                        tint = OrbitTheme.colors.textSecondary,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // 浮动搜索按钮
+                                Surface(
+                                    onClick = { viewModel.toggleSearch() },
+                                    shape = CircleShape,
+                                    color = if (libraryState.isSearching) OrbitTheme.colors.primary else OrbitTheme.colors.surfaceCard.copy(alpha = 0.94f),
+                                    border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f)),
+                                    shadowElevation = 8.dp,
+                                    modifier = Modifier.size(46.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = if (libraryState.isSearching) Icons.Default.Close else Icons.Default.Search,
+                                            contentDescription = "Search",
+                                            tint = if (libraryState.isSearching) (if (OrbitTheme.colors.isDark) DarkBackground else Color.White) else OrbitTheme.colors.primary,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // 2. 浮动视图切换按钮（在「双栏列表」和「高密度Grid」之间切换）
+                            val isCurrentGrid = libraryState.viewMode == LibraryViewMode.GRID_2_COL ||
+                                    libraryState.viewMode == LibraryViewMode.GRID_3_COL ||
+                                    libraryState.viewMode == LibraryViewMode.GRID_4_COL
+
+                            Surface(
+                                onClick = {
+                                    if (isCurrentGrid) {
+                                        viewModel.setViewMode(LibraryViewMode.LIST_SMALL_ART)
+                                    } else {
+                                        viewModel.setViewMode(LibraryViewMode.GRID_3_COL)
+                                    }
+                                },
+                                shape = CircleShape,
+                                color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.94f),
+                                border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f)),
+                                shadowElevation = 8.dp,
+                                modifier = Modifier.size(46.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    val icon = if (isCurrentGrid) {
+                                        Icons.AutoMirrored.Filled.ViewList
+                                    } else {
+                                        Icons.Default.GridView
+                                    }
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = if (isCurrentGrid) "Switch to 2-Column List" else "Switch to Grid",
+                                        tint = OrbitTheme.colors.primary,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
+
+                            // 3. 定位当前播放歌曲按钮（位于最下方）
+                            LocatePlayingSongFab()
+                        }
+                    }
                 }
+            }
+        }
+    } else {
+        // ── 手机端 Scaffold 布局 ──
+        Scaffold(
+            topBar = mobileTopBar,
+            containerColor = OrbitTheme.colors.background
+        ) { innerPadding ->
+            Box(
+                modifier = modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                LibraryMainContent(bottomPadding = 98.dp)
+
+                LocatePlayingSongFab(
+                    fabModifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 16.dp, bottom = 106.dp)
+                )
             }
         }
     }
@@ -1809,3 +2085,391 @@ private fun getTabTitle(tab: LibraryTab): String {
         LibraryTab.PLAYLISTS -> stringResource(R.string.tab_playlists)
     }
 }
+
+/**
+ * 专为平板大屏打造的侧边导航栏 (Tablet Side Navigation Rail)
+ * 支持折叠展开切换：展开时显示完整品牌、文本与数量Badge；折叠时精简为居中图标与状态圆点
+ */
+@Composable
+private fun TabletSideNavRail(
+    currentTab: LibraryTab,
+    onTabSelected: (LibraryTab) -> Unit,
+    songCount: Int,
+    folderCount: Int,
+    albumCount: Int,
+    artistCount: Int,
+    playlistCount: Int,
+    isScanning: Boolean,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
+    onScanMedia: () -> Unit,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.5f)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = if (isExpanded) 14.dp else 8.dp, vertical = 14.dp),
+            horizontalAlignment = if (isExpanded) Alignment.Start else Alignment.CenterHorizontally
+        ) {
+            // 顶部 Logo 与折叠/展开按钮
+            if (isExpanded) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 6.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = OrbitTheme.colors.primary.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.35f)),
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.MusicNote,
+                                    contentDescription = null,
+                                    tint = OrbitTheme.colors.primary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
+                        Column {
+                            Text(
+                                text = "OrBit Player",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = OrbitTheme.colors.textPrimary
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = OrbitTheme.colors.primary.copy(alpha = 0.2f),
+                                modifier = Modifier.padding(top = 2.dp)
+                            ) {
+                                Text(
+                                    text = "TABLET HD",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = OrbitTheme.colors.primary,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // 折叠按钮
+                    IconButton(
+                        onClick = onToggleExpand,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.MenuOpen,
+                            contentDescription = "Collapse sidebar",
+                            tint = OrbitTheme.colors.textSecondary
+                        )
+                    }
+                }
+            } else {
+                // 折叠状态下顶部只居中放置展开按钮
+                IconButton(
+                    onClick = onToggleExpand,
+                    modifier = Modifier
+                        .padding(vertical = 4.dp)
+                        .size(42.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Menu,
+                        contentDescription = "Expand sidebar",
+                        tint = OrbitTheme.colors.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // 中间 Tab 项导航栏
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                LibraryTab.values().forEach { tab ->
+                    val isSelected = currentTab == tab
+                    val (icon, count) = when (tab) {
+                        LibraryTab.SONGS -> Icons.AutoMirrored.Filled.QueueMusic to songCount
+                        LibraryTab.FOLDERS -> Icons.Default.Folder to folderCount
+                        LibraryTab.ALBUMS -> Icons.Default.Album to albumCount
+                        LibraryTab.ARTISTS -> Icons.Default.Person to artistCount
+                        LibraryTab.PLAYLISTS -> Icons.AutoMirrored.Filled.PlaylistPlay to playlistCount
+                    }
+
+                    if (isExpanded) {
+                        Surface(
+                            onClick = { onTabSelected(tab) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isSelected) {
+                                OrbitTheme.colors.primary.copy(alpha = 0.18f)
+                            } else {
+                                Color.Transparent
+                            },
+                            border = if (isSelected) {
+                                BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.45f))
+                            } else null,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp)
+                            ) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = null,
+                                    tint = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = getTabTitle(tab),
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                                    fontSize = 14.sp,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (count > 0) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = if (isSelected) OrbitTheme.colors.primary.copy(alpha = 0.25f) else OrbitTheme.colors.surfaceCard,
+                                        modifier = Modifier.padding(start = 4.dp)
+                                    ) {
+                                        Text(
+                                            text = "$count",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // 折叠状态：紧凑居中方块，带微角标/点提示
+                        Surface(
+                            onClick = { onTabSelected(tab) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isSelected) {
+                                OrbitTheme.colors.primary.copy(alpha = 0.18f)
+                            } else {
+                                Color.Transparent
+                            },
+                            border = if (isSelected) {
+                                BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.45f))
+                            } else null,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = getTabTitle(tab),
+                                    tint = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                if (count > 0) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(top = 6.dp, end = 6.dp)
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary.copy(alpha = 0.5f))
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 底部操作区 (扫描本地媒体与偏好设置)
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (isExpanded) {
+                    // 展开状态：扫描媒体库
+                    Surface(
+                        onClick = onScanMedia,
+                        shape = RoundedCornerShape(10.dp),
+                        color = OrbitTheme.colors.surfaceCard,
+                        border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.15f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Sync,
+                                contentDescription = "Scan",
+                                tint = if (isScanning) OrbitTheme.colors.tertiary else OrbitTheme.colors.textSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = if (isScanning) stringResource(R.string.scanning) else stringResource(R.string.scan_media),
+                                fontSize = 12.sp,
+                                color = OrbitTheme.colors.textPrimary
+                            )
+                        }
+                    }
+
+                    // 展开状态：偏好设置
+                    Surface(
+                        onClick = onOpenSettings,
+                        shape = RoundedCornerShape(10.dp),
+                        color = OrbitTheme.colors.surfaceCard,
+                        border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.15f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Settings",
+                                tint = OrbitTheme.colors.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = stringResource(R.string.settings),
+                                fontSize = 12.sp,
+                                color = OrbitTheme.colors.textPrimary
+                            )
+                        }
+                    }
+                } else {
+                    // 折叠状态：紧凑居中图标按钮
+                    Surface(
+                        onClick = onScanMedia,
+                        shape = RoundedCornerShape(10.dp),
+                        color = OrbitTheme.colors.surfaceCard,
+                        border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.15f)),
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Sync,
+                                contentDescription = "Scan",
+                                tint = if (isScanning) OrbitTheme.colors.tertiary else OrbitTheme.colors.textSecondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    Surface(
+                        onClick = onOpenSettings,
+                        shape = RoundedCornerShape(10.dp),
+                        color = OrbitTheme.colors.surfaceCard,
+                        border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.15f)),
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Settings",
+                                tint = OrbitTheme.colors.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 平板右侧下钻顶栏 (Tablet Drill Down Top Bar)
+ * 仅在下钻查看文件夹、专辑或艺术家详情时展示返回导航与面包屑
+ * 未下钻时不占用任何空间，直接顶格展示媒体列表
+ */
+@Composable
+private fun TabletDrillDownTopBar(
+    openedFolderPath: String?,
+    openedAlbum: AlbumItem?,
+    openedArtist: ArtistItem?,
+    onBack: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(54.dp),
+        color = OrbitTheme.colors.background,
+        border = BorderStroke(width = 0.5.dp, color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.6f))
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp)
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = OrbitTheme.colors.textPrimary
+                )
+            }
+            Spacer(modifier = Modifier.width(6.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                val title = when {
+                    openedFolderPath != null -> openedFolderPath.substringAfterLast("/").ifEmpty { "Folder" }
+                    openedAlbum != null -> openedAlbum.title
+                    openedArtist != null -> openedArtist.name
+                    else -> ""
+                }
+                val subtitle = when {
+                    openedFolderPath != null -> openedFolderPath
+                    openedAlbum != null -> "${openedAlbum.artist} • ${openedAlbum.songCount} tracks"
+                    openedArtist != null -> "${openedArtist.albumCount} albums • ${openedArtist.songCount} tracks"
+                    else -> ""
+                }
+                Text(
+                    text = title,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = OrbitTheme.colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = subtitle,
+                    fontSize = 11.sp,
+                    color = OrbitTheme.colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+

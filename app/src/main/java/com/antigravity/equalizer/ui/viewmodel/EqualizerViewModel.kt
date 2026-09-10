@@ -78,6 +78,7 @@ data class EqualizerUiState(
     val maximizedCoverOnRight: Boolean = false,
     val maximizedShowControls: Boolean = true,
     val maximizedCoverAlpha: Float = 0.85f,
+    val maximizedCoverRotating: Boolean = false,
     val showCoverInQueue: Boolean = true,
     val visualizerBarAlpha: Float = 1.0f,
     val visualizerBarBorderWidthDp: Float = 0.0f,
@@ -93,7 +94,8 @@ data class EqualizerUiState(
     val backgroundExtractedDarkColor: Long? = null,
     val followCoverColorInMaximized: Boolean = false,
     val autoMatchOnlineCover: Boolean = true,
-    val onlineCoverWifiOnly: Boolean = true
+    val onlineCoverWifiOnly: Boolean = true,
+    val isTabletLandscapeModeEnabled: Boolean = false
 )
 
 class EqualizerViewModel(application: Application) : AndroidViewModel(application) {
@@ -142,6 +144,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         val savedMaximizedCoverOnRight = prefs.getBoolean(KEY_MAXIMIZED_COVER_ON_RIGHT, false)
         val savedMaximizedShowControls = prefs.getBoolean(KEY_MAXIMIZED_SHOW_CONTROLS, true)
         val savedMaximizedCoverAlpha = prefs.getFloat(KEY_MAXIMIZED_COVER_ALPHA, 0.85f)
+        val savedMaximizedCoverRotating = prefs.getBoolean(KEY_MAXIMIZED_COVER_ROTATING, false)
         val savedShowCoverInQueue = prefs.getBoolean(KEY_SHOW_COVER_IN_QUEUE, true)
         val savedVizBarAlpha = prefs.getFloat(KEY_VIZ_BAR_ALPHA, 1.0f)
         val savedCustomBgPath = prefs.getString(KEY_CUSTOM_BG_PATH, null)?.let { path ->
@@ -185,6 +188,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
                 maximizedCoverOnRight = savedMaximizedCoverOnRight,
                 maximizedShowControls = savedMaximizedShowControls,
                 maximizedCoverAlpha = savedMaximizedCoverAlpha,
+                maximizedCoverRotating = savedMaximizedCoverRotating,
                 showCoverInQueue = savedShowCoverInQueue,
                 visualizerBarAlpha = savedVizBarAlpha,
                 visualizerBarBorderWidthDp = savedVizBarBorderWidth,
@@ -265,6 +269,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
 
         val launchAsEqualizerOnly = prefs.getBoolean(KEY_LAUNCH_AS_EQUALIZER_ONLY, false)
         val initialScreen = if (launchAsEqualizerOnly) AppScreen.MAIN else AppScreen.LIBRARY
+        val tabletLandscapeMode = prefs.getBoolean(KEY_TABLET_LANDSCAPE_MODE, false)
 
         _uiState.update {
             it.copy(
@@ -279,7 +284,8 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
                 isTrebleBoostEnabled = trebleEnabled,
                 trebleBoostStrength = trebleStrength,
                 isCompressorEnabled = compressorEnabled,
-                isLimiterEnabled = limiterEnabled
+                isLimiterEnabled = limiterEnabled,
+                isTabletLandscapeModeEnabled = tabletLandscapeMode
             )
         }
 
@@ -674,6 +680,11 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         prefs.edit().putFloat(KEY_MAXIMIZED_COVER_ALPHA, clamped).apply()
     }
 
+    fun setMaximizedCoverRotating(rotating: Boolean) {
+        _uiState.update { it.copy(maximizedCoverRotating = rotating) }
+        prefs.edit().putBoolean(KEY_MAXIMIZED_COVER_ROTATING, rotating).apply()
+    }
+
     /**
      * 设置最大化页面下频谱颜色是否实时跟随当前专辑封面（仅在内存中生效，不持久化）
      */
@@ -817,8 +828,14 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
             .edit().putBoolean(KEY_ONLINE_COVER_WIFI_ONLY, enabled).apply()
     }
 
+    fun setTabletLandscapeModeEnabled(enabled: Boolean) {
+        _uiState.update { it.copy(isTabletLandscapeModeEnabled = enabled) }
+        prefs.edit().putBoolean(KEY_TABLET_LANDSCAPE_MODE, enabled).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "equalizer_ui_state_prefs"
+        const val KEY_TABLET_LANDSCAPE_MODE = "key_tablet_landscape_mode"
         private const val KEY_EQ_ENABLED = "key_eq_enabled"
         private const val KEY_SELECTED_PRESET_ID = "key_selected_preset_id"
         private const val KEY_PREAMP_GAIN = "key_preamp_gain"
@@ -852,6 +869,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         private const val KEY_MAXIMIZED_COVER_ON_RIGHT = "key_maximized_cover_on_right"
         private const val KEY_MAXIMIZED_SHOW_CONTROLS = "key_maximized_show_controls"
         private const val KEY_MAXIMIZED_COVER_ALPHA = "key_maximized_cover_alpha"
+        private const val KEY_MAXIMIZED_COVER_ROTATING = "key_maximized_cover_rotating"
         private const val KEY_IS_VISUALIZER_MAXIMIZED = "key_is_visualizer_maximized"
         private const val KEY_SHOW_COVER_IN_QUEUE = "key_show_cover_in_queue"
         private const val KEY_VIZ_BAR_ALPHA = "key_viz_bar_alpha"

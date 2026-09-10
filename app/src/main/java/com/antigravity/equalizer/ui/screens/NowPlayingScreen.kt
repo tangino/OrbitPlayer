@@ -2,6 +2,7 @@ package com.antigravity.equalizer.ui.screens
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -40,6 +41,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -99,6 +101,7 @@ fun NowPlayingScreen(
     onToggleVisualizerMaximized: (Boolean) -> Unit = {},
     onToggleMaximizedShowCover: (Boolean) -> Unit = {},
     onToggleMaximizedCoverPosition: (Boolean) -> Unit = {},
+    onToggleMaximizedCoverRotating: (Boolean) -> Unit = {},
     onToggleMaximizedShowControls: (Boolean) -> Unit = {},
     onSetMaximizedCoverAlpha: (Float) -> Unit = {},
     onToggleCoverInQueue: (Boolean) -> Unit = {},
@@ -1708,6 +1711,7 @@ fun NowPlayingScreen(
             onCycleVisualizerStyle = onCycleVisualizerStyle,
             onToggleMaximizedShowCover = onToggleMaximizedShowCover,
             onToggleMaximizedCoverPosition = onToggleMaximizedCoverPosition,
+            onToggleMaximizedCoverRotating = onToggleMaximizedCoverRotating,
             onToggleMaximizedShowControls = onToggleMaximizedShowControls,
             onSetMaximizedCoverAlpha = onSetMaximizedCoverAlpha,
             onToggleFollowCoverColor = onToggleFollowCoverColor,
@@ -2291,6 +2295,7 @@ private fun MaximizedVisualizerOverlay(
     onCycleVisualizerStyle: (() -> Unit)?,
     onToggleMaximizedShowCover: (Boolean) -> Unit,
     onToggleMaximizedCoverPosition: (Boolean) -> Unit,
+    onToggleMaximizedCoverRotating: (Boolean) -> Unit,
     onToggleMaximizedShowControls: (Boolean) -> Unit,
     onSetMaximizedCoverAlpha: (Float) -> Unit,
     onToggleFollowCoverColor: (Boolean) -> Unit = {},
@@ -2403,45 +2408,172 @@ private fun MaximizedVisualizerOverlay(
             onClick = { showTopControlBar = !showTopControlBar }
         )
 
-        // 2. 悬浮专辑封面 (支持居左/居右与自定义透明度)
+        val screenWidth = configuration.screenWidthDp.dp
+        val screenHeight = configuration.screenHeightDp.dp
+
+        // 1. 精准测量顶部控制条实际占用的底部位置（Y坐标）
+        // 横屏 top padding = 10dp，竖屏 top padding = 16dp；胶囊栏高度 44dp；加阴影和安全边隙 12dp
+        val topBarBottom = if (showTopControlBar) (if (isLandscape) 66.dp else 72.dp) else (if (isLandscape) 16.dp else 24.dp)
+
+        // 2. 精准测量底部控制卡片实际占用的顶部位置（距离屏幕底部的距离）
+        // 横屏占约 90dp；竖屏包含两行文字+进度条+按钮组占约 168dp
+        val bottomControlsHeight = if (equalizerUiState.maximizedShowControls) {
+            if (isLandscape) 90.dp else 168.dp
+        } else {
+            if (isLandscape) 20.dp else 24.dp
+        }
+
+        // 3. 计算顶部控制条底部与底部控制条顶部之间的垂直可用净空距离
+        val verticalAvailableGap = (screenHeight - topBarBottom - bottomControlsHeight).coerceAtLeast(80.dp)
+
+        // 4. 动态自适应封面尺寸：确保上下至少各留 14dp 呼吸间距，横竖屏均严格限制在两栏净空与屏幕宽度之内
+        val maxCoverHeight = (verticalAvailableGap - 28.dp).coerceAtLeast(80.dp)
+        val maxCoverWidth = if (isLandscape) {
+            (screenWidth * 0.40f).coerceAtLeast(80.dp)
+        } else {
+            (screenWidth - 36.dp).coerceAtLeast(80.dp)
+        }
+        val coverSize = minOf(maxCoverHeight, maxCoverWidth, if (isLandscape) 250.dp else 240.dp)
+
+        // 5. 核心垂直定位算法：
+        // 统一使用显式顶部对齐（TopStart/TopEnd），封面顶部 Y 坐标严格设为 topBarBottom + (剩余高度 / 2)
+        // 从数学和布局上 100% 绝对保证封面的顶部永远在上方控制条底部的下方，绝不可能高于上方控制条！
+        val remainingVerticalGap = (verticalAvailableGap - coverSize).coerceAtLeast(0.dp)
+        val coverTopPadding = topBarBottom + (remainingVerticalGap / 2).coerceAtLeast(14.dp)
+        val coverBottomPadding = 0.dp
+
+        // 横屏下，将封面放置在右半屏（居中在约 78%~79% 处，相较于原中心往右移动约 70dp，右侧留有呼吸感不贴边）
+        val landscapeSideMargin = (screenWidth * 0.21f - coverSize / 2).coerceAtLeast(30.dp)
+        val coverStartPadding = if (isLandscape) {
+            if (equalizerUiState.maximizedCoverOnRight) 0.dp else landscapeSideMargin
+        } else {
+            if (equalizerUiState.maximizedCoverOnRight) 0.dp else 18.dp
+        }
+        val coverEndPadding = if (isLandscape) {
+            if (equalizerUiState.maximizedCoverOnRight) landscapeSideMargin else 0.dp
+        } else {
+            if (equalizerUiState.maximizedCoverOnRight) 18.dp else 0.dp
+        }
+
+        val coverAlignment = if (equalizerUiState.maximizedCoverOnRight) Alignment.TopEnd else Alignment.TopStart
+
+        // 黑胶封面旋转动效 (仅在开启旋转且处于播放状态时匀速旋转，暂停时原地驻留，关闭时顺畅回正)
+        val coverRotation = remember { Animatable(0f) }
+        LaunchedEffect(playbackState.isPlaying, equalizerUiState.maximizedCoverRotating) {
+            if (playbackState.isPlaying && equalizerUiState.maximizedCoverRotating) {
+                while (true) {
+                    coverRotation.animateTo(
+                        targetValue = coverRotation.value + 360f,
+                        animationSpec = tween(
+                            durationMillis = 20000,
+                            easing = LinearEasing
+                        )
+                    )
+                }
+            }
+        }
+        LaunchedEffect(equalizerUiState.maximizedCoverRotating) {
+            if (!equalizerUiState.maximizedCoverRotating && coverRotation.value != 0f) {
+                coverRotation.animateTo(
+                    targetValue = 0f,
+                    animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
+                )
+            }
+        }
+
+        // 2. 悬浮专辑封面 (支持居左/居右与自定义透明度，黑胶质感圆形外边线包裹，边线色彩实时从封面提取)
         AnimatedVisibility(
             visible = equalizerUiState.maximizedShowCover,
             enter = fadeIn(tween(250)) + scaleIn(initialScale = 0.85f, animationSpec = tween(250)),
             exit = fadeOut(tween(200)) + scaleOut(targetScale = 0.85f, animationSpec = tween(200)),
             modifier = Modifier
-                .align(
-                    if (equalizerUiState.maximizedCoverOnRight) Alignment.CenterEnd else Alignment.CenterStart
-                )
+                .align(coverAlignment)
                 .padding(
-                    start = if (equalizerUiState.maximizedCoverOnRight) 0.dp else 18.dp,
-                    end = if (equalizerUiState.maximizedCoverOnRight) 18.dp else 0.dp,
-                    bottom = if (equalizerUiState.maximizedShowControls) (if (isLandscape) 48.dp else 84.dp) else 0.dp
+                    start = coverStartPadding,
+                    end = coverEndPadding,
+                    top = coverTopPadding,
+                    bottom = coverBottomPadding
                 )
         ) {
-            val coverSize = if (isLandscape) 210.dp else 240.dp
+            val rawBorderColor = if (coverExtractedColors != null) {
+                Color(coverExtractedColors!!.lightColor)
+            } else {
+                OrbitTheme.colors.primary
+            }
+            val animatedBorderColor by animateColorAsState(
+                targetValue = rawBorderColor,
+                animationSpec = tween(400),
+                label = "MaximizedCoverBorderColor"
+            )
+
+            val rotateEnableHint = stringResource(R.string.maximized_cover_rotate_enabled)
+            val rotateDisableHint = stringResource(R.string.maximized_cover_rotate_disabled)
+            val borderWidth = if (isLandscape) 5.5.dp else (coverSize * 0.022f).coerceIn(3.5.dp, 5.0.dp)
+
             Box(
                 modifier = Modifier
                     .size(coverSize)
                     .alpha(equalizerUiState.maximizedCoverAlpha)
-                    .shadow(24.dp, RoundedCornerShape(22.dp), spotColor = OrbitTheme.colors.primary.copy(alpha = 0.50f * equalizerUiState.maximizedCoverAlpha))
-                    .clip(RoundedCornerShape(22.dp))
+                    .shadow(
+                        elevation = 22.dp,
+                        shape = CircleShape,
+                        spotColor = animatedBorderColor.copy(alpha = 0.55f * equalizerUiState.maximizedCoverAlpha)
+                    )
+                    .border(
+                        width = borderWidth,
+                        color = animatedBorderColor.copy(alpha = 0.92f * equalizerUiState.maximizedCoverAlpha),
+                        shape = CircleShape
+                    )
+                    .clip(CircleShape)
                     .background(Color(0xFF1A1A26).copy(alpha = equalizerUiState.maximizedCoverAlpha))
-                    .border(1.5.dp, OrbitTheme.colors.primary.copy(alpha = 0.38f * equalizerUiState.maximizedCoverAlpha), RoundedCornerShape(22.dp)),
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {
+                            val nextRotating = !equalizerUiState.maximizedCoverRotating
+                            onToggleMaximizedCoverRotating(nextRotating)
+                            android.widget.Toast.makeText(
+                                context,
+                                if (nextRotating) rotateEnableHint else rotateDisableHint,
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 if (song?.albumArtUri != null) {
                     AsyncImage(
-                        model = song.albumArtUri,
+                        model = coil.request.ImageRequest.Builder(context)
+                            .data(song.albumArtUri)
+                            .memoryCacheKey("${song.albumArtUri}_$coverVer")
+                            .diskCacheKey("${song.albumArtUri}_$coverVer")
+                            .crossfade(true)
+                            .build(),
                         contentDescription = song.album,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
+                        onSuccess = { successResult ->
+                            if (coverExtractedColors == null) {
+                                val drawable = successResult.result.drawable
+                                if (drawable is android.graphics.drawable.BitmapDrawable) {
+                                    val colors = com.antigravity.equalizer.utils.PaletteHelper.extractColorsFromBitmap(drawable.bitmap)
+                                    if (colors != null) {
+                                        coverExtractedColors = colors
+                                    }
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .rotate(coverRotation.value % 360f)
                     )
                 } else {
                     Icon(
                         imageVector = Icons.Default.MusicNote,
                         contentDescription = null,
-                        tint = OrbitTheme.colors.primary.copy(alpha = 0.6f),
-                        modifier = Modifier.size(56.dp)
+                        tint = animatedBorderColor.copy(alpha = 0.6f),
+                        modifier = Modifier
+                            .size(56.dp)
+                            .rotate(coverRotation.value % 360f)
                     )
                 }
 
@@ -2459,7 +2591,7 @@ private fun MaximizedVisualizerOverlay(
                         ) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(36.dp),
-                                color = OrbitTheme.colors.primary,
+                                color = animatedBorderColor,
                                 strokeWidth = 3.dp
                             )
                             Text(
@@ -2542,6 +2674,29 @@ private fun MaximizedVisualizerOverlay(
                                 modifier = Modifier.size(20.dp)
                             )
                         }
+
+                        // 切换黑胶唱盘旋转
+                        val rotateEnableTip = stringResource(R.string.maximized_cover_rotate_enabled)
+                        val rotateDisableTip = stringResource(R.string.maximized_cover_rotate_disabled)
+                        IconButton(
+                            onClick = {
+                                val nextRotating = !equalizerUiState.maximizedCoverRotating
+                                onToggleMaximizedCoverRotating(nextRotating)
+                                android.widget.Toast.makeText(
+                                    context,
+                                    if (nextRotating) rotateEnableTip else rotateDisableTip,
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Sync,
+                                contentDescription = stringResource(R.string.maximized_cover_rotate),
+                                tint = if (equalizerUiState.maximizedCoverRotating) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
 
                     // 开关底部播放控件
@@ -2579,36 +2734,17 @@ private fun MaximizedVisualizerOverlay(
                         )
                     }
 
-                    // 频谱样式切换药丸
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = OrbitTheme.colors.primary.copy(alpha = 0.15f),
-                        modifier = Modifier.clickable { onCycleVisualizerStyle?.invoke() }
+                    // 频谱样式切换按钮 (只保留 Icon，去除文字，保持与整体胶囊按钮极简统一)
+                    IconButton(
+                        onClick = { onCycleVisualizerStyle?.invoke() },
+                        modifier = Modifier.size(32.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.GraphicEq,
-                                contentDescription = null,
-                                tint = OrbitTheme.colors.primary,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            val styleText = when (currentStyle) {
-                                VisualizerStyle.BARS_WITH_PEAKS -> stringResource(R.string.visualizer_style_bars_with_peaks)
-                                VisualizerStyle.AURORA_MOUNTAIN -> stringResource(R.string.visualizer_style_aurora_mountain)
-                                VisualizerStyle.MIRRORED_BARS -> stringResource(R.string.visualizer_style_mirrored_bars)
-                                VisualizerStyle.OFF -> stringResource(R.string.visualizer_style_off)
-                            }
-                            Text(
-                                text = styleText,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium,
-                                color = OrbitTheme.colors.primary
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Default.GraphicEq,
+                            contentDescription = stringResource(R.string.switch_visualizer_style),
+                            tint = OrbitTheme.colors.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
 
                     Spacer(modifier = Modifier.width(2.dp))

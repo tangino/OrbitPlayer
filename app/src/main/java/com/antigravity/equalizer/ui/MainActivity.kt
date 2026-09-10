@@ -2,6 +2,7 @@ package com.antigravity.equalizer.ui
 
 import android.Manifest
 import android.content.Context
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.os.Build
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -115,6 +117,15 @@ class MainActivity : ComponentActivity() {
                 currentContext.createConfigurationContext(updatedConfig)
             }
 
+            // 平板专属模式联动：开启时强制锁定横屏，关闭时释放为跟随系统自由旋转
+            LaunchedEffect(uiState.isTabletLandscapeModeEnabled) {
+                requestedOrientation = if (uiState.isTabletLandscapeModeEnabled) {
+                    ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                } else {
+                    ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                }
+            }
+
             // 记录页面返回栈轨迹：是否从正在播放页直接打开了均衡器页面
             var openedFromNowPlaying by rememberSaveable { mutableStateOf(false) }
             // 记录打开设置页之前的源页面（曲库还是均衡器主页），确保返回时准确恢复
@@ -184,6 +195,7 @@ class MainActivity : ComponentActivity() {
                             AppScreen.LIBRARY -> {
                                 MusicLibraryScreen(
                                     viewModel = musicPlayerViewModel,
+                                    isTabletMode = uiState.isTabletLandscapeModeEnabled,
                                     onOpenSettings = {
                                         previousScreenBeforeSettings = AppScreen.LIBRARY
                                         equalizerViewModel.navigateTo(AppScreen.SETTINGS)
@@ -276,6 +288,9 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onToggleMaximizedCoverPosition = { onRight ->
                                     equalizerViewModel.setMaximizedCoverOnRight(onRight)
+                                },
+                                onToggleMaximizedCoverRotating = { rotating ->
+                                    equalizerViewModel.setMaximizedCoverRotating(rotating)
                                 },
                                 onToggleMaximizedShowControls = { show ->
                                     equalizerViewModel.setMaximizedShowControls(show)

@@ -201,4 +201,6 @@
     <string name="added_to_playlist_success">已添加到 %1$s</string>
     <string name="queue_search_hint">在队列中搜索...</string>
     <string name="back">返回</string>
+    <string name="scan_media">扫描媒体库</string>
+    <string name="scanning">正在扫描...</string>
 </resources>

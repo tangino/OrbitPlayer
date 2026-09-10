@@ -265,6 +265,9 @@
     <string name="maximized_cover_alpha_desc">调整最大化时专辑封面的不透明度</string>
     <string name="maximized_follow_cover_color">频谱颜色跟随专辑封面</string>
     <string name="maximized_follow_cover_dual_only_hint">仅在双色频谱模式下可用</string>
+    <string name="maximized_cover_rotate">封面旋转</string>
+    <string name="maximized_cover_rotate_enabled">已开启封面旋转</string>
+    <string name="maximized_cover_rotate_disabled">已关闭封面旋转</string>
 
     <!-- 频谱条透明度与全局自定义背景 -->
     <string name="visualizer_bar_alpha_title">频谱条透明度</string>

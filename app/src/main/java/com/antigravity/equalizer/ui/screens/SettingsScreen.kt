@@ -132,6 +132,19 @@ fun SettingsScreen(
                             viewModel.setThemeMode(mode)
                         }
                     )
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                    )
+
+                    SettingsSwitchItem(
+                        icon = Icons.Default.TabletAndroid,
+                        title = "平板专属媒体库 UI",
+                        subtitle = "启用左侧分栏导航与大屏自适应网格，并锁定横屏显示",
+                        checked = uiState.isTabletLandscapeModeEnabled,
+                        onCheckedChange = { viewModel.setTabletLandscapeModeEnabled(it) }
+                    )
                 }
             }
 

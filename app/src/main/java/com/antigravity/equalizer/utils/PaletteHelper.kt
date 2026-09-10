@@ -57,12 +57,24 @@ object PaletteHelper {
             val bitmap = BitmapFactory.decodeFile(filePath, decodeOptions) ?: return@withContext null
 
             // 2. 使用 AndroidX Palette 提取调色板
+            val extracted = extractColorsFromBitmap(bitmap)
+            bitmap.recycle()
+            extracted
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * 直接从 Bitmap 对象中实时提取双色配置
+     */
+    fun extractColorsFromBitmap(bitmap: Bitmap?): ExtractedColors? {
+        if (bitmap == null || bitmap.isRecycled) return null
+        return try {
             val palette = Palette.from(bitmap)
                 .maximumColorCount(16)
                 .generate()
-            bitmap.recycle()
 
-            // 3. 提取亮色与暗色候选
             val lightSwatch = palette.lightVibrantSwatch
                 ?: palette.vibrantSwatch
                 ?: palette.lightMutedSwatch
@@ -76,7 +88,6 @@ object PaletteHelper {
             var lightRgb = lightSwatch?.rgb ?: DEFAULT_COLORS.lightColor.toInt()
             var darkRgb = darkSwatch?.rgb ?: DEFAULT_COLORS.darkColor.toInt()
 
-            // 4. 色彩差异性与可见度增强算法 (HSV 空间优化)
             lightRgb = ensureLightVisibility(lightRgb)
             darkRgb = ensureDarkVisibility(darkRgb, lightRgb)
 
