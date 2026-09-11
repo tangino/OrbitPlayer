@@ -83,12 +83,36 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 开启全屏沉浸式状态栏与导航栏 (Edge-to-Edge)
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
+
         checkAndRequestPermissions()
 
         setContent {
             val uiState by equalizerViewModel.uiState.collectAsState()
             val playbackState by musicPlayerViewModel.playbackState.collectAsState()
             val libraryUiState by musicPlayerViewModel.libraryUiState.collectAsState()
+
+            // 沉浸式状态栏图标与导航键色彩自适应 (暗色主题文字为白色，浅色主题文字为深色)
+            val isSystemDark = androidx.compose.foundation.isSystemInDarkTheme()
+            val isDarkTheme = when (uiState.themeMode.lowercase()) {
+                "dark" -> true
+                "light" -> false
+                else -> isSystemDark
+            }
+            LaunchedEffect(isDarkTheme, uiState.isVisualizerMaximized) {
+                val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+                val isLight = !isDarkTheme && !uiState.isVisualizerMaximized
+                insetsController.isAppearanceLightStatusBars = isLight
+                insetsController.isAppearanceLightNavigationBars = isLight
+            }
 
             val targetLocale = when (uiState.selectedLanguage) {
                 "zh" -> Locale.SIMPLIFIED_CHINESE

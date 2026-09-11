@@ -293,30 +293,32 @@ fun NowPlayingScreen(
                             equalizerUiState.visualizerStyle
                         }
 
-                        // 全屏动态频谱
-                        PowerampSpectrumVisualizer(
-                            magnitudes = visualizerFrame.rawMagnitudes,
-                            peaks = visualizerFrame.peakCaps,
-                            style = currentStyle,
-                            colorScheme = equalizerUiState.visualizerColorScheme,
-                            peakDecayEnabled = equalizerUiState.visualizerPeakDecayEnabled,
-                            isPlaying = playbackState.isPlaying,
-                            barWidthDp = equalizerUiState.visualizerBarWidthDp,
-                            barAlpha = equalizerUiState.visualizerBarAlpha,
-                            borderWidthDp = equalizerUiState.visualizerBarBorderWidthDp,
-                            borderColor = equalizerUiState.visualizerBarBorderColor,
-                            borderAlpha = equalizerUiState.visualizerBarBorderAlpha,
-                            borderOnly = equalizerUiState.visualizerBarBorderOnly,
-                            customColor = equalizerUiState.visualizerCustomColor,
-                            customColor2 = equalizerUiState.visualizerCustomColor2,
-                            isSingleColor = equalizerUiState.visualizerSingleColor,
-                            backgroundLightColor = equalizerUiState.backgroundExtractedLightColor,
-                            backgroundDarkColor = equalizerUiState.backgroundExtractedDarkColor,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(horizontal = 14.dp, vertical = 12.dp),
-                            onClick = { onCycleVisualizerStyle?.invoke() }
-                        )
+                        // 全屏动态频谱 (若已处于最大化全屏浮层，则底层彻底卸载，避免双层 GLSurfaceView / 着色器重叠穿透与资源争夺)
+                        if (!equalizerUiState.isVisualizerMaximized) {
+                            PowerampSpectrumVisualizer(
+                                magnitudes = visualizerFrame.rawMagnitudes,
+                                peaks = visualizerFrame.peakCaps,
+                                style = currentStyle,
+                                colorScheme = equalizerUiState.visualizerColorScheme,
+                                peakDecayEnabled = equalizerUiState.visualizerPeakDecayEnabled,
+                                isPlaying = playbackState.isPlaying,
+                                barWidthDp = equalizerUiState.visualizerBarWidthDp,
+                                barAlpha = equalizerUiState.visualizerBarAlpha,
+                                borderWidthDp = equalizerUiState.visualizerBarBorderWidthDp,
+                                borderColor = equalizerUiState.visualizerBarBorderColor,
+                                borderAlpha = equalizerUiState.visualizerBarBorderAlpha,
+                                borderOnly = equalizerUiState.visualizerBarBorderOnly,
+                                customColor = equalizerUiState.visualizerCustomColor,
+                                customColor2 = equalizerUiState.visualizerCustomColor2,
+                                isSingleColor = equalizerUiState.visualizerSingleColor,
+                                backgroundLightColor = equalizerUiState.backgroundExtractedLightColor,
+                                backgroundDarkColor = equalizerUiState.backgroundExtractedDarkColor,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                onClick = { onCycleVisualizerStyle?.invoke() }
+                            )
+                        }
 
                         // 顶部操作组：样式药丸徽标 + 最大化全屏按钮
                         Row(
@@ -341,6 +343,7 @@ fun NowPlayingScreen(
                                         VisualizerStyle.BARS_WITH_PEAKS -> stringResource(R.string.visualizer_style_bars_with_peaks)
                                         VisualizerStyle.AURORA_MOUNTAIN -> stringResource(R.string.visualizer_style_aurora_mountain)
                                         VisualizerStyle.MIRRORED_BARS -> stringResource(R.string.visualizer_style_mirrored_bars)
+                                        VisualizerStyle.TIME_TUNNEL -> stringResource(R.string.visualizer_style_time_tunnel)
                                         VisualizerStyle.OFF -> stringResource(R.string.visualizer_style_off)
                                     }
                                     Text(
@@ -739,17 +742,22 @@ fun NowPlayingScreen(
             }
         }
 
-        // 4.5 仿 Poweramp 殿堂级动态频谱视效视图 (当封面替换为全尺寸大频谱时自动折叠，避免视觉重复)
+        // 4.5 仿 Poweramp 殿堂级动态频谱视效视图 (当封面替换为全尺寸大频谱或全屏最大化时自动折叠，避免视觉重复与性能开销)
         val spectrumVisualizerView: @Composable () -> Unit = {
             AnimatedVisibility(
-                visible = !showCoverVisualizer && equalizerUiState.visualizerEnabled && equalizerUiState.visualizerStyle != VisualizerStyle.OFF,
+                visible = !showCoverVisualizer && equalizerUiState.visualizerEnabled && equalizerUiState.visualizerStyle != VisualizerStyle.OFF && !equalizerUiState.isVisualizerMaximized,
                 enter = expandVertically(tween(250)) + fadeIn(tween(200)),
                 exit = shrinkVertically(tween(200)) + fadeOut(tween(150))
             ) {
+                val barStyle = if (equalizerUiState.visualizerStyle == VisualizerStyle.TIME_TUNNEL) {
+                    VisualizerStyle.AURORA_MOUNTAIN
+                } else {
+                    equalizerUiState.visualizerStyle
+                }
                 PowerampSpectrumVisualizer(
                     magnitudes = visualizerFrame.rawMagnitudes,
                     peaks = visualizerFrame.peakCaps,
-                    style = equalizerUiState.visualizerStyle,
+                    style = barStyle,
                     colorScheme = equalizerUiState.visualizerColorScheme,
                     peakDecayEnabled = equalizerUiState.visualizerPeakDecayEnabled,
                     isPlaying = playbackState.isPlaying,
@@ -1694,8 +1702,9 @@ fun NowPlayingScreen(
             containerColor = OrbitTheme.colors.surfaceDialog
         )
     }
+    } // 结束 Scaffold，使全屏浮层彻底覆盖整个窗口
 
-    // 全屏最大化沉浸大频谱浮层
+    // 全屏最大化沉浸大频谱浮层 (脱离 Scaffold 约束，真正全屏铺满)
     AnimatedVisibility(
         visible = equalizerUiState.isVisualizerMaximized,
         enter = fadeIn(tween(300)) + scaleIn(initialScale = 0.96f, animationSpec = tween(300)),
@@ -1718,9 +1727,9 @@ fun NowPlayingScreen(
             onTogglePlay = { viewModel.togglePlayPause() },
             onPlayNext = { viewModel.playNext() },
             onPlayPrevious = { viewModel.playPrevious() },
-            onSeekTo = { viewModel.seekTo((it * playbackState.durationMs).toLong()) }
+            onSeekTo = { viewModel.seekTo((it * playbackState.durationMs).toLong()) },
+            modifier = Modifier.fillMaxSize()
         )
-    }
     }
 }
 
@@ -2399,11 +2408,17 @@ private fun MaximizedVisualizerOverlay(
             backgroundDarkColor = effectiveDarkColor,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(
-                    start = 0.dp,
-                    end = 0.dp,
-                    top = if (isLandscape) 40.dp else 52.dp,
-                    bottom = 0.dp
+                .then(
+                    if (currentStyle == VisualizerStyle.TIME_TUNNEL) {
+                        Modifier
+                    } else {
+                        Modifier.padding(
+                            start = 0.dp,
+                            end = 0.dp,
+                            top = if (isLandscape) 40.dp else 52.dp,
+                            bottom = 0.dp
+                        )
+                    }
                 ),
             onClick = { showTopControlBar = !showTopControlBar }
         )
@@ -2411,9 +2426,32 @@ private fun MaximizedVisualizerOverlay(
         val screenWidth = configuration.screenWidthDp.dp
         val screenHeight = configuration.screenHeightDp.dp
 
-        // 1. 精准测量顶部控制条实际占用的底部位置（Y坐标）
-        // 横屏 top padding = 10dp，竖屏 top padding = 16dp；胶囊栏高度 44dp；加阴影和安全边隙 12dp
-        val topBarBottom = if (showTopControlBar) (if (isLandscape) 66.dp else 72.dp) else (if (isLandscape) 16.dp else 24.dp)
+        // 1. 精准测量顶部控制条实际占用的底部位置（Y坐标，结合系统 Dimen 与 Insets，彻底消除与状态栏重叠）
+        val statusBarResId = remember(context) {
+            context.resources.getIdentifier("status_bar_height", "dimen", "android")
+        }
+        val systemStatusBarHeight = remember(context, statusBarResId) {
+            if (statusBarResId > 0) {
+                val px = context.resources.getDimensionPixelSize(statusBarResId)
+                val density = context.resources.displayMetrics.density
+                if (density > 0f) (px / density).dp else 0.dp
+            } else {
+                0.dp
+            }
+        }
+        val composeStatusBar = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        val composeSafeDrawing = WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding()
+        val composeCutout = WindowInsets.displayCutout.asPaddingValues().calculateTopPadding()
+
+        val actualStatusBarHeight = maxOf(systemStatusBarHeight, composeStatusBar, composeSafeDrawing, composeCutout)
+            .coerceAtLeast(if (isLandscape) 0.dp else 44.dp)
+
+        val topBarPaddingTop = if (isLandscape) {
+            maxOf(actualStatusBarHeight, composeCutout).coerceAtLeast(6.dp) + 6.dp
+        } else {
+            actualStatusBarHeight + 12.dp
+        }
+        val topBarBottom = if (showTopControlBar) (topBarPaddingTop + 46.dp + 12.dp) else (topBarPaddingTop + 6.dp)
 
         // 2. 精准测量底部控制卡片实际占用的顶部位置（距离屏幕底部的距离）
         // 横屏占约 90dp；竖屏包含两行文字+进度条+按钮组占约 168dp
@@ -2606,164 +2644,22 @@ private fun MaximizedVisualizerOverlay(
             }
         }
 
-        // 3. 顶部悬浮操作胶囊栏 (支持点击屏幕平滑显示/隐藏)
-        AnimatedVisibility(
-            visible = showTopControlBar,
-            enter = slideInVertically(tween(250)) { -it } + fadeIn(tween(200)),
-            exit = slideOutVertically(tween(200)) { -it } + fadeOut(tween(150)),
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = if (isLandscape) 10.dp else 16.dp)
-        ) {
-            Surface(
-                shape = RoundedCornerShape(26.dp),
-                color = Color(0xDD181826),
-                shadowElevation = 8.dp,
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x33FFFFFF)),
-                modifier = Modifier
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // 开关封面
-                    IconButton(
-                        onClick = { onToggleMaximizedShowCover(!equalizerUiState.maximizedShowCover) },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (equalizerUiState.maximizedShowCover) Icons.Default.Image else Icons.Default.HideImage,
-                            contentDescription = stringResource(if (equalizerUiState.maximizedShowCover) R.string.maximized_hide_cover else R.string.maximized_show_cover),
-                            tint = if (equalizerUiState.maximizedShowCover) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // 切换封面位置 (居左 / 居右，仅在显示封面时出现)
-                    if (equalizerUiState.maximizedShowCover) {
-                        IconButton(
-                            onClick = { onToggleMaximizedCoverPosition(!equalizerUiState.maximizedCoverOnRight) },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (equalizerUiState.maximizedCoverOnRight) Icons.Default.FormatAlignRight else Icons.Default.FormatAlignLeft,
-                                contentDescription = stringResource(R.string.maximized_cover_position),
-                                tint = OrbitTheme.colors.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        // 调节封面透明度 (循环切换 100% -> 75% -> 50% -> 25%)
-                        IconButton(
-                            onClick = {
-                                val nextAlpha = when {
-                                    equalizerUiState.maximizedCoverAlpha > 0.85f -> 0.75f
-                                    equalizerUiState.maximizedCoverAlpha > 0.60f -> 0.50f
-                                    equalizerUiState.maximizedCoverAlpha > 0.35f -> 0.25f
-                                    else -> 1.0f
-                                }
-                                onSetMaximizedCoverAlpha(nextAlpha)
-                            },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Opacity,
-                                contentDescription = stringResource(R.string.maximized_cover_alpha),
-                                tint = OrbitTheme.colors.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        // 切换黑胶唱盘旋转
-                        val rotateEnableTip = stringResource(R.string.maximized_cover_rotate_enabled)
-                        val rotateDisableTip = stringResource(R.string.maximized_cover_rotate_disabled)
-                        IconButton(
-                            onClick = {
-                                val nextRotating = !equalizerUiState.maximizedCoverRotating
-                                onToggleMaximizedCoverRotating(nextRotating)
-                                android.widget.Toast.makeText(
-                                    context,
-                                    if (nextRotating) rotateEnableTip else rotateDisableTip,
-                                    android.widget.Toast.LENGTH_SHORT
-                                ).show()
-                            },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Sync,
-                                contentDescription = stringResource(R.string.maximized_cover_rotate),
-                                tint = if (equalizerUiState.maximizedCoverRotating) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-
-                    // 开关底部播放控件
-                    IconButton(
-                        onClick = { onToggleMaximizedShowControls(!equalizerUiState.maximizedShowControls) },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (equalizerUiState.maximizedShowControls) Icons.Default.PlayCircle else Icons.Default.PlayDisabled,
-                            contentDescription = stringResource(if (equalizerUiState.maximizedShowControls) R.string.maximized_hide_controls else R.string.maximized_show_controls),
-                            tint = if (equalizerUiState.maximizedShowControls) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // 频谱颜色跟随专辑封面 (仅在双色频谱时可用，非持久化实时提取)
-                    val dualOnlyHint = stringResource(R.string.maximized_follow_cover_dual_only_hint)
-                    IconButton(
-                        onClick = {
-                            if (!isDualColor) {
-                                android.widget.Toast.makeText(context, dualOnlyHint, android.widget.Toast.LENGTH_SHORT).show()
-                            } else {
-                                onToggleFollowCoverColor(!equalizerUiState.followCoverColorInMaximized)
-                            }
-                        },
-                        modifier = Modifier
-                            .size(32.dp)
-                            .alpha(if (isDualColor) 1.0f else 0.38f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Palette,
-                            contentDescription = stringResource(R.string.maximized_follow_cover_color),
-                            tint = if (equalizerUiState.followCoverColorInMaximized && isDualColor) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    // 频谱样式切换按钮 (只保留 Icon，去除文字，保持与整体胶囊按钮极简统一)
-                    IconButton(
-                        onClick = { onCycleVisualizerStyle?.invoke() },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.GraphicEq,
-                            contentDescription = stringResource(R.string.switch_visualizer_style),
-                            tint = OrbitTheme.colors.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(2.dp))
-
-                    // 退出最大化全屏按钮
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.FullscreenExit,
-                            contentDescription = stringResource(R.string.btn_cancel),
-                            tint = OrbitTheme.colors.textPrimary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
-            }
-        }
+        // 3. 顶部悬浮操作胶囊栏 (独立组件化以跳过 60FPS 频谱高频重组，彻底避让系统状态栏手势，按钮触摸热区优化至 38dp)
+        MaximizedTopControlBar(
+            showTopControlBar = showTopControlBar,
+            topPadding = topBarPaddingTop,
+            equalizerUiState = equalizerUiState,
+            isDualColor = isDualColor,
+            onToggleMaximizedShowCover = onToggleMaximizedShowCover,
+            onToggleMaximizedCoverPosition = onToggleMaximizedCoverPosition,
+            onSetMaximizedCoverAlpha = onSetMaximizedCoverAlpha,
+            onToggleMaximizedCoverRotating = onToggleMaximizedCoverRotating,
+            onToggleMaximizedShowControls = onToggleMaximizedShowControls,
+            onToggleFollowCoverColor = onToggleFollowCoverColor,
+            onCycleVisualizerStyle = onCycleVisualizerStyle,
+            onBack = onBack,
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
 
         // 4. 底部悬浮播放控制卡片 (纯净无背景，直接悬浮在动态频谱之上)
         AnimatedVisibility(
@@ -2915,6 +2811,190 @@ private fun MaximizedVisualizerOverlay(
                             modifier = Modifier.size(28.dp)
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 全屏最大化动态频谱界面的顶部悬浮控制胶囊栏
+ * 独立抽取为 Composable 函数，享受 Compose Smart Recomposition 机制，
+ * 在 visualizerFrame 以 60FPS 极高频刷新时完全跳过重组，确保触摸手势事件机稳定、极度灵敏响应。
+ */
+@Composable
+private fun MaximizedTopControlBar(
+    showTopControlBar: Boolean,
+    topPadding: androidx.compose.ui.unit.Dp,
+    equalizerUiState: EqualizerUiState,
+    isDualColor: Boolean,
+    onToggleMaximizedShowCover: (Boolean) -> Unit,
+    onToggleMaximizedCoverPosition: (Boolean) -> Unit,
+    onSetMaximizedCoverAlpha: (Float) -> Unit,
+    onToggleMaximizedCoverRotating: (Boolean) -> Unit,
+    onToggleMaximizedShowControls: (Boolean) -> Unit,
+    onToggleFollowCoverColor: (Boolean) -> Unit,
+    onCycleVisualizerStyle: (() -> Unit)?,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+
+    AnimatedVisibility(
+        visible = showTopControlBar,
+        enter = slideInVertically(tween(250)) { -it } + fadeIn(tween(200)),
+        exit = slideOutVertically(tween(200)) { -it } + fadeOut(tween(150)),
+        modifier = modifier.padding(top = topPadding)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(26.dp),
+            color = Color(0xDD181826),
+            shadowElevation = 8.dp,
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0x33FFFFFF)),
+            modifier = Modifier.clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {} // 拦截空白处点击穿透，防止误触导致全屏控制栏意外隐藏
+            )
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // 1. 开关封面
+                IconButton(
+                    onClick = { onToggleMaximizedShowCover(!equalizerUiState.maximizedShowCover) },
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Icon(
+                        imageVector = if (equalizerUiState.maximizedShowCover) Icons.Default.Image else Icons.Default.HideImage,
+                        contentDescription = stringResource(if (equalizerUiState.maximizedShowCover) R.string.maximized_hide_cover else R.string.maximized_show_cover),
+                        tint = if (equalizerUiState.maximizedShowCover) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                // 2. 切换封面位置 (居左 / 居右，仅在显示封面时出现)
+                if (equalizerUiState.maximizedShowCover) {
+                    IconButton(
+                        onClick = { onToggleMaximizedCoverPosition(!equalizerUiState.maximizedCoverOnRight) },
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (equalizerUiState.maximizedCoverOnRight) Icons.Default.FormatAlignRight else Icons.Default.FormatAlignLeft,
+                            contentDescription = stringResource(R.string.maximized_cover_position),
+                            tint = OrbitTheme.colors.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // 3. 调节封面透明度 (循环切换 100% -> 75% -> 50% -> 25%)
+                    IconButton(
+                        onClick = {
+                            val nextAlpha = when {
+                                equalizerUiState.maximizedCoverAlpha > 0.85f -> 0.75f
+                                equalizerUiState.maximizedCoverAlpha > 0.60f -> 0.50f
+                                equalizerUiState.maximizedCoverAlpha > 0.35f -> 0.25f
+                                else -> 1.0f
+                            }
+                            onSetMaximizedCoverAlpha(nextAlpha)
+                        },
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Opacity,
+                            contentDescription = stringResource(R.string.maximized_cover_alpha),
+                            tint = OrbitTheme.colors.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    // 4. 切换黑胶唱盘旋转
+                    val rotateEnableTip = stringResource(R.string.maximized_cover_rotate_enabled)
+                    val rotateDisableTip = stringResource(R.string.maximized_cover_rotate_disabled)
+                    IconButton(
+                        onClick = {
+                            val nextRotating = !equalizerUiState.maximizedCoverRotating
+                            onToggleMaximizedCoverRotating(nextRotating)
+                            Toast.makeText(
+                                context,
+                                if (nextRotating) rotateEnableTip else rotateDisableTip,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Sync,
+                            contentDescription = stringResource(R.string.maximized_cover_rotate),
+                            tint = if (equalizerUiState.maximizedCoverRotating) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                // 5. 开关底部播放控件
+                IconButton(
+                    onClick = { onToggleMaximizedShowControls(!equalizerUiState.maximizedShowControls) },
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Icon(
+                        imageVector = if (equalizerUiState.maximizedShowControls) Icons.Default.PlayCircle else Icons.Default.PlayDisabled,
+                        contentDescription = stringResource(if (equalizerUiState.maximizedShowControls) R.string.maximized_hide_controls else R.string.maximized_show_controls),
+                        tint = if (equalizerUiState.maximizedShowControls) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                // 6. 频谱颜色跟随专辑封面
+                val dualOnlyHint = stringResource(R.string.maximized_follow_cover_dual_only_hint)
+                IconButton(
+                    onClick = {
+                        if (!isDualColor) {
+                            Toast.makeText(context, dualOnlyHint, Toast.LENGTH_SHORT).show()
+                        } else {
+                            onToggleFollowCoverColor(!equalizerUiState.followCoverColorInMaximized)
+                        }
+                    },
+                    modifier = Modifier
+                        .size(38.dp)
+                        .alpha(if (isDualColor) 1.0f else 0.38f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Palette,
+                        contentDescription = stringResource(R.string.maximized_follow_cover_color),
+                        tint = if (equalizerUiState.followCoverColorInMaximized && isDualColor) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                // 7. 频谱样式切换按钮
+                IconButton(
+                    onClick = { onCycleVisualizerStyle?.invoke() },
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.GraphicEq,
+                        contentDescription = stringResource(R.string.switch_visualizer_style),
+                        tint = OrbitTheme.colors.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(2.dp))
+
+                // 8. 退出最大化全屏按钮
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FullscreenExit,
+                        contentDescription = stringResource(R.string.btn_cancel),
+                        tint = OrbitTheme.colors.textPrimary,
+                        modifier = Modifier.size(22.dp)
+                    )
                 }
             }
         }

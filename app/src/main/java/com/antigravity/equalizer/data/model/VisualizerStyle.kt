@@ -23,6 +23,10 @@ enum class VisualizerStyle(
         id = "mirrored_bars",
         titleRes = R.string.visualizer_style_mirrored_bars
     ),
+    TIME_TUNNEL(
+        id = "time_tunnel",
+        titleRes = R.string.visualizer_style_time_tunnel
+    ),
     OFF(
         id = "off",
         titleRes = R.string.visualizer_style_off

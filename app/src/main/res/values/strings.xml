@@ -225,6 +225,7 @@
     <string name="visualizer_style_bars_with_peaks">Classic Bars (with Floating Peaks)</string>
     <string name="visualizer_style_aurora_mountain">Smooth Aurora Wave</string>
     <string name="visualizer_style_mirrored_bars">Mirrored Butterfly Bars</string>
+    <string name="visualizer_style_time_tunnel">3D Time Vortex Tunnel</string>
     <string name="visualizer_style_off">Off</string>
     <string name="visualizer_peak_decay_title">Peak Floating &amp; Falloff (Peak Hold)</string>
     <string name="visualizer_peak_decay_subtitle">Peak points hold at maximum and fall off with gravity physics</string>

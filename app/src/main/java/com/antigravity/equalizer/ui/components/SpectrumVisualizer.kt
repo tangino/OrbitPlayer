@@ -65,6 +65,21 @@ fun PowerampSpectrumVisualizer(
 ) {
     if (style == VisualizerStyle.OFF) return
 
+    if (style == VisualizerStyle.TIME_TUNNEL) {
+        TimeTunnelVisualizer(
+            magnitudes = magnitudes,
+            isPlaying = isPlaying,
+            colorScheme = colorScheme,
+            customColor = customColor,
+            customColor2 = customColor2,
+            backgroundLightColor = backgroundLightColor,
+            backgroundDarkColor = backgroundDarkColor,
+            modifier = modifier,
+            onClick = onClick
+        )
+        return
+    }
+
     val themeColors = OrbitTheme.colors
     val (primaryColor, secondaryColor, peakColor) = when (colorScheme) {
         VisualizerColorScheme.FOLLOW_BACKGROUND -> {
@@ -462,6 +477,7 @@ fun PowerampSpectrumVisualizer(
                     }
                 }
 
+                VisualizerStyle.TIME_TUNNEL -> {}
                 VisualizerStyle.OFF -> {}
             }
         }
