@@ -1,6 +1,7 @@
 package com.antigravity.equalizer.data.model
 
 import android.media.MediaMetadataRetriever
+import android.os.Build
 import android.util.Log
 import java.io.File
 
@@ -88,7 +89,11 @@ object SongMetadataHelper {
         val retriever = MediaMetadataRetriever()
         try {
             retriever.setDataSource(song.path)
-            val srStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_SAMPLERATE)
+            val srStr = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_SAMPLERATE)
+            } else {
+                null
+            }
             val brStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)
 
             srStr?.toIntOrNull()?.let { if (it > 0) sampleRate = it }

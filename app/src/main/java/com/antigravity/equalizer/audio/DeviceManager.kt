@@ -27,6 +27,7 @@ class DeviceManager(private val context: Context) {
 
     private var deviceCallback: Any? = null
     private var noisyReceiver: BroadcastReceiver? = null
+    private var legacyDeviceReceiver: BroadcastReceiver? = null
 
     fun startMonitoring(onDeviceChanged: (AudioDeviceType, String) -> Unit) {
         updateCurrentDevice(onDeviceChanged)
@@ -44,6 +45,19 @@ class DeviceManager(private val context: Context) {
             }
             audioManager.registerAudioDeviceCallback(callback, null)
             deviceCallback = callback
+        } else {
+            // Android 5.0 ~ 5.1 (API < 23) 向下兼容广播监听：有线耳机拔插与蓝牙连接状态
+            legacyDeviceReceiver = object : BroadcastReceiver() {
+                override fun onReceive(c: Context?, intent: Intent?) {
+                    updateCurrentDevice(onDeviceChanged)
+                }
+            }
+            val legacyFilter = IntentFilter().apply {
+                addAction(Intent.ACTION_HEADSET_PLUG)
+                @Suppress("DEPRECATION")
+                addAction(android.bluetooth.BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED)
+            }
+            context.registerReceiver(legacyDeviceReceiver, legacyFilter)
         }
 
         // 监听耳机拔出广播 ACTION_AUDIO_BECOMING_NOISY
@@ -86,6 +100,23 @@ class DeviceManager(private val context: Context) {
                     }
                 }
             }
+        } else {
+            // Android 5.0 (API 21) 回退检测
+            @Suppress("DEPRECATION")
+            when {
+                audioManager.isBluetoothA2dpOn || audioManager.isBluetoothScoOn -> {
+                    devType = AudioDeviceType.BLUETOOTH_A2DP
+                    devName = "Bluetooth Audio"
+                }
+                audioManager.isWiredHeadsetOn -> {
+                    devType = AudioDeviceType.WIRED_HEADSET
+                    devName = "Wired Headphones"
+                }
+                else -> {
+                    devType = AudioDeviceType.SPEAKER
+                    devName = "Phone Speaker"
+                }
+            }
         }
 
         _currentDeviceType.value = devType
@@ -98,6 +129,14 @@ class DeviceManager(private val context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && deviceCallback != null) {
             audioManager.unregisterAudioDeviceCallback(deviceCallback as android.media.AudioDeviceCallback)
             deviceCallback = null
+        }
+        legacyDeviceReceiver?.let {
+            try {
+                context.unregisterReceiver(it)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error unregistering legacy receiver", e)
+            }
+            legacyDeviceReceiver = null
         }
         noisyReceiver?.let {
             try {
