@@ -9,6 +9,8 @@ import androidx.compose.material.icons.automirrored.filled.MenuOpen
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -34,6 +36,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.layout.ContentScale
 import android.content.res.Configuration
 import androidx.compose.ui.platform.LocalConfiguration
@@ -49,6 +53,7 @@ import coil.size.Size
 import com.antigravity.equalizer.data.model.AlbumItem
 import com.antigravity.equalizer.data.model.ArtistItem
 import com.antigravity.equalizer.ui.components.AlbumItem
+import com.antigravity.equalizer.ui.components.CoverFlowLayout
 import com.antigravity.equalizer.ui.components.MiniPlayerBar
 import com.antigravity.equalizer.ui.components.SelectAlbumCoverDialog
 import com.antigravity.equalizer.ui.components.SongItem
@@ -364,7 +369,7 @@ fun MusicLibraryScreen(
                         }
                     }
 
-                    // 一键切换 6 档视图模式
+                    // 一键切换 7 档视图模式 (包含 Mac OS X 经典 3D Cover Flow)
                     IconButton(onClick = { viewModel.cycleViewMode() }) {
                         val icon = when (libraryState.viewMode) {
                             LibraryViewMode.LIST_NO_ART -> Icons.AutoMirrored.Filled.FormatListBulleted
@@ -373,6 +378,7 @@ fun MusicLibraryScreen(
                             LibraryViewMode.GRID_2_COL -> Icons.Default.GridView
                             LibraryViewMode.GRID_3_COL -> Icons.Default.GridOn
                             LibraryViewMode.GRID_4_COL -> Icons.Default.Apps
+                            LibraryViewMode.COVER_FLOW -> Icons.Default.Flip
                         }
                         Icon(imageVector = icon, contentDescription = "View Mode", tint = OrbitTheme.colors.primary)
                     }
@@ -513,6 +519,7 @@ fun MusicLibraryScreen(
                             LibraryViewMode.GRID_2_COL -> 6
                             LibraryViewMode.GRID_3_COL -> 7
                             LibraryViewMode.GRID_4_COL -> 8
+                            LibraryViewMode.COVER_FLOW -> 1
                         }
                     }
                     isLandscape -> {
@@ -523,6 +530,7 @@ fun MusicLibraryScreen(
                             LibraryViewMode.GRID_2_COL -> 4
                             LibraryViewMode.GRID_3_COL -> 5
                             LibraryViewMode.GRID_4_COL -> 6
+                            LibraryViewMode.COVER_FLOW -> 1
                         }
                     }
                     else -> {
@@ -533,6 +541,7 @@ fun MusicLibraryScreen(
                             LibraryViewMode.GRID_2_COL -> 2
                             LibraryViewMode.GRID_3_COL -> 3
                             LibraryViewMode.GRID_4_COL -> 4
+                            LibraryViewMode.COVER_FLOW -> 1
                         }
                     }
                 }
@@ -576,6 +585,17 @@ fun MusicLibraryScreen(
                             title = stringResource(R.string.empty_folder_title),
                             subtitle = stringResource(R.string.empty_folder_desc)
                         )
+                    } else if (currentViewMode == LibraryViewMode.COVER_FLOW) {
+                        CoverFlowLayout(
+                            songs = folderSongs,
+                            currentPlayingSongId = playbackState.currentSong?.id,
+                            isPlaying = playbackState.isPlaying,
+                            coverVersion = coverVer,
+                            onSongClick = { song, index -> handleSongItemClick(folderSongs, index) },
+                            onFavoriteClick = { viewModel.cycleSongAttitude(it) },
+                            onLongClick = { activeSongForLongClickMenu = it },
+                            bottomPadding = 98.dp
+                        )
                     } else {
                         LazyVerticalGrid(
                             state = folderSongsGridState,
@@ -612,6 +632,17 @@ fun MusicLibraryScreen(
                         EmptyStateView(
                             title = stringResource(R.string.empty_album_title),
                             subtitle = stringResource(R.string.empty_album_desc)
+                        )
+                    } else if (currentViewMode == LibraryViewMode.COVER_FLOW) {
+                        CoverFlowLayout(
+                            songs = albumSongs,
+                            currentPlayingSongId = playbackState.currentSong?.id,
+                            isPlaying = playbackState.isPlaying,
+                            coverVersion = coverVer,
+                            onSongClick = { song, index -> handleSongItemClick(albumSongs, index) },
+                            onFavoriteClick = { viewModel.cycleSongAttitude(it) },
+                            onLongClick = { activeSongForLongClickMenu = it },
+                            bottomPadding = 98.dp
                         )
                     } else {
                         LazyVerticalGrid(
@@ -650,6 +681,17 @@ fun MusicLibraryScreen(
                             title = stringResource(R.string.empty_artist_title),
                             subtitle = stringResource(R.string.empty_artist_desc)
                         )
+                    } else if (currentViewMode == LibraryViewMode.COVER_FLOW) {
+                        CoverFlowLayout(
+                            songs = artistSongs,
+                            currentPlayingSongId = playbackState.currentSong?.id,
+                            isPlaying = playbackState.isPlaying,
+                            coverVersion = coverVer,
+                            onSongClick = { song, index -> handleSongItemClick(artistSongs, index) },
+                            onFavoriteClick = { viewModel.cycleSongAttitude(it) },
+                            onLongClick = { activeSongForLongClickMenu = it },
+                            bottomPadding = 98.dp
+                        )
                     } else {
                         LazyVerticalGrid(
                             state = artistSongsGridState,
@@ -679,11 +721,22 @@ fun MusicLibraryScreen(
                 } else {
                     when (libraryState.currentTab) {
                         LibraryTab.SONGS -> {
-                            // 1. 全部歌曲列表 (全 6 档 Pinch 手势与物理位移形变动效)
+                            // 1. 全部歌曲列表 (全 7 档 Pinch 手势、Cover Flow 与物理位移形变动效)
                             if (filteredSongs.isEmpty()) {
                                 EmptyStateView(
                                     title = if (isScanning) stringResource(R.string.scanning_library_title) else stringResource(R.string.empty_songs_title),
                                     subtitle = stringResource(R.string.empty_songs_desc)
+                                )
+                            } else if (currentViewMode == LibraryViewMode.COVER_FLOW) {
+                                CoverFlowLayout(
+                                    songs = filteredSongs,
+                                    currentPlayingSongId = playbackState.currentSong?.id,
+                                    isPlaying = playbackState.isPlaying,
+                                    coverVersion = coverVer,
+                                    onSongClick = { song, index -> handleSongItemClick(filteredSongs, index) },
+                                    onFavoriteClick = { viewModel.cycleSongAttitude(it) },
+                                    onLongClick = { activeSongForLongClickMenu = it },
+                                    bottomPadding = 98.dp
                                 )
                             } else {
                                 LazyVerticalGrid(
@@ -1217,7 +1270,7 @@ fun MusicLibraryScreen(
     // 平板侧边栏展开/折叠状态管理
     var isSideNavExpanded by rememberSaveable { mutableStateOf(true) }
     val sideNavWidth by animateDpAsState(
-        targetValue = if (isSideNavExpanded) 230.dp else 72.dp,
+        targetValue = if (isSideNavExpanded) 180.dp else 60.dp,
         animationSpec = tween(durationMillis = 220),
         label = "SideNavWidth"
     )
@@ -1250,6 +1303,7 @@ fun MusicLibraryScreen(
                 modifier = Modifier
                     .width(sideNavWidth)
                     .fillMaxHeight()
+                    .zIndex(10f)
             )
 
             // 纵向分割细线
@@ -1260,11 +1314,12 @@ fun MusicLibraryScreen(
                     .background(OrbitTheme.colors.surfaceCard.copy(alpha = 0.6f))
             )
 
-            // 右侧主视图区
+            // 右侧主视图区（严格裁剪边界，杜绝内部组件手势与绘制溢出影响左侧导航栏）
             Box(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight()
+                    .clipToBounds()
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     // 仅在下钻（文件夹/专辑/艺术家）时展示返回面包屑栏；未下钻时不展示任何TopBar且不保留空间
@@ -1387,19 +1442,9 @@ fun MusicLibraryScreen(
                                 }
                             }
 
-                            // 2. 浮动视图切换按钮（在「双栏列表」和「高密度Grid」之间切换）
-                            val isCurrentGrid = libraryState.viewMode == LibraryViewMode.GRID_2_COL ||
-                                    libraryState.viewMode == LibraryViewMode.GRID_3_COL ||
-                                    libraryState.viewMode == LibraryViewMode.GRID_4_COL
-
+                            // 2. 浮动视图切换按钮（支持在「列表」、「高密度Grid」与「3D Cover Flow」之间切换）
                             Surface(
-                                onClick = {
-                                    if (isCurrentGrid) {
-                                        viewModel.setViewMode(LibraryViewMode.LIST_SMALL_ART)
-                                    } else {
-                                        viewModel.setViewMode(LibraryViewMode.GRID_3_COL)
-                                    }
-                                },
+                                onClick = { viewModel.cycleViewMode() },
                                 shape = CircleShape,
                                 color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.94f),
                                 border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f)),
@@ -1407,14 +1452,16 @@ fun MusicLibraryScreen(
                                 modifier = Modifier.size(46.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    val icon = if (isCurrentGrid) {
-                                        Icons.AutoMirrored.Filled.ViewList
-                                    } else {
-                                        Icons.Default.GridView
+                                    val icon = when (libraryState.viewMode) {
+                                        LibraryViewMode.COVER_FLOW -> Icons.Default.Flip
+                                        LibraryViewMode.GRID_2_COL,
+                                        LibraryViewMode.GRID_3_COL,
+                                        LibraryViewMode.GRID_4_COL -> Icons.Default.GridView
+                                        else -> Icons.AutoMirrored.Filled.ViewList
                                     }
                                     Icon(
                                         imageVector = icon,
-                                        contentDescription = if (isCurrentGrid) "Switch to 2-Column List" else "Switch to Grid",
+                                        contentDescription = "Switch View Mode",
                                         tint = OrbitTheme.colors.primary,
                                         modifier = Modifier.size(22.dp)
                                     )
@@ -2087,8 +2134,9 @@ private fun getTabTitle(tab: LibraryTab): String {
 }
 
 /**
- * 专为平板大屏打造的侧边导航栏 (Tablet Side Navigation Rail)
- * 支持折叠展开切换：展开时显示完整品牌、文本与数量Badge；折叠时精简为居中图标与状态圆点
+ * 专为平板大屏打造的紧凑侧边导航栏 (Tablet Side Navigation Rail)
+ * 采用紧凑轻量级设计：展开宽度更窄(180dp)、内边距更精细，为右侧媒体内容留出更多视觉空间；
+ * 折叠时极简灵动(60dp)，各按钮与Tab尺寸统一对称，并具备防极端矮屏溢出的平滑滚动支持。
  */
 @Composable
 private fun TabletSideNavRail(
@@ -2113,55 +2161,58 @@ private fun TabletSideNavRail(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = if (isExpanded) 14.dp else 8.dp, vertical = 14.dp),
+                .padding(
+                    horizontal = if (isExpanded) 8.dp else 6.dp,
+                    vertical = 10.dp
+                ),
             horizontalAlignment = if (isExpanded) Alignment.Start else Alignment.CenterHorizontally
         ) {
-            // 顶部 Logo 与折叠/展开按钮
+            // 顶部 Logo 与折叠/展开按钮（紧凑精简）
             if (isExpanded) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 4.dp, vertical = 6.dp)
+                        .padding(horizontal = 4.dp, vertical = 2.dp)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(8.dp),
                             color = OrbitTheme.colors.primary.copy(alpha = 0.15f),
                             border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.35f)),
-                            modifier = Modifier.size(38.dp)
+                            modifier = Modifier.size(32.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Default.MusicNote,
                                     contentDescription = null,
                                     tint = OrbitTheme.colors.primary,
-                                    modifier = Modifier.size(22.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                         }
                         Column {
                             Text(
                                 text = "OrBit Player",
-                                fontSize = 16.sp,
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = OrbitTheme.colors.textPrimary
                             )
                             Surface(
-                                shape = RoundedCornerShape(4.dp),
+                                shape = RoundedCornerShape(3.dp),
                                 color = OrbitTheme.colors.primary.copy(alpha = 0.2f),
-                                modifier = Modifier.padding(top = 2.dp)
+                                modifier = Modifier.padding(top = 1.dp)
                             ) {
                                 Text(
-                                    text = "TABLET HD",
-                                    fontSize = 9.sp,
+                                    text = "TABLET",
+                                    fontSize = 8.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     color = OrbitTheme.colors.primary,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                 )
                             }
                         }
@@ -2170,41 +2221,44 @@ private fun TabletSideNavRail(
                     // 折叠按钮
                     IconButton(
                         onClick = onToggleExpand,
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(30.dp)
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.MenuOpen,
                             contentDescription = "Collapse sidebar",
-                            tint = OrbitTheme.colors.textSecondary
+                            tint = OrbitTheme.colors.textSecondary,
+                            modifier = Modifier.size(18.dp)
                         )
                     }
                 }
             } else {
-                // 折叠状态下顶部只居中放置展开按钮
+                // 折叠状态下居中展开按钮
                 IconButton(
                     onClick = onToggleExpand,
                     modifier = Modifier
-                        .padding(vertical = 4.dp)
-                        .size(42.dp)
+                        .padding(vertical = 2.dp)
+                        .size(38.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Menu,
                         contentDescription = "Expand sidebar",
                         tint = OrbitTheme.colors.primary,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // 中间 Tab 项导航栏
+            // 中间 Tab 项导航栏（支持纵向平滑滚动，杜绝极端矮屏高度溢出）
+            val scrollState = rememberScrollState()
             Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .verticalScroll(scrollState)
             ) {
                 LibraryTab.values().forEach { tab ->
                     val isSelected = currentTab == tab
@@ -2219,33 +2273,30 @@ private fun TabletSideNavRail(
                     if (isExpanded) {
                         Surface(
                             onClick = { onTabSelected(tab) },
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(8.dp),
                             color = if (isSelected) {
                                 OrbitTheme.colors.primary.copy(alpha = 0.18f)
                             } else {
                                 Color.Transparent
                             },
-                            border = if (isSelected) {
-                                BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.45f))
-                            } else null,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp)
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
                             ) {
                                 Icon(
                                     imageVector = icon,
                                     contentDescription = null,
                                     tint = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                                    modifier = Modifier.size(22.dp)
+                                    modifier = Modifier.size(19.dp)
                                 )
-                                Spacer(modifier = Modifier.width(10.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = getTabTitle(tab),
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                     color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                                    fontSize = 14.sp,
+                                    fontSize = 13.sp,
                                     modifier = Modifier.weight(1f)
                                 )
                                 if (count > 0) {
@@ -2256,29 +2307,26 @@ private fun TabletSideNavRail(
                                     ) {
                                         Text(
                                             text = "$count",
-                                            fontSize = 11.sp,
+                                            fontSize = 10.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                                         )
                                     }
                                 }
                             }
                         }
                     } else {
-                        // 折叠状态：紧凑居中方块，带微角标/点提示
+                        // 折叠状态：紧凑小巧居中方块(40dp)，与底部按钮统一尺寸，垂直轴对称
                         Surface(
                             onClick = { onTabSelected(tab) },
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(8.dp),
                             color = if (isSelected) {
                                 OrbitTheme.colors.primary.copy(alpha = 0.18f)
                             } else {
                                 Color.Transparent
                             },
-                            border = if (isSelected) {
-                                BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.45f))
-                            } else null,
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier.size(40.dp)
                         ) {
                             Box(
                                 contentAlignment = Alignment.Center,
@@ -2288,14 +2336,14 @@ private fun TabletSideNavRail(
                                     imageVector = icon,
                                     contentDescription = getTabTitle(tab),
                                     tint = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                                    modifier = Modifier.size(22.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
                                 if (count > 0) {
                                     Box(
                                         modifier = Modifier
                                             .align(Alignment.TopEnd)
-                                            .padding(top = 6.dp, end = 6.dp)
-                                            .size(6.dp)
+                                            .padding(top = 5.dp, end = 5.dp)
+                                            .size(5.dp)
                                             .clip(CircleShape)
                                             .background(if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary.copy(alpha = 0.5f))
                                     )
@@ -2306,9 +2354,11 @@ private fun TabletSideNavRail(
                 }
             }
 
-            // 底部操作区 (扫描本地媒体与偏好设置)
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // 底部操作区 (扫描本地媒体与偏好设置，紧凑优雅排布)
             Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -2316,22 +2366,22 @@ private fun TabletSideNavRail(
                     // 展开状态：扫描媒体库
                     Surface(
                         onClick = onScanMedia,
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(8.dp),
                         color = OrbitTheme.colors.surfaceCard,
                         border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.15f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Sync,
                                 contentDescription = "Scan",
                                 tint = if (isScanning) OrbitTheme.colors.tertiary else OrbitTheme.colors.textSecondary,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(16.dp)
                             )
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = if (isScanning) stringResource(R.string.scanning) else stringResource(R.string.scan_media),
                                 fontSize = 12.sp,
@@ -2343,22 +2393,22 @@ private fun TabletSideNavRail(
                     // 展开状态：偏好设置
                     Surface(
                         onClick = onOpenSettings,
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(8.dp),
                         color = OrbitTheme.colors.surfaceCard,
                         border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.15f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Settings,
                                 contentDescription = "Settings",
                                 tint = OrbitTheme.colors.primary,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(16.dp)
                             )
-                            Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = stringResource(R.string.settings),
                                 fontSize = 12.sp,
@@ -2367,37 +2417,37 @@ private fun TabletSideNavRail(
                         }
                     }
                 } else {
-                    // 折叠状态：紧凑居中图标按钮
+                    // 折叠状态：紧凑居中图标按钮(40dp)，与Tab项保持视觉对齐
                     Surface(
                         onClick = onScanMedia,
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(8.dp),
                         color = OrbitTheme.colors.surfaceCard,
                         border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.15f)),
-                        modifier = Modifier.size(44.dp)
+                        modifier = Modifier.size(40.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = Icons.Default.Sync,
                                 contentDescription = "Scan",
                                 tint = if (isScanning) OrbitTheme.colors.tertiary else OrbitTheme.colors.textSecondary,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
 
                     Surface(
                         onClick = onOpenSettings,
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape(8.dp),
                         color = OrbitTheme.colors.surfaceCard,
                         border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.15f)),
-                        modifier = Modifier.size(44.dp)
+                        modifier = Modifier.size(40.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = Icons.Default.Settings,
                                 contentDescription = "Settings",
                                 tint = OrbitTheme.colors.primary,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }

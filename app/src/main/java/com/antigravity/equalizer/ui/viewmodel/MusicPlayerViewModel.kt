@@ -34,7 +34,8 @@ enum class LibraryViewMode {
     LIST_LARGE_ART,   // 3. 带缩略图的大列表
     GRID_4_COL,       // 4. 4列精细网格
     GRID_3_COL,       // 5. 3列标准网格
-    GRID_2_COL        // 6. 2列大图网格
+    GRID_2_COL,       // 6. 2列大图网格
+    COVER_FLOW        // 7. Mac OS X 经典 3D 封面流与联动列表
 }
 
 data class LibraryUiState(
@@ -153,7 +154,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             LibraryViewMode.LIST_LARGE_ART -> LibraryViewMode.GRID_2_COL
             LibraryViewMode.GRID_2_COL -> LibraryViewMode.GRID_3_COL
             LibraryViewMode.GRID_3_COL -> LibraryViewMode.GRID_4_COL
-            LibraryViewMode.GRID_4_COL -> LibraryViewMode.LIST_NO_ART
+            LibraryViewMode.GRID_4_COL -> LibraryViewMode.COVER_FLOW
+            LibraryViewMode.COVER_FLOW -> LibraryViewMode.LIST_NO_ART
         }
         setViewMode(next)
     }

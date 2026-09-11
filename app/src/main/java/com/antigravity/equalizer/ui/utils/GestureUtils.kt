@@ -96,7 +96,7 @@ fun Modifier.pinchToZoomViewMode(
                             if (now - lastTriggerTime > 320L) {
                                 val activeMode = currentModeState
 
-                                // 双指张开（放大 / Zoom In）：列表 -> 网格大图 -> 网格 (灵敏阈值 1.10f)
+                                // 双指张开（放大 / Zoom In）：列表 -> 网格大图 -> 网格 -> Cover Flow (灵敏阈值 1.10f)
                                 if (accumulatedZoom > 1.10f) {
                                     val nextMode = when (activeMode) {
                                         LibraryViewMode.LIST_NO_ART -> LibraryViewMode.LIST_SMALL_ART
@@ -104,7 +104,8 @@ fun Modifier.pinchToZoomViewMode(
                                         LibraryViewMode.LIST_LARGE_ART -> LibraryViewMode.GRID_2_COL
                                         LibraryViewMode.GRID_2_COL -> LibraryViewMode.GRID_3_COL
                                         LibraryViewMode.GRID_3_COL -> LibraryViewMode.GRID_4_COL
-                                        LibraryViewMode.GRID_4_COL -> LibraryViewMode.GRID_4_COL
+                                        LibraryViewMode.GRID_4_COL -> LibraryViewMode.COVER_FLOW
+                                        LibraryViewMode.COVER_FLOW -> LibraryViewMode.COVER_FLOW
                                     }
                                     if (nextMode != activeMode) {
                                         pinchState.lastTriggeredDirection = true
@@ -114,9 +115,10 @@ fun Modifier.pinchToZoomViewMode(
                                         onModeChangeState(nextMode)
                                     }
                                 }
-                                // 双指捏合（缩小 / Zoom Out）：多列网格 -> 大图列表 -> 小图列表 -> 无图列表 (灵敏阈值 0.90f)
+                                // 双指捏合（缩小 / Zoom Out）：Cover Flow -> 多列网格 -> 大图列表 -> 小图列表 -> 无图列表 (灵敏阈值 0.90f)
                                 else if (accumulatedZoom < 0.90f) {
                                     val prevMode = when (activeMode) {
+                                        LibraryViewMode.COVER_FLOW -> LibraryViewMode.GRID_4_COL
                                         LibraryViewMode.GRID_4_COL -> LibraryViewMode.GRID_3_COL
                                         LibraryViewMode.GRID_3_COL -> LibraryViewMode.GRID_2_COL
                                         LibraryViewMode.GRID_2_COL -> LibraryViewMode.LIST_LARGE_ART
