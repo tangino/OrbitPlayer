@@ -80,6 +80,51 @@ fun PowerampSpectrumVisualizer(
         return
     }
 
+    if (style == VisualizerStyle.OCTGRAMS) {
+        OctgramsVisualizer(
+            magnitudes = magnitudes,
+            isPlaying = isPlaying,
+            colorScheme = colorScheme,
+            customColor = customColor,
+            customColor2 = customColor2,
+            backgroundLightColor = backgroundLightColor,
+            backgroundDarkColor = backgroundDarkColor,
+            modifier = modifier,
+            onClick = onClick
+        )
+        return
+    }
+
+    if (style == VisualizerStyle.SOUND_CITY) {
+        SoundCityVisualizer(
+            magnitudes = magnitudes,
+            isPlaying = isPlaying,
+            colorScheme = colorScheme,
+            customColor = customColor,
+            customColor2 = customColor2,
+            backgroundLightColor = backgroundLightColor,
+            backgroundDarkColor = backgroundDarkColor,
+            modifier = modifier,
+            onClick = onClick
+        )
+        return
+    }
+
+    if (style == VisualizerStyle.FRACTAL_GALAXY) {
+        FractalGalaxyVisualizer(
+            magnitudes = magnitudes,
+            isPlaying = isPlaying,
+            colorScheme = colorScheme,
+            customColor = customColor,
+            customColor2 = customColor2,
+            backgroundLightColor = backgroundLightColor,
+            backgroundDarkColor = backgroundDarkColor,
+            modifier = modifier,
+            onClick = onClick
+        )
+        return
+    }
+
     val themeColors = OrbitTheme.colors
     val (primaryColor, secondaryColor, peakColor) = when (colorScheme) {
         VisualizerColorScheme.FOLLOW_BACKGROUND -> {
@@ -477,7 +522,10 @@ fun PowerampSpectrumVisualizer(
                     }
                 }
 
-                VisualizerStyle.TIME_TUNNEL -> {}
+                VisualizerStyle.TIME_TUNNEL,
+                VisualizerStyle.OCTGRAMS,
+                VisualizerStyle.SOUND_CITY,
+                VisualizerStyle.FRACTAL_GALAXY -> {}
                 VisualizerStyle.OFF -> {}
             }
         }

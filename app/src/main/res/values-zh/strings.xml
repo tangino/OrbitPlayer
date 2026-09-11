@@ -226,6 +226,9 @@
     <string name="visualizer_style_aurora_mountain">平滑极光山脉曲线</string>
     <string name="visualizer_style_mirrored_bars">镜面对称律动频谱</string>
     <string name="visualizer_style_time_tunnel">3D 时空虫洞隧道</string>
+    <string name="visualizer_style_octgrams">八芒星阵</string>
+    <string name="visualizer_style_sound_city">音乐都市</string>
+    <string name="visualizer_style_fractal_galaxy">分形星系</string>
     <string name="visualizer_style_off">关闭</string>
     <string name="visualizer_peak_decay_title">顶峰悬浮缓降 (Peak Hold)</string>
     <string name="visualizer_peak_decay_subtitle">峰值达到最高点时暂留并带有重力加速度坠落效果</string>

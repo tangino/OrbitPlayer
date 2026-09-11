@@ -344,6 +344,9 @@ fun NowPlayingScreen(
                                         VisualizerStyle.AURORA_MOUNTAIN -> stringResource(R.string.visualizer_style_aurora_mountain)
                                         VisualizerStyle.MIRRORED_BARS -> stringResource(R.string.visualizer_style_mirrored_bars)
                                         VisualizerStyle.TIME_TUNNEL -> stringResource(R.string.visualizer_style_time_tunnel)
+                                        VisualizerStyle.OCTGRAMS -> stringResource(R.string.visualizer_style_octgrams)
+                                        VisualizerStyle.SOUND_CITY -> stringResource(R.string.visualizer_style_sound_city)
+                                        VisualizerStyle.FRACTAL_GALAXY -> stringResource(R.string.visualizer_style_fractal_galaxy)
                                         VisualizerStyle.OFF -> stringResource(R.string.visualizer_style_off)
                                     }
                                     Text(
@@ -749,7 +752,10 @@ fun NowPlayingScreen(
                 enter = expandVertically(tween(250)) + fadeIn(tween(200)),
                 exit = shrinkVertically(tween(200)) + fadeOut(tween(150))
             ) {
-                val barStyle = if (equalizerUiState.visualizerStyle == VisualizerStyle.TIME_TUNNEL) {
+                val barStyle = if (equalizerUiState.visualizerStyle == VisualizerStyle.TIME_TUNNEL ||
+                    equalizerUiState.visualizerStyle == VisualizerStyle.OCTGRAMS ||
+                    equalizerUiState.visualizerStyle == VisualizerStyle.SOUND_CITY ||
+                    equalizerUiState.visualizerStyle == VisualizerStyle.FRACTAL_GALAXY) {
                     VisualizerStyle.AURORA_MOUNTAIN
                 } else {
                     equalizerUiState.visualizerStyle
@@ -2409,7 +2415,10 @@ private fun MaximizedVisualizerOverlay(
             modifier = Modifier
                 .fillMaxSize()
                 .then(
-                    if (currentStyle == VisualizerStyle.TIME_TUNNEL) {
+                    if (currentStyle == VisualizerStyle.TIME_TUNNEL ||
+                        currentStyle == VisualizerStyle.OCTGRAMS ||
+                        currentStyle == VisualizerStyle.SOUND_CITY ||
+                        currentStyle == VisualizerStyle.FRACTAL_GALAXY) {
                         Modifier
                     } else {
                         Modifier.padding(

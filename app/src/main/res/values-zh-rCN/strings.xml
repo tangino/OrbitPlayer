@@ -211,4 +211,7 @@
     <string name="cover_flow_inertia_disabled_toast">已关闭封面滑动惯性</string>
     <string name="cover_flow_options_title">Cover Flow 选项</string>
     <string name="visualizer_style_time_tunnel">3D 时空虫洞隧道</string>
+    <string name="visualizer_style_octgrams">八芒星阵</string>
+    <string name="visualizer_style_sound_city">音乐都市</string>
+    <string name="visualizer_style_fractal_galaxy">分形星系</string>
 </resources>

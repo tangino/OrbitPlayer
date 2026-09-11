@@ -27,6 +27,18 @@ enum class VisualizerStyle(
         id = "time_tunnel",
         titleRes = R.string.visualizer_style_time_tunnel
     ),
+    OCTGRAMS(
+        id = "octgrams",
+        titleRes = R.string.visualizer_style_octgrams
+    ),
+    SOUND_CITY(
+        id = "sound_city",
+        titleRes = R.string.visualizer_style_sound_city
+    ),
+    FRACTAL_GALAXY(
+        id = "fractal_galaxy",
+        titleRes = R.string.visualizer_style_fractal_galaxy
+    ),
     OFF(
         id = "off",
         titleRes = R.string.visualizer_style_off
