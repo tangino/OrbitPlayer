@@ -41,6 +41,7 @@ enum class LibraryViewMode {
 data class LibraryUiState(
     val currentTab: LibraryTab = LibraryTab.SONGS,
     val viewMode: LibraryViewMode = LibraryViewMode.LIST_SMALL_ART,
+    val isCoverFlowInertiaEnabled: Boolean = true,
     val searchQuery: String = "",
     val isSearching: Boolean = false,
     val selectedFolder: FolderItem? = null,
@@ -100,6 +101,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private fun restoreLibraryUiState() {
         val tabName = prefs.getString(KEY_TAB, LibraryTab.SONGS.name) ?: LibraryTab.SONGS.name
         val viewModeName = prefs.getString(KEY_VIEW_MODE, LibraryViewMode.LIST_SMALL_ART.name) ?: LibraryViewMode.LIST_SMALL_ART.name
+        val inertiaEnabled = prefs.getBoolean(KEY_COVER_FLOW_INERTIA, true)
 
         val restoredTab = try {
             LibraryTab.valueOf(tabName)
@@ -116,7 +118,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _libraryUiState.update {
             it.copy(
                 currentTab = restoredTab,
-                viewMode = restoredViewMode
+                viewMode = restoredViewMode,
+                isCoverFlowInertiaEnabled = inertiaEnabled
             )
         }
     }
@@ -126,7 +129,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         prefs.edit()
             .putString(KEY_TAB, s.currentTab.name)
             .putString(KEY_VIEW_MODE, s.viewMode.name)
+            .putBoolean(KEY_COVER_FLOW_INERTIA, s.isCoverFlowInertiaEnabled)
             .apply()
+    }
+
+    fun setCoverFlowInertiaEnabled(enabled: Boolean) {
+        _libraryUiState.update {
+            it.copy(isCoverFlowInertiaEnabled = enabled)
+        }
+        prefs.edit().putBoolean(KEY_COVER_FLOW_INERTIA, enabled).apply()
     }
 
     fun setTab(tab: LibraryTab) {
@@ -309,5 +320,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         private const val PREFS_NAME = "music_library_ui_prefs"
         private const val KEY_TAB = "key_library_tab"
         private const val KEY_VIEW_MODE = "key_library_view_mode"
+        const val KEY_COVER_FLOW_INERTIA = "key_cover_flow_inertia"
     }
 }

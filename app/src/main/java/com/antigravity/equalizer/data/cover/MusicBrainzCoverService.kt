@@ -34,7 +34,7 @@ object MusicBrainzCoverService {
     private const val CAA_BASE_URL = "https://coverartarchive.org/"
     
     // 严格按照官方文档规范: Application name/<version> ( contact-url / contact-email )
-    private const val USER_AGENT = "OrBitPlayer/0.1.3 ( contact@orbitplayer.dev )"
+    private const val USER_AGENT = "OrBitPlayer/0.1.4 ( contact@orbitplayer.dev )"
 
     // MusicBrainz 官方强制速率限制：平均每秒不超过 1 次请求，设为 1100ms 保证安全合规
     private const val MB_RATE_LIMIT_MS = 1100L

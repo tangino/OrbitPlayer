@@ -2,8 +2,13 @@ package com.antigravity.equalizer.ui.components
 
 import android.content.res.Configuration
 import androidx.compose.animation.*
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.exponentialDecay
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -18,18 +23,24 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.PagerSnapDistance
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -38,12 +49,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
@@ -86,7 +101,10 @@ fun CoverFlowLayout(
     onFavoriteClick: (Song) -> Unit,
     onLongClick: (Song) -> Unit,
     modifier: Modifier = Modifier,
-    bottomPadding: Dp = 98.dp
+    bottomPadding: Dp = 98.dp,
+    isInertiaEnabled: Boolean? = null,
+    onToggleInertia: ((Boolean) -> Unit)? = null,
+    locateTrigger: Long = 0L
 ) {
     if (songs.isEmpty()) {
         Box(
@@ -124,6 +142,64 @@ fun CoverFlowLayout(
     // 记录是否是列表主动触发滑动，避免双向联动死循环
     var isUserDraggingList by remember { mutableStateOf(false) }
 
+    // 持久化存储并读取 Cover Flow 滑动惯性配置
+    val prefs = remember(context) {
+        context.getSharedPreferences("music_library_ui_prefs", Context.MODE_PRIVATE)
+    }
+    var localInertiaEnabled by rememberSaveable {
+        mutableStateOf(prefs.getBoolean("key_cover_flow_inertia", true))
+    }
+    val effectiveInertia = isInertiaEnabled ?: localInertiaEnabled
+
+    val toggleInertia: (Boolean) -> Unit = { enabled ->
+        localInertiaEnabled = enabled
+        prefs.edit().putBoolean("key_cover_flow_inertia", enabled).apply()
+        onToggleInertia?.invoke(enabled)
+        Toast.makeText(
+            context,
+            if (enabled) context.getString(R.string.cover_flow_inertia_enabled_toast)
+            else context.getString(R.string.cover_flow_inertia_disabled_toast),
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    // 封面长按选项菜单开关状态
+    var showCoverOptions by remember { mutableStateOf(false) }
+
+    // 针对 Cover Flow 专门调优的高动量超低摩擦衰减曲线与丝滑微弹簧吸附（行云流水般的机械飞轮质感）
+    val smoothDecay = exponentialDecay<Float>(
+        frictionMultiplier = 0.32f, // 黄金阻尼，兼具长距滑行与顺滑跟手
+        absVelocityThreshold = 0.08f
+    )
+    val smoothSnap = spring<Float>(
+        dampingRatio = 0.88f,
+        stiffness = 320f // 响应灵敏、吸附自然的顺滑微弹簧，消除迟滞顿挫感
+    )
+    val defaultDecay = rememberSplineBasedDecay<Float>()
+    val defaultSnap = spring<Float>(
+        dampingRatio = 0.86f,
+        stiffness = Spring.StiffnessMediumLow
+    )
+
+    // 根据惯性开关状态配置 FlingBehavior (开启时允许滑行多页物理阻尼，关闭时单页精准吸附)
+    val flingBehavior = if (effectiveInertia) {
+        PagerDefaults.flingBehavior(
+            pagerState,
+            PagerSnapDistance.atMost(40),
+            smoothSnap,
+            smoothDecay,
+            smoothSnap
+        )
+    } else {
+        PagerDefaults.flingBehavior(
+            pagerState,
+            PagerSnapDistance.atMost(1),
+            defaultSnap,
+            defaultDecay,
+            defaultSnap
+        )
+    }
+
     // Cover Flow 翻页停稳时，下方列表同步平滑滚动至该项并使其可见（避免拖拽过程中频繁触发导致主线程掉帧卡顿）
     LaunchedEffect(pagerState.settledPage) {
         if (!isUserDraggingList && !pagerState.isScrollInProgress && !listState.isScrollInProgress) {
@@ -132,12 +208,18 @@ fun CoverFlowLayout(
         }
     }
 
-    // 响应外部播放歌曲变更时，自动驱动 Cover Flow 居中
-    LaunchedEffect(currentPlayingSongId) {
+    // 响应外部播放歌曲变更或手动定位按钮触发时，自动驱动 Cover Flow 居中
+    LaunchedEffect(currentPlayingSongId, locateTrigger) {
         if (currentPlayingSongId != null) {
             val targetIdx = songs.indexOfFirst { it.id == currentPlayingSongId }
-            if (targetIdx >= 0 && targetIdx != pagerState.currentPage) {
-                pagerState.animateScrollToPage(targetIdx)
+            if (targetIdx >= 0) {
+                if (pagerState.currentPage != targetIdx) {
+                    pagerState.animateScrollToPage(targetIdx)
+                }
+                if (locateTrigger > 0L) {
+                    val targetScroll = (targetIdx - 1).coerceAtLeast(0)
+                    listState.animateScrollToItem(targetScroll)
+                }
             }
         }
     }
@@ -147,35 +229,72 @@ fun CoverFlowLayout(
     // 用户可自由开关 Cover Flow 下方的联动列表
     var isListVisible by rememberSaveable { mutableStateOf(true) }
 
-    Column(
+    // 监听列表滚动到顶时的过度向下滑动手势以收起列表
+    val nestedScrollConnection = remember(listState) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                // 当列表处于顶部且继续向下拉动（available.y > 40f）时，收起列表
+                if (available.y > 40f && listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0) {
+                    if (isListVisible) {
+                        isListVisible = false
+                    }
+                }
+                return Offset.Zero
+            }
+        }
+    }
+
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(OrbitTheme.colors.background)
     ) {
-        // ==================== 上半部：3D Cover Flow 舞台 ====================
+        val totalHeight = maxHeight
+        val totalWidth = maxWidth
         val baseStageHeight = if (isLandscape) 316.dp else 350.dp
+        val listHeight = (totalHeight - baseStageHeight).coerceAtLeast(0.dp)
+
+        val stageHeight: Dp by animateDpAsState(
+            targetValue = if (isListVisible) baseStageHeight else totalHeight,
+            animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+            label = "StageHeight"
+        )
+
+        // ==================== 上半部：3D Cover Flow 舞台 ====================
         val cardSize: Dp by animateDpAsState(
             targetValue = when {
                 !isListVisible -> if (isLandscape) 235.dp else 210.dp
                 isLandscape -> 170.dp
                 else -> 155.dp
             },
-            animationSpec = tween(280),
+            animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
             label = "CardSize"
         )
         // 倒影高度严格设置为封面的 2/3
         val reflectionHeight = cardSize * (2f / 3f)
 
+        val stageTopPadding: Dp by animateDpAsState(
+            targetValue = if (isListVisible) {
+                if (isLandscape) 16.dp else 24.dp
+            } else {
+                if (isLandscape) 36.dp else 28.dp
+            },
+            animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+            label = "StageTopPadding"
+        )
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .then(
-                    if (isListVisible) {
-                        Modifier.height(baseStageHeight)
-                    } else {
-                        Modifier.weight(1f)
-                    }
-                )
+                .height(stageHeight)
                 .background(
                     Brush.verticalGradient(
                         colorStops = arrayOf(
@@ -207,35 +326,33 @@ fun CoverFlowLayout(
                 },
             contentAlignment = Alignment.TopCenter
         ) {
-            BoxWithConstraints(
-                modifier = Modifier.fillMaxSize()
+            val containerWidth = totalWidth
+            val density = LocalDensity.current
+            // 核心关键：必须使用与 Pager 内部 PageSize.Fixed 绝对一致的 roundToPx() 整数像素，杜绝亚像素舍入累乘导致的远端卡片剧烈抖动
+            val cardWidthPx = with(density) { cardSize.roundToPx().toFloat() }
+            val containerWidthPx = with(density) { containerWidth.roundToPx().toFloat() }
+
+            // 核心突破：将 Pager 测量视口向两侧大幅扩容各 1400dp（总宽扩展 2800dp），
+            // 使得两侧各 8~10 张封面均 100% 处于 Pager 原生 Viewport（活跃视口）范围内，
+            // 彻底为两侧密集多封面展示提供强力底层渲染保障，绝不触发跳帧优化
+            val extraViewportWidth = 2800.dp
+            val extraViewportWidthPx = with(density) { extraViewportWidth.roundToPx().toFloat() }
+            val expandedWidthPx = containerWidthPx + extraViewportWidthPx
+            val horizontalContentPadding = with(density) {
+                (((expandedWidthPx - cardWidthPx) / 2f).toInt()).toDp().coerceAtLeast(0.dp)
+            }
+
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(
+                        top = stageTopPadding,
+                        bottom = if (!isListVisible) bottomPadding.coerceAtMost(60.dp) else 0.dp
+                    ),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = if (!isListVisible) Arrangement.Center else Arrangement.Top
             ) {
-                val containerWidth = maxWidth
-                val density = LocalDensity.current
-                // 核心关键：必须使用与 Pager 内部 PageSize.Fixed 绝对一致的 roundToPx() 整数像素，杜绝亚像素舍入累乘导致的远端卡片剧烈抖动
-                val cardWidthPx = with(density) { cardSize.roundToPx().toFloat() }
-                val containerWidthPx = with(density) { containerWidth.roundToPx().toFloat() }
-
-                // 核心突破：将 Pager 测量视口向两侧大幅扩容各 1400dp（总宽扩展 2800dp），
-                // 使得两侧各 8~10 张封面均 100% 处于 Pager 原生 Viewport（活跃视口）范围内，
-                // 彻底为两侧密集多封面展示提供强力底层渲染保障，绝不触发跳帧优化
-                val extraViewportWidth = 2800.dp
-                val extraViewportWidthPx = with(density) { extraViewportWidth.roundToPx().toFloat() }
-                val expandedWidthPx = containerWidthPx + extraViewportWidthPx
-                val horizontalContentPadding = with(density) {
-                    (((expandedWidthPx - cardWidthPx) / 2f).toInt()).toDp().coerceAtLeast(0.dp)
-                }
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(
-                            top = if (isListVisible) (if (isLandscape) 16.dp else 24.dp) else (if (isLandscape) 36.dp else 28.dp),
-                            bottom = if (!isListVisible) bottomPadding.coerceAtMost(60.dp) else 0.dp
-                        ),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = if (!isListVisible) Arrangement.Center else Arrangement.Top
-                ) {
                     // 3D 封面水平滚动栏（限制触摸与绘制于可用内容宽度内，杜绝向外溢出阻挡侧边栏）
                     Box(
                         modifier = Modifier
@@ -251,7 +368,8 @@ fun CoverFlowLayout(
                             pageSize = PageSize.Fixed(cardSize), // 严格锁定槽位尺寸，杜绝跨分辨率浮点舍入导致的远端位移抖动
                             contentPadding = PaddingValues(horizontal = horizontalContentPadding),
                             pageSpacing = 0.dp,
-                            beyondBoundsPageCount = 14, // 预加载两侧至 14 张卡片，完美覆盖大视口多封面展示
+                            beyondBoundsPageCount = 9, // 预加载两侧至 9 张卡片，完美覆盖 8.2 张可视消隐边界，大幅减轻高速惯性滑行负担
+                            flingBehavior = flingBehavior,
                             modifier = Modifier
                                 .fillMaxHeight()
                                 .layout { measurable, constraints ->
@@ -288,19 +406,168 @@ fun CoverFlowLayout(
                                         isLandscape = isLandscape,
                                         cameraDistancePx = cameraDistancePx
                                     )
-                                    .clickable(
+                                    .combinedClickable(
                                         interactionSource = remember { MutableInteractionSource() },
-                                        indication = null
-                                    ) {
-                                        if (pagerState.currentPage == page) {
-                                            onSongClick(song, page)
-                                        } else {
-                                            coroutineScope.launch {
-                                                pagerState.animateScrollToPage(page)
+                                        indication = null,
+                                        onClick = {
+                                            if (pagerState.currentPage == page) {
+                                                onSongClick(song, page)
+                                            } else {
+                                                coroutineScope.launch {
+                                                    pagerState.animateScrollToPage(
+                                                        page = page,
+                                                        animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        onLongClick = {
+                                            if (pagerState.currentPage == page) {
+                                                showCoverOptions = true
+                                            } else {
+                                                coroutineScope.launch {
+                                                    pagerState.animateScrollToPage(
+                                                        page = page,
+                                                        animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
+                                                    )
+                                                }
                                             }
                                         }
-                                    }
+                                    )
                             ) {
+                                // 居中封面挂载长按选项菜单
+                                if (isCurrentPage) {
+                                    DropdownMenu(
+                                        expanded = showCoverOptions,
+                                        onDismissRequest = { showCoverOptions = false },
+                                        modifier = Modifier
+                                            .background(OrbitTheme.colors.surfaceCard)
+                                            .border(0.5.dp, OrbitTheme.colors.primary.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+                                    ) {
+                                        // 选项菜单标题
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    text = stringResource(R.string.cover_flow_options_title),
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = OrbitTheme.colors.primary
+                                                )
+                                            },
+                                            onClick = {},
+                                            enabled = false
+                                        )
+
+                                        // 1. 封面滑动惯性选项
+                                        DropdownMenuItem(
+                                            text = {
+                                                Column {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = stringResource(R.string.cover_flow_inertia_title),
+                                                            fontSize = 13.sp,
+                                                            color = OrbitTheme.colors.textPrimary
+                                                        )
+                                                        if (effectiveInertia) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Check,
+                                                                contentDescription = null,
+                                                                tint = OrbitTheme.colors.primary,
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                    Text(
+                                                        text = if (effectiveInertia) "已开启 (多页惯性滑动)" else "已关闭 (单页精确吸附)",
+                                                        fontSize = 10.sp,
+                                                        color = OrbitTheme.colors.textSecondary
+                                                    )
+                                                }
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = Icons.Default.Speed,
+                                                    contentDescription = null,
+                                                    tint = if (effectiveInertia) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            },
+                                            onClick = {
+                                                toggleInertia(!effectiveInertia)
+                                                showCoverOptions = false
+                                            }
+                                        )
+
+                                        HorizontalDivider(
+                                            thickness = 0.5.dp,
+                                            color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.8f)
+                                        )
+
+                                        // 2. 播放/暂停
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    text = if (isPlayingThis && isPlaying) "暂停播放" else "开始播放",
+                                                    fontSize = 13.sp,
+                                                    color = OrbitTheme.colors.textPrimary
+                                                )
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = if (isPlayingThis && isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                                    contentDescription = null,
+                                                    tint = OrbitTheme.colors.primary,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            },
+                                            onClick = {
+                                                onSongClick(song, page)
+                                                showCoverOptions = false
+                                            }
+                                        )
+
+                                        // 3. 收藏/取消收藏
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    text = if (song.isFavorite) "取消收藏" else "收藏歌曲",
+                                                    fontSize = 13.sp,
+                                                    color = OrbitTheme.colors.textPrimary
+                                                )
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    imageVector = if (song.isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                                    contentDescription = null,
+                                                    tint = if (song.isFavorite) Color(0xFFFF3366) else OrbitTheme.colors.textSecondary,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            },
+                                            onClick = {
+                                                onFavoriteClick(song)
+                                                showCoverOptions = false
+                                            }
+                                        )
+
+                                        // 4. 更多歌曲选项 (调用原本传入的 onLongClick)
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    text = "更多操作与详情...",
+                                                    fontSize = 13.sp,
+                                                    color = OrbitTheme.colors.textSecondary
+                                                )
+                                            },
+                                            onClick = {
+                                                showCoverOptions = false
+                                                onLongClick(song)
+                                            }
+                                        )
+                                    }
+                                }
                                 Column(modifier = Modifier.fillMaxSize()) {
                                     // 1. 主体封面 (移除底部阴影，保证底边缘与倒影顶边缘零距离贴合)
                                     val artUri = song.albumArtUri ?: AudioCoverProvider.buildSongCoverUri(song.id, song.path, song.album)
@@ -488,18 +755,27 @@ fun CoverFlowLayout(
                 }
             }
 
-        }
-
-        // 下半部：协同联动歌曲列表（支持用户手势展开与收起）
+        // 下半部：协同联动歌曲列表（支持用户手势向上滑入展开与向下滑出收起）
         AnimatedVisibility(
             visible = isListVisible,
-            enter = expandVertically(animationSpec = tween(260)) + fadeIn(animationSpec = tween(200)),
-            exit = shrinkVertically(animationSpec = tween(220)) + fadeOut(animationSpec = tween(160)),
+            enter = slideInVertically(
+                initialOffsetY = { fullHeight -> fullHeight },
+                animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)
+            ) + fadeIn(animationSpec = tween(durationMillis = 260)),
+            exit = slideOutVertically(
+                targetOffsetY = { fullHeight -> fullHeight },
+                animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
+            ) + fadeOut(animationSpec = tween(durationMillis = 200)),
             modifier = Modifier
+                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .then(if (isListVisible) Modifier.weight(1f) else Modifier)
+                .height(listHeight)
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(OrbitTheme.colors.background)
+            ) {
                 // 顶部收起拖拽条指示器（支持点击或向下滑动收起列表）
                 Box(
                     modifier = Modifier
@@ -560,6 +836,7 @@ fun CoverFlowLayout(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier
                             .fillMaxSize()
+                            .nestedScroll(nestedScrollConnection)
                             .pointerInput(Unit) {
                                 // 监听用户在列表上的触碰拖动，以防覆盖 Cover Flow
                                 awaitPointerEventScope {

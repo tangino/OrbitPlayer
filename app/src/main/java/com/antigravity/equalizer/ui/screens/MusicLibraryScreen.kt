@@ -235,6 +235,9 @@ fun MusicLibraryScreen(
         viewModel.toggleSearch()
     }
 
+    // Cover Flow 定位触发信号
+    var coverFlowLocateTrigger by remember { mutableStateOf(0L) }
+
     // 🎯 一键平滑滚动定位到当前播放歌曲
     fun locateCurrentPlayingSong() {
         val currentSongId = playbackState.currentSong?.id ?: return
@@ -246,6 +249,7 @@ fun MusicLibraryScreen(
             openedFolderPath = null
             openedAlbum = null
             openedArtist = null
+            coverFlowLocateTrigger = System.currentTimeMillis()
             coroutineScope.launch {
                 songsGridHolder.animateScrollToItem(targetIndex, libraryState.viewMode)
             }
@@ -594,7 +598,10 @@ fun MusicLibraryScreen(
                             onSongClick = { song, index -> handleSongItemClick(folderSongs, index) },
                             onFavoriteClick = { viewModel.cycleSongAttitude(it) },
                             onLongClick = { activeSongForLongClickMenu = it },
-                            bottomPadding = 98.dp
+                            bottomPadding = 98.dp,
+                            isInertiaEnabled = libraryState.isCoverFlowInertiaEnabled,
+                            onToggleInertia = { viewModel.setCoverFlowInertiaEnabled(it) },
+                            locateTrigger = coverFlowLocateTrigger
                         )
                     } else {
                         LazyVerticalGrid(
@@ -642,7 +649,10 @@ fun MusicLibraryScreen(
                             onSongClick = { song, index -> handleSongItemClick(albumSongs, index) },
                             onFavoriteClick = { viewModel.cycleSongAttitude(it) },
                             onLongClick = { activeSongForLongClickMenu = it },
-                            bottomPadding = 98.dp
+                            bottomPadding = 98.dp,
+                            isInertiaEnabled = libraryState.isCoverFlowInertiaEnabled,
+                            onToggleInertia = { viewModel.setCoverFlowInertiaEnabled(it) },
+                            locateTrigger = coverFlowLocateTrigger
                         )
                     } else {
                         LazyVerticalGrid(
@@ -690,7 +700,10 @@ fun MusicLibraryScreen(
                             onSongClick = { song, index -> handleSongItemClick(artistSongs, index) },
                             onFavoriteClick = { viewModel.cycleSongAttitude(it) },
                             onLongClick = { activeSongForLongClickMenu = it },
-                            bottomPadding = 98.dp
+                            bottomPadding = 98.dp,
+                            isInertiaEnabled = libraryState.isCoverFlowInertiaEnabled,
+                            onToggleInertia = { viewModel.setCoverFlowInertiaEnabled(it) },
+                            locateTrigger = coverFlowLocateTrigger
                         )
                     } else {
                         LazyVerticalGrid(
@@ -736,7 +749,10 @@ fun MusicLibraryScreen(
                                     onSongClick = { song, index -> handleSongItemClick(filteredSongs, index) },
                                     onFavoriteClick = { viewModel.cycleSongAttitude(it) },
                                     onLongClick = { activeSongForLongClickMenu = it },
-                                    bottomPadding = 98.dp
+                                    bottomPadding = 98.dp,
+                                    isInertiaEnabled = libraryState.isCoverFlowInertiaEnabled,
+                                    onToggleInertia = { viewModel.setCoverFlowInertiaEnabled(it) },
+                                    locateTrigger = coverFlowLocateTrigger
                                 )
                             } else {
                                 LazyVerticalGrid(

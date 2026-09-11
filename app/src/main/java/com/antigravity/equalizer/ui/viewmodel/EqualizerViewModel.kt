@@ -740,12 +740,20 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setCustomBackgroundFromUri(uri: Uri, context: Context): Boolean {
         return try {
-            val destFile = File(context.filesDir, "custom_app_background.jpg")
+            val oldPath = _uiState.value.customBackgroundPath
+            val newFileName = "custom_app_background_${System.currentTimeMillis()}.jpg"
+            val destFile = File(context.filesDir, newFileName)
             context.contentResolver.openInputStream(uri)?.use { input ->
                 FileOutputStream(destFile).use { output ->
                     input.copyTo(output)
                 }
             }
+            // 新背景保存成功后，安全删除上一张背景文件，释放存储并杜绝旧缓存
+            if (oldPath != null && oldPath != destFile.absolutePath) {
+                try { File(oldPath).delete() } catch (_: Exception) {}
+            }
+            try { File(context.filesDir, "custom_app_background.jpg").delete() } catch (_: Exception) {}
+
             val absPath = destFile.absolutePath
             _uiState.update { it.copy(customBackgroundPath = absPath) }
             prefs.edit().putString(KEY_CUSTOM_BG_PATH, absPath).apply()
@@ -759,9 +767,14 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun clearCustomBackground(context: Context) {
         try {
-            val destFile = File(context.filesDir, "custom_app_background.jpg")
-            if (destFile.exists()) {
-                destFile.delete()
+            val oldPath = _uiState.value.customBackgroundPath
+            if (oldPath != null) {
+                val f = File(oldPath)
+                if (f.exists()) f.delete()
+            }
+            val legacyFile = File(context.filesDir, "custom_app_background.jpg")
+            if (legacyFile.exists()) {
+                legacyFile.delete()
             }
         } catch (e: Exception) {
             e.printStackTrace()

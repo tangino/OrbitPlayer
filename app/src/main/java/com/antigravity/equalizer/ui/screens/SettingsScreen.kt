@@ -36,8 +36,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.antigravity.equalizer.R
 import com.antigravity.equalizer.audio.ShuffleStrategy
-import com.antigravity.equalizer.data.repository.AppProfile
-import com.antigravity.equalizer.data.repository.AppProfileRepository
 import com.antigravity.equalizer.ui.theme.*
 import com.antigravity.equalizer.ui.viewmodel.EqualizerViewModel
 import com.antigravity.equalizer.ui.viewmodel.MusicPlayerViewModel
@@ -54,7 +52,6 @@ fun SettingsScreen(
     val context = LocalContext.current
     var showImportDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
-    var showAppProfileDialog by remember { mutableStateOf(false) }
     var showColorPickerDialog by remember { mutableStateOf(false) }
     var editingColorIndex by remember { mutableIntStateOf(1) }
     var importText by remember { mutableStateOf("") }
@@ -67,8 +64,6 @@ fun SettingsScreen(
     val includedFolders by musicViewModel?.includedFolders?.collectAsState() ?: remember { mutableStateOf(emptySet()) }
     val excludedFolders by musicViewModel?.excludedFolders?.collectAsState() ?: remember { mutableStateOf(emptySet()) }
     val isScanning by musicViewModel?.isScanning?.collectAsState() ?: remember { mutableStateOf(false) }
-
-    val appProfiles by AppProfileRepository.instance.appProfiles.collectAsState()
 
     val backgroundPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -980,32 +975,6 @@ fun SettingsScreen(
                             viewModel.setSampleRate(rate)
                         }
                     )
-
-                    HorizontalDivider(color = GridLineColor)
-
-                    // 频段数量
-                    SettingsDropdownItem(
-                        icon = Icons.Default.Tune,
-                        title = stringResource(R.string.num_bands_title),
-                        subtitle = stringResource(R.string.num_bands_subtitle),
-                        currentValue = "${uiState.numBands} ${stringResource(R.string.bands)}",
-                        options = listOf("10 ${stringResource(R.string.bands)}", "15 ${stringResource(R.string.bands)}", "20 ${stringResource(R.string.bands)}"),
-                        onOptionSelected = {
-                            val bands = it.split(" ").firstOrNull()?.toIntOrNull() ?: 10
-                            viewModel.setNumBands(bands)
-                        }
-                    )
-
-                    HorizontalDivider(color = GridLineColor)
-
-                    // 自动增益
-                    SettingsSwitchItem(
-                        icon = Icons.Default.AutoMode,
-                        title = stringResource(R.string.auto_gain_title),
-                        subtitle = stringResource(R.string.auto_gain_subtitle),
-                        checked = uiState.autoGainEnabled,
-                        onCheckedChange = { viewModel.toggleAutoGain(it) }
-                    )
                 }
             }
 
@@ -1015,6 +984,46 @@ fun SettingsScreen(
                 item {
                     SettingsSectionHeader(stringResource(R.string.scan_settings_title))
                     SettingsCard {
+                        // 0. Cover Flow 封面滑动惯性设置
+                        val libraryUiState by musicViewModel.libraryUiState.collectAsState()
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    musicViewModel.setCoverFlowInertiaEnabled(!libraryUiState.isCoverFlowInertiaEnabled)
+                                }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                                Text(
+                                    text = stringResource(R.string.cover_flow_inertia_title),
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 14.sp,
+                                    color = OrbitTheme.colors.textPrimary
+                                )
+                                Text(
+                                    text = stringResource(R.string.cover_flow_inertia_desc),
+                                    fontSize = 11.sp,
+                                    color = OrbitTheme.colors.textSecondary
+                                )
+                            }
+                            Switch(
+                                checked = libraryUiState.isCoverFlowInertiaEnabled,
+                                onCheckedChange = { musicViewModel.setCoverFlowInertiaEnabled(it) },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = OrbitTheme.colors.primary,
+                                    checkedTrackColor = OrbitTheme.colors.primary.copy(alpha = 0.35f)
+                                )
+                            )
+                        }
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.5f)
+                        )
+
                         // 1. 扫描特定文件夹 (白名单)
                         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
                             Row(
@@ -1260,38 +1269,7 @@ fun SettingsScreen(
                 }
             }
 
-            // 3. 设备与应用专属独立配置
-            item {
-                SettingsSectionHeader(stringResource(R.string.section_per_app_device))
-                SettingsCard {
-                    SettingsActionItem(
-                        icon = Icons.Default.Apps,
-                        title = stringResource(R.string.per_app_eq_title),
-                        subtitle = stringResource(R.string.per_app_eq_subtitle),
-                        onClick = { showAppProfileDialog = true }
-                    )
-
-                    HorizontalDivider(color = GridLineColor)
-
-                    SettingsSwitchItem(
-                        icon = Icons.Default.Bluetooth,
-                        title = stringResource(R.string.auto_device_preset_title),
-                        subtitle = stringResource(R.string.auto_device_preset_subtitle),
-                        checked = uiState.autoDeviceProfileEnabled,
-                        onCheckedChange = { viewModel.toggleAutoDeviceProfile(it) }
-                    )
-
-                    HorizontalDivider(color = OrbitTheme.colors.gridLine)
-
-                    SettingsInfoItem(
-                        icon = Icons.Default.Headphones,
-                        title = stringResource(R.string.current_audio_device),
-                        value = uiState.activeDeviceName
-                    )
-                }
-            }
-
-            // 4. 关于与引擎状态
+            // 3. 关于与引擎状态
             item {
                 SettingsSectionHeader(stringResource(R.string.section_system_diagnostics))
                 SettingsCard {
@@ -1323,75 +1301,6 @@ fun SettingsScreen(
         }
     }
 }
-
-    // Per-App EQ 管理弹窗
-    if (showAppProfileDialog) {
-        AlertDialog(
-            onDismissRequest = { showAppProfileDialog = false },
-            title = { Text(stringResource(R.string.per_app_dialog_title), color = OrbitTheme.colors.textPrimary, fontWeight = FontWeight.Bold) },
-            text = {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth().height(260.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(appProfiles.values.toList()) { profile ->
-                        var expanded by remember { mutableStateOf(false) }
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(OrbitTheme.colors.surface)
-                                .padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(profile.appName, fontWeight = FontWeight.Bold, color = OrbitTheme.colors.textPrimary, fontSize = 13.sp)
-                                Text(profile.packageName, color = OrbitTheme.colors.textSecondary, fontSize = 10.sp)
-                            }
-                            Box {
-                                Text(
-                                    text = profile.presetId.uppercase(),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    color = OrbitTheme.colors.primary,
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(OrbitTheme.colors.surfaceCard)
-                                        .clickable { expanded = true }
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                                DropdownMenu(
-                                    expanded = expanded,
-                                    onDismissRequest = { expanded = false },
-                                    modifier = Modifier.background(OrbitTheme.colors.surfaceDialog)
-                                ) {
-                                    uiState.presets.forEach { preset ->
-                                        DropdownMenuItem(
-                                            text = { Text(preset.name, color = OrbitTheme.colors.textPrimary) },
-                                            onClick = {
-                                                AppProfileRepository.instance.saveAppProfile(profile.copy(presetId = preset.id))
-                                                expanded = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = { showAppProfileDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary)
-                ) {
-                    Text(stringResource(R.string.done), color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White)
-                }
-            },
-            containerColor = OrbitTheme.colors.surfaceDialog
-        )
-    }
 
     // 导入弹窗
     if (showImportDialog) {
