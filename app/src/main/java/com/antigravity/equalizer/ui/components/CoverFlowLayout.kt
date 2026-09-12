@@ -208,6 +208,18 @@ fun CoverFlowLayout(
         }
     }
 
+    // 监听歌曲列表数据源变更（如搜索过滤、快速删除或分类切换），防止当前页码超出新列表大小
+    LaunchedEffect(songs) {
+        if (songs.isNotEmpty()) {
+            val maxPage = songs.size - 1
+            if (pagerState.currentPage > maxPage) {
+                val playingIndex = songs.indexOfFirst { it.id == currentPlayingSongId }
+                val targetPage = if (playingIndex in 0..maxPage) playingIndex else 0
+                pagerState.scrollToPage(targetPage)
+            }
+        }
+    }
+
     // 响应外部播放歌曲变更或手动定位按钮触发时，自动驱动 Cover Flow 居中
     LaunchedEffect(currentPlayingSongId, locateTrigger) {
         if (currentPlayingSongId != null) {
@@ -384,7 +396,7 @@ fun CoverFlowLayout(
                                     }
                                 }
                         ) { page ->
-                            val song = songs[page]
+                            val song = songs.getOrNull(page) ?: return@HorizontalPager
                             val isCurrentPage = pagerState.currentPage == page
                             val isPlayingThis = currentPlayingSongId == song.id && isCurrentPage
 
@@ -988,8 +1000,17 @@ private fun Modifier.coverFlowPageTransform(
     isLandscape: Boolean,
     cameraDistancePx: Float
 ): Modifier = this.graphicsLayer {
-    // 采用官方标准 API 精准获取当前页面的连续滑动偏移（右侧为正，左侧为负），避免单独读取两个状态引发的时间差
-    val offset = -pagerState.getOffsetFractionForPage(page)
+    // 安全获取当前页面的连续滑动偏移，杜绝列表过滤缩小时因 page 越界导致的 IllegalArgumentException 闪退
+    val pageCount = pagerState.pageCount
+    val offset = try {
+        if (pageCount > 0 && page in 0 until pageCount) {
+            -pagerState.getOffsetFractionForPage(page)
+        } else {
+            -(pagerState.currentPage - page + pagerState.currentPageOffsetFraction)
+        }
+    } catch (e: Exception) {
+        -(pagerState.currentPage - page + pagerState.currentPageOffsetFraction)
+    }
     val absOffset = offset.absoluteValue
     val sign = if (offset >= 0f) 1f else -1f
 

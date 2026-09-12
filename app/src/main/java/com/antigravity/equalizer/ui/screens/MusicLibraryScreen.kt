@@ -1337,7 +1337,7 @@ fun MusicLibraryScreen(
                     .fillMaxHeight()
                     .clipToBounds()
             ) {
-                Column(modifier = Modifier.fillMaxSize()) {
+                Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
                     // 仅在下钻（文件夹/专辑/艺术家）时展示返回面包屑栏；未下钻时不展示任何TopBar且不保留空间
                     val isDrillDown = openedFolderPath != null || openedAlbum != null || openedArtist != null
                     if (isDrillDown) {
@@ -2177,9 +2177,11 @@ private fun TabletSideNavRail(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
                 .padding(
                     horizontal = if (isExpanded) 8.dp else 6.dp,
-                    vertical = 10.dp
+                    vertical = 8.dp
                 ),
             horizontalAlignment = if (isExpanded) Alignment.Start else Alignment.CenterHorizontally
         ) {
@@ -2211,27 +2213,12 @@ private fun TabletSideNavRail(
                                 )
                             }
                         }
-                        Column {
-                            Text(
-                                text = "OrBit Player",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = OrbitTheme.colors.textPrimary
-                            )
-                            Surface(
-                                shape = RoundedCornerShape(3.dp),
-                                color = OrbitTheme.colors.primary.copy(alpha = 0.2f),
-                                modifier = Modifier.padding(top = 1.dp)
-                            ) {
-                                Text(
-                                    text = "TABLET",
-                                    fontSize = 8.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = OrbitTheme.colors.primary,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                )
-                            }
-                        }
+                        Text(
+                            text = "OrBit Player",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = OrbitTheme.colors.textPrimary
+                        )
                     }
 
                     // 折叠按钮
