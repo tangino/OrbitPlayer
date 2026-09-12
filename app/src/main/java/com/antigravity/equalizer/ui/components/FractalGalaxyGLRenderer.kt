@@ -134,16 +134,45 @@ class FractalGalaxyGLRenderer : GLSurfaceView.Renderer {
         """.trimIndent()
 
         val fragmentShaderSource = """
+            #ifdef GL_FRAGMENT_PRECISION_HIGH
+            precision highp float;
+            #else
             precision mediump float;
+            #endif
+
             uniform vec2 uResolution;
             uniform float uTime;
             uniform vec4 uFreqs;
             uniform vec3 uColor1;
             uniform vec3 uColor2;
 
-            // 第一层：核心主星云分形场 (Kaliset 反演分形)
+            // 高精度抗溢出伪随机哈希
+            float hash21(vec2 p) {
+                p = fract(p * vec2(123.34, 456.21));
+                p += dot(p, p + 45.32);
+                return fract(p.x * p.y);
+            }
+
+            // 多层程序化星空：生成细锐璀璨星点与呼吸微光
+            float getStars(vec2 uv, float scale, float density, float speed) {
+                vec2 p = uv * scale;
+                vec2 id = floor(p);
+                vec2 f = fract(p) - 0.5;
+                float h = hash21(id);
+                if (h < density) return 0.0;
+                
+                vec2 offset = vec2(hash21(id + 1.1), hash21(id + 2.3)) - 0.5;
+                float d = length(f - offset * 0.7);
+                
+                // 极细星核与淡晕
+                float star = smoothstep(0.08, 0.015, d) * 1.5 + exp(-d * 14.0) * 0.25;
+                float twinkle = sin(uTime * speed + h * 6.28318) * 0.35 + 0.65;
+                return star * twinkle * ((h - density) / (1.0 - density));
+            }
+
+            // 第一层：核心主星云分形场 (Kaliset 高精度反演分形)
             float field(vec3 p, float s) {
-                float strength = 7.0 + 0.03 * log(1.0e-6 + fract(sin(uTime) * 4373.11));
+                float strength = 7.0 + 0.03 * log(1.0e-6 + fract(sin(uTime * 0.2) * 4373.11));
                 float accum = s * 0.25;
                 float prev = 0.0;
                 float tw = 0.0;
@@ -158,9 +187,9 @@ class FractalGalaxyGLRenderer : GLSurfaceView.Renderer {
                 return max(0.0, 5.0 * accum / tw - 0.7);
             }
 
-            // 第二层：深远宇宙背景视差分形场
+            // 第二层：深邃远景视差分形场
             float field2(vec3 p, float s) {
-                float strength = 7.0 + 0.03 * log(1.0e-6 + fract(sin(uTime) * 4373.11));
+                float strength = 7.0 + 0.03 * log(1.0e-6 + fract(sin(uTime * 0.15) * 4373.11));
                 float accum = s * 0.25;
                 float prev = 0.0;
                 float tw = 0.0;
@@ -175,50 +204,113 @@ class FractalGalaxyGLRenderer : GLSurfaceView.Renderer {
                 return max(0.0, 5.0 * accum / tw - 0.7);
             }
 
-            // 伪随机星光分布算法
-            vec3 nrand3(vec2 co) {
-                vec3 a = fract(cos(co.x * 8.3e-3 + co.y) * vec3(1.3e5, 4.7e5, 2.9e5));
-                vec3 b = fract(sin(co.x * 0.3e-3 + co.y) * vec3(8.1e5, 1.0e5, 0.1e5));
-                return mix(a, b, 0.5);
+            // 余弦全彩宇宙调色板生成器 (Cosine Color Palette)
+            vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
+                return a + b * cos(6.28318 * (c * t + d));
             }
 
             void main() {
-                vec2 uv = 2.0 * gl_FragCoord.xy / uResolution.xy - 1.0;
-                vec2 uvs = uv * uResolution.xy / max(uResolution.x, uResolution.y);
+                // 使用 max 归一化视口坐标：保持等比无畸变
+                vec2 uvs = (gl_FragCoord.xy - 0.5 * uResolution.xy) / max(uResolution.x, uResolution.y);
+                vec2 uv = gl_FragCoord.xy / uResolution.xy;
+
+                // 慢速时间流，用于宇宙星云色彩平滑随机演变
+                float slowTime = uTime * 0.025;
+
+                // 1. 纯净幽邃深海蓝底色（右侧加强深海靛蓝层次，消除死黑）
+                vec3 deepSky = mix(
+                    vec3(0.010, 0.025, 0.065), 
+                    vec3(0.018, 0.045, 0.115), 
+                    clamp(uv.y * 0.6 + uv.x * 0.5, 0.0, 1.0)
+                );
+                // 随时间微弱演变深空冷暖基调
+                deepSky += 0.012 * cos(slowTime * 0.5 + vec3(0.0, 1.2, 2.4));
+
+                // 2. 主星云采样（视差漫游）
+                vec3 p = vec3(uvs * 0.36, 0.0) + vec3(0.95, -1.28, 0.0);
+                p += 0.08 * vec3(sin(uTime * 0.035), sin(uTime * 0.05), sin(uTime * 0.012));
                 
-                // 第一层星云：平滑漫游漂浮
-                vec3 p = vec3(uvs * 0.25, 0.0) + vec3(1.0, -1.3, 0.0);
-                p += 0.2 * vec3(sin(uTime * 0.0625), sin(uTime * 0.0833), sin(uTime * 0.0078125));
-                
-                float t = field(p, uFreqs.z);
-                float v = (1.0 - exp((abs(uv.x) - 1.0) * 6.0)) * (1.0 - exp((abs(uv.y) - 1.0) * 6.0));
-                
-                // 第二层星云：视差差速缩放与景深层级流动
-                float zoom = 4.0 + sin(uTime * 0.11) * 0.2 + 0.2 + sin(uTime * 0.15) * 0.3 + 0.4;
-                vec3 p2 = vec3(uvs / zoom, 1.5) + vec3(2.0, -1.3, -1.0);
-                p2 += 0.25 * vec3(sin(uTime * 0.0625), sin(uTime * 0.0833), sin(uTime * 0.0078125));
-                float t2 = field2(p2, uFreqs.w);
-                
-                vec4 c2 = mix(0.4, 1.0, v) * vec4(1.3 * t2 * t2 * t2, 1.8 * t2 * t2, t2 * uFreqs.x, t2);
-                
-                // 双层程序化闪烁宇宙繁星点缀
-                vec2 seed = floor(p.xy * 2.0 * uResolution.x);
-                vec3 rnd = nrand3(seed);
-                vec4 starcolor = vec4(pow(rnd.y, 40.0));
-                
-                vec2 seed2 = floor(p2.xy * 2.0 * uResolution.x);
-                vec3 rnd2 = nrand3(seed2);
-                starcolor += vec4(pow(rnd2.y, 40.0));
-                
-                // 经典音频色彩驱动合成 (高音微尘，中频金橙，低音深紫)
-                vec4 col1 = mix(uFreqs.w - 0.3, 1.0, v) * vec4(1.5 * uFreqs.z * t * t * t, 1.2 * uFreqs.y * t * t, uFreqs.w * t, 1.0);
-                vec4 finalColor = col1 + c2 + starcolor;
-                
-                // 融合播放主题配色
-                vec3 themeGrad = mix(uColor1, uColor2, clamp(t * 1.3, 0.0, 1.0));
-                finalColor.rgb = mix(finalColor.rgb, finalColor.rgb * themeGrad * 1.4, 0.38);
-                
-                gl_FragColor = vec4(finalColor.rgb, 1.0);
+                // 音频能量驱动呼吸脉动
+                float audioBoost = 0.95 + uFreqs.x * 0.28;
+                float t = field(p, uFreqs.z * 0.3 + 0.12) * audioBoost;
+
+                // 3. 背景第二层星云采样（提供右侧及远景的浩瀚纵深）
+                float zoom = 3.6 + sin(uTime * 0.06) * 0.2;
+                vec3 p2 = vec3(uvs / zoom, 1.2) + vec3(1.85, -1.25, -0.8);
+                p2 += 0.10 * vec3(sin(uTime * 0.03), sin(uTime * 0.04), sin(uTime * 0.01));
+                float t2 = field2(p2, uFreqs.w * 0.3 + 0.10);
+
+                // 4. 平滑的构图密度平衡（左侧星云浓郁高光，右侧自然过渡为若隐若现的深蓝/青冷薄雾）
+                float leftDense = smoothstep(0.7, -0.4, uvs.x + uvs.y * 0.25);
+                float tNeb = max(0.0, t - 0.32) * mix(0.45, 1.0, leftDense);
+                float tNeb2 = tNeb * tNeb;
+                float tNeb3 = tNeb2 * tNeb;
+
+                // 5. 随时间平滑随机演变的程序化动态调色板
+                // 外围薄雾色（冷色调：绿松石/深青/靛蓝/紫罗兰）
+                vec3 colDust = palette(slowTime,
+                    vec3(0.025, 0.28, 0.40),
+                    vec3(0.020, 0.18, 0.22),
+                    vec3(1.0, 1.0, 1.0),
+                    vec3(0.18, 0.48, 0.72)
+                );
+
+                // 中层主体星云色（饱满鲜亮：翡翠绿/青碧/金珀/洋红）
+                vec3 colBody = palette(slowTime,
+                    vec3(0.12, 0.85, 0.50),
+                    vec3(0.12, 0.45, 0.35),
+                    vec3(1.0, 1.0, 1.0),
+                    vec3(0.12, 0.42, 0.68)
+                );
+
+                // 核心亮斑与高光分形脉络（极光荧光色：嫩黄绿/金白/冰青/粉紫）
+                vec3 colCore = palette(slowTime,
+                    vec3(0.72, 1.00, 0.36),
+                    vec3(0.22, 0.32, 0.30),
+                    vec3(1.0, 1.0, 1.0),
+                    vec3(0.08, 0.38, 0.62)
+                );
+
+                vec3 colPeak = vec3(0.96, 1.00, 0.90);
+
+                // 主星云颜色合成
+                vec3 nebulaCol = colDust * (tNeb * 0.5) 
+                               + colBody * (tNeb2 * 0.95) 
+                               + colCore * (tNeb3 * 0.85) 
+                               + colPeak * (pow(max(0.0, tNeb - 0.85), 2.2) * 1.5);
+
+                // 6. 右侧与远景第二层深空星云（呈现深海蓝、冷靛与青松石微光，给右半屏注入丰富色彩）
+                float t2Neb = max(0.0, t2 - 0.22);
+                vec3 colBgDust = palette(slowTime + 0.15,
+                    vec3(0.018, 0.18, 0.32),
+                    vec3(0.015, 0.12, 0.18),
+                    vec3(1.0, 1.0, 1.0),
+                    vec3(0.25, 0.55, 0.85)
+                );
+                vec3 bgNebula = colBgDust * (t2Neb * 0.75) + colDust * (t2Neb * t2Neb * 0.45);
+
+                // 7. 璀璨星空繁星系统（多层细锐钻石星尘，在右侧深蓝深空中格外明亮醒目）
+                float starsFine = getStars(uvs, 240.0, 0.925, 2.0);
+                float starsBright = getStars(uvs + vec2(0.42, 0.58), 85.0, 0.974, 1.2);
+                vec3 starsColor = vec3(0.85, 0.94, 1.0) * starsFine * 1.0 + vec3(0.95, 0.98, 1.0) * starsBright * 1.6;
+                starsColor *= (1.0 + uFreqs.w * 0.45);
+
+                // 8. 多层全彩合成
+                vec3 finalColor = deepSky + bgNebula + nebulaCol + starsColor;
+
+                // 9. 主题色高级微调（柔和映射）
+                vec3 themeTone = mix(uColor1, uColor2, clamp(tNeb * 0.7, 0.0, 1.0));
+                finalColor = mix(finalColor, finalColor * themeTone * 1.2, 0.08);
+
+                // 10. 电影级色调映射（防过曝，保留纯净高动态范围）
+                finalColor = 1.0 - exp(-finalColor * 1.05);
+
+                // 11. 柔和电影感暗角
+                float vignette = uv.x * uv.y * (1.0 - uv.x) * (1.0 - uv.y);
+                vignette = clamp(pow(16.0 * vignette, 0.25), 0.0, 1.0);
+                finalColor *= vignette;
+
+                gl_FragColor = vec4(finalColor, 1.0);
             }
         """.trimIndent()
 

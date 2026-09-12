@@ -170,8 +170,8 @@ fun SoundCityVisualizer(
                     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
                         super.onSizeChanged(w, h, oldw, oldh)
                         if (w > 0 && h > 0) {
-                            // 移动端 3D Raymarching 黄金自适应渲染分辨率缓冲 (短边 400px，全屏 60FPS 满帧流畅)
-                            val maxShortEdge = 400f
+                            // 提升 3D 音乐都市渲染分辨率至高清 (短边 720px，兼具满帧 60FPS 与细腻几何边缘)
+                            val maxShortEdge = 720f
                             val shortEdge = kotlin.math.min(w, h).toFloat()
                             val scale = if (shortEdge > maxShortEdge) maxShortEdge / shortEdge else 1.0f
                             val targetW = kotlin.math.max(1, (w * scale).toInt())

@@ -170,8 +170,8 @@ fun FractalGalaxyVisualizer(
                     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
                         super.onSizeChanged(w, h, oldw, oldh)
                         if (w > 0 && h > 0) {
-                            // 移动端 3D Raymarching 黄金自适应渲染分辨率缓冲 (短边 400px，全屏 60FPS 满帧流畅)
-                            val maxShortEdge = 400f
+                            // 提升移动端渲染缓冲区短边至视网膜级高清 (保底 960px，兼具满帧 60FPS 与极致分形细节)
+                            val maxShortEdge = 960f
                             val shortEdge = kotlin.math.min(w, h).toFloat()
                             val scale = if (shortEdge > maxShortEdge) maxShortEdge / shortEdge else 1.0f
                             val targetW = kotlin.math.max(1, (w * scale).toInt())
