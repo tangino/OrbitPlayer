@@ -347,6 +347,7 @@ fun NowPlayingScreen(
                                         VisualizerStyle.OCTGRAMS -> stringResource(R.string.visualizer_style_octgrams)
                                         VisualizerStyle.SOUND_CITY -> stringResource(R.string.visualizer_style_sound_city)
                                         VisualizerStyle.FRACTAL_GALAXY -> stringResource(R.string.visualizer_style_fractal_galaxy)
+                                        VisualizerStyle.QUANTUM_VORTEX -> stringResource(R.string.visualizer_style_quantum_vortex)
                                         VisualizerStyle.OFF -> stringResource(R.string.visualizer_style_off)
                                     }
                                     Text(
@@ -755,7 +756,8 @@ fun NowPlayingScreen(
                 val barStyle = if (equalizerUiState.visualizerStyle == VisualizerStyle.TIME_TUNNEL ||
                     equalizerUiState.visualizerStyle == VisualizerStyle.OCTGRAMS ||
                     equalizerUiState.visualizerStyle == VisualizerStyle.SOUND_CITY ||
-                    equalizerUiState.visualizerStyle == VisualizerStyle.FRACTAL_GALAXY) {
+                    equalizerUiState.visualizerStyle == VisualizerStyle.FRACTAL_GALAXY ||
+                    equalizerUiState.visualizerStyle == VisualizerStyle.QUANTUM_VORTEX) {
                     VisualizerStyle.AURORA_MOUNTAIN
                 } else {
                     equalizerUiState.visualizerStyle
@@ -2418,7 +2420,8 @@ private fun MaximizedVisualizerOverlay(
                     if (currentStyle == VisualizerStyle.TIME_TUNNEL ||
                         currentStyle == VisualizerStyle.OCTGRAMS ||
                         currentStyle == VisualizerStyle.SOUND_CITY ||
-                        currentStyle == VisualizerStyle.FRACTAL_GALAXY) {
+                        currentStyle == VisualizerStyle.FRACTAL_GALAXY ||
+                        currentStyle == VisualizerStyle.QUANTUM_VORTEX) {
                         Modifier
                     } else {
                         Modifier.padding(

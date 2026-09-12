@@ -39,6 +39,10 @@ enum class VisualizerStyle(
         id = "fractal_galaxy",
         titleRes = R.string.visualizer_style_fractal_galaxy
     ),
+    QUANTUM_VORTEX(
+        id = "quantum_vortex",
+        titleRes = R.string.visualizer_style_quantum_vortex
+    ),
     OFF(
         id = "off",
         titleRes = R.string.visualizer_style_off

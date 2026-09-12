@@ -125,6 +125,21 @@ fun PowerampSpectrumVisualizer(
         return
     }
 
+    if (style == VisualizerStyle.QUANTUM_VORTEX) {
+        QuantumVortexVisualizer(
+            magnitudes = magnitudes,
+            isPlaying = isPlaying,
+            colorScheme = colorScheme,
+            customColor = customColor,
+            customColor2 = customColor2,
+            backgroundLightColor = backgroundLightColor,
+            backgroundDarkColor = backgroundDarkColor,
+            modifier = modifier,
+            onClick = onClick
+        )
+        return
+    }
+
     val themeColors = OrbitTheme.colors
     val (primaryColor, secondaryColor, peakColor) = when (colorScheme) {
         VisualizerColorScheme.FOLLOW_BACKGROUND -> {
@@ -525,7 +540,8 @@ fun PowerampSpectrumVisualizer(
                 VisualizerStyle.TIME_TUNNEL,
                 VisualizerStyle.OCTGRAMS,
                 VisualizerStyle.SOUND_CITY,
-                VisualizerStyle.FRACTAL_GALAXY -> {}
+                VisualizerStyle.FRACTAL_GALAXY,
+                VisualizerStyle.QUANTUM_VORTEX -> {}
                 VisualizerStyle.OFF -> {}
             }
         }
