@@ -13,6 +13,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -46,9 +47,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -204,57 +207,59 @@ fun NowPlayingScreen(
             dimAlpha = equalizerUiState.backgroundDimAlpha
         )
 
-        Scaffold(
-        topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
-                            contentDescription = "Collapse",
-                            tint = OrbitTheme.colors.textPrimary,
-                            modifier = Modifier.size(32.dp)
-                        )
-                    }
-                },
-                title = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "PLAYING FROM LIBRARY",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = OrbitTheme.colors.primary,
-                            letterSpacing = 1.5.sp
-                        )
-                        Text(
-                            text = song?.album ?: "Unknown Album",
-                            fontSize = 13.sp,
-                            color = OrbitTheme.colors.textSecondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                },
-                actions = {
-                    // 右上角改为当前播放列表队列按钮
-                    IconButton(onClick = { showQueueBottomSheet = true }) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                            contentDescription = "Playing Queue",
-                            tint = OrbitTheme.colors.primary,
-                            modifier = Modifier.size(26.dp)
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = OrbitTheme.colors.background)
-            )
-        },
-        containerColor = OrbitTheme.colors.background
-    ) { innerPadding ->
         val configuration = LocalConfiguration.current
         val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
                 configuration.screenWidthDp > configuration.screenHeightDp
 
+        Scaffold(
+        topBar = {
+            if (!isLandscape) {
+                TopAppBar(
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Collapse",
+                                tint = OrbitTheme.colors.textPrimary,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                    },
+                    title = {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = "PLAYING FROM LIBRARY",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = OrbitTheme.colors.primary,
+                                letterSpacing = 1.5.sp
+                            )
+                            Text(
+                                text = song?.album ?: "Unknown Album",
+                                fontSize = 13.sp,
+                                color = OrbitTheme.colors.textSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    },
+                    actions = {
+                        // 右上角改为当前播放列表队列按钮
+                        IconButton(onClick = { showQueueBottomSheet = true }) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                contentDescription = "Playing Queue",
+                                tint = OrbitTheme.colors.primary,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = OrbitTheme.colors.background)
+                )
+            }
+        },
+        containerColor = OrbitTheme.colors.background
+    ) { innerPadding ->
         // 1. 封面与大频谱可视化无缝切换视图 (大频谱横向占满页面四周留空，封面保持精致正方形)
         val coverView: @Composable () -> Unit = {
             AnimatedContent(
@@ -609,10 +614,10 @@ fun NowPlayingScreen(
         }
 
         // 4. 快捷功能行 (红心/态度、EQ、菜单)
-        val quickActionsView: @Composable () -> Unit = {
+        val quickActionsView: @Composable (Modifier) -> Unit = { mod ->
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(if (isLandscape) 24.dp else 32.dp, Alignment.CenterHorizontally),
+                modifier = mod,
+                horizontalArrangement = Arrangement.spacedBy(if (isLandscape) 16.dp else 32.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val currentAttitude = song?.attitude ?: SongAttitude.NONE
@@ -933,38 +938,319 @@ fun NowPlayingScreen(
         }
 
         if (isLandscape) {
-            // ========== 专业横屏唱片与歌词分屏布局 (左右 1:1 对称均分平衡布局) ==========
+            // ========== 专业横屏大画幅可视化与全景歌词分屏布局 (通透呼吸感沉浸重构) ==========
             Row(
                 modifier = modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .padding(horizontal = 20.dp, vertical = 6.dp)
+                    .padding(
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = 6.dp,
+                        bottom = 18.dp
+                    )
                     .swipeToChangeSong(
                         onSwipeNext = { viewModel.playNext() },
                         onSwipePrevious = { viewModel.playPrevious() }
                     ),
-                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 左侧唱片信息区 (对称均分 50% 空间)
-                Column(
+                // ── 左侧：通透大画幅音频可视化舞台 + 纯净悬浮歌曲信息（专辑、歌手、歌曲名） + 轻量快捷操作 ──
+                Box(
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.SpaceEvenly
+                        .weight(1.08f)
+                        .fillMaxHeight()
+                        .padding(vertical = 4.dp)
                 ) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        coverView()
+                    val currentStyle = if (equalizerUiState.visualizerStyle == VisualizerStyle.OFF) {
+                        VisualizerStyle.BARS_WITH_PEAKS
+                    } else {
+                        equalizerUiState.visualizerStyle
                     }
-                    trackInfoView()
-                    quickActionsView()
+
+                    // 1. 底层：大画幅动态可视化频谱 / 专辑封面切换舞台 (全屏通畅无阻碍)
+                    AnimatedContent(
+                        targetState = showCoverVisualizer,
+                        transitionSpec = {
+                            if (targetState) {
+                                (slideInVertically(animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)) { height -> height } + fadeIn(tween(250)))
+                                    .togetherWith(slideOutVertically(animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)) { height -> -height } + fadeOut(tween(200)))
+                            } else {
+                                (slideInVertically(animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)) { height -> -height } + fadeIn(tween(250)))
+                                    .togetherWith(slideOutVertically(animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)) { height -> height } + fadeOut(tween(200)))
+                            }
+                        },
+                        label = "LandscapeCoverVisualizerSwitchAnim",
+                        modifier = Modifier.fillMaxSize()
+                    ) { isVisualizerMode ->
+                        if (isVisualizerMode) {
+                            // 大画幅沉浸频谱 (全屏舒展自由律动)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .swipeVerticalGesture(
+                                        onSwipeUp = {},
+                                        onSwipeDown = { onToggleCoverVisualizer(false) }
+                                    )
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                        onClick = { onCycleVisualizerStyle?.invoke() }
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (!equalizerUiState.isVisualizerMaximized) {
+                                    PowerampSpectrumVisualizer(
+                                        magnitudes = visualizerFrame.rawMagnitudes,
+                                        peaks = visualizerFrame.peakCaps,
+                                        style = currentStyle,
+                                        colorScheme = equalizerUiState.visualizerColorScheme,
+                                        peakDecayEnabled = equalizerUiState.visualizerPeakDecayEnabled,
+                                        isPlaying = playbackState.isPlaying,
+                                        barWidthDp = equalizerUiState.visualizerBarWidthDp,
+                                        barAlpha = equalizerUiState.visualizerBarAlpha,
+                                        borderWidthDp = equalizerUiState.visualizerBarBorderWidthDp,
+                                        borderColor = equalizerUiState.visualizerBarBorderColor,
+                                        borderAlpha = equalizerUiState.visualizerBarBorderAlpha,
+                                        borderOnly = equalizerUiState.visualizerBarBorderOnly,
+                                        customColor = equalizerUiState.visualizerCustomColor,
+                                        customColor2 = equalizerUiState.visualizerCustomColor2,
+                                        isSingleColor = equalizerUiState.visualizerSingleColor,
+                                        backgroundLightColor = equalizerUiState.backgroundExtractedLightColor,
+                                        backgroundDarkColor = equalizerUiState.backgroundExtractedDarkColor,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(horizontal = 2.dp, vertical = 2.dp),
+                                        onClick = { onCycleVisualizerStyle?.invoke() }
+                                    )
+                                }
+                            }
+                        } else {
+                            // 封面展示模式 (大号正方形居中展现，上滑切入大画幅动态频谱)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .swipeVerticalGesture(
+                                        onSwipeUp = {
+                                            if (equalizerUiState.visualizerStyle == VisualizerStyle.OFF) {
+                                                onCycleVisualizerStyle?.invoke()
+                                            }
+                                            onToggleCoverVisualizer(true)
+                                        },
+                                        onSwipeDown = {}
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(175.dp)
+                                        .scale(coverScale)
+                                        .shadow(
+                                            elevation = 16.dp,
+                                            shape = RoundedCornerShape(18.dp),
+                                            spotColor = OrbitTheme.colors.primary.copy(alpha = 0.35f)
+                                        )
+                                        .clip(RoundedCornerShape(18.dp))
+                                        .background(OrbitTheme.colors.surfaceCard)
+                                        .clickable {
+                                            if (equalizerUiState.visualizerStyle == VisualizerStyle.OFF) {
+                                                onCycleVisualizerStyle?.invoke()
+                                            }
+                                            onToggleCoverVisualizer(true)
+                                        }
+                                ) {
+                                    val artUri = song?.albumArtUri
+                                    if (artUri != null) {
+                                        AsyncImage(
+                                            model = coil.request.ImageRequest.Builder(LocalContext.current)
+                                                .data(artUri)
+                                                .memoryCacheKey("${artUri}_$coverVer")
+                                                .diskCacheKey("${artUri}_$coverVer")
+                                                .build(),
+                                            contentDescription = song?.title,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.MusicNote,
+                                                contentDescription = null,
+                                                tint = OrbitTheme.colors.primary,
+                                                modifier = Modifier.size(56.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. 悬浮歌曲信息排版浮层 (无封闭黑底，纯净通透，带微光阴影，彻底打开呼吸感)
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(start = 12.dp, top = 12.dp, end = 100.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 优雅小巧的收起返回箭头
+                        Surface(
+                            shape = CircleShape,
+                            color = Color.Black.copy(alpha = 0.36f),
+                            modifier = Modifier.size(32.dp),
+                            onClick = onBack
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "Collapse",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        // 歌曲名、歌手与专辑名称
+                        Column(modifier = Modifier.weight(1f, fill = false)) {
+                            AnimatedContent(
+                                targetState = song?.title ?: "No Track Selected",
+                                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) },
+                                label = "LandscapeSongTitleAnim"
+                            ) { title ->
+                                Text(
+                                    text = title,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    style = TextStyle(
+                                        shadow = Shadow(
+                                            color = Color.Black.copy(alpha = 0.85f),
+                                            offset = Offset(0f, 2f),
+                                            blurRadius = 6f
+                                        )
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            val artistAndAlbum = buildString {
+                                append(song?.artist?.ifBlank { "Unknown Artist" } ?: "Unknown Artist")
+                                val albumName = song?.album?.trim()
+                                if (!albumName.isNullOrEmpty() && albumName != "Unknown Album") {
+                                    append("  •  ")
+                                    append(albumName)
+                                }
+                            }
+                            AnimatedContent(
+                                targetState = artistAndAlbum,
+                                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) },
+                                label = "LandscapeArtistAlbumAnim"
+                            ) { text ->
+                                Text(
+                                    text = text,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color.White.copy(alpha = 0.82f),
+                                    style = TextStyle(
+                                        shadow = Shadow(
+                                            color = Color.Black.copy(alpha = 0.85f),
+                                            offset = Offset(0f, 2f),
+                                            blurRadius = 4f
+                                        )
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+
+                    // 3. 右上角：样式切换药丸徽标 + 最大化全屏按钮 (半透明轻量微标)
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 12.dp, end = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color.Black.copy(alpha = 0.36f),
+                            modifier = Modifier.clickable { onCycleVisualizerStyle?.invoke() }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                val styleText = when (currentStyle) {
+                                    VisualizerStyle.BARS_WITH_PEAKS -> stringResource(R.string.visualizer_style_bars_with_peaks)
+                                    VisualizerStyle.AURORA_MOUNTAIN -> stringResource(R.string.visualizer_style_aurora_mountain)
+                                    VisualizerStyle.MIRRORED_BARS -> stringResource(R.string.visualizer_style_mirrored_bars)
+                                    VisualizerStyle.TIME_TUNNEL -> stringResource(R.string.visualizer_style_time_tunnel)
+                                    VisualizerStyle.OCTGRAMS -> stringResource(R.string.visualizer_style_octgrams)
+                                    VisualizerStyle.SOUND_CITY -> stringResource(R.string.visualizer_style_sound_city)
+                                    VisualizerStyle.FRACTAL_GALAXY -> stringResource(R.string.visualizer_style_fractal_galaxy)
+                                    VisualizerStyle.QUANTUM_VORTEX -> stringResource(R.string.visualizer_style_quantum_vortex)
+                                    else -> stringResource(R.string.visualizer_style_bars_with_peaks)
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.GraphicEq,
+                                    contentDescription = null,
+                                    tint = OrbitTheme.colors.primary,
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Text(
+                                    text = styleText,
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = CircleShape,
+                            color = Color.Black.copy(alpha = 0.36f),
+                            modifier = Modifier
+                                .size(26.dp)
+                                .clickable { onToggleVisualizerMaximized(true) }
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Fullscreen,
+                                    contentDescription = stringResource(R.string.visualizer_maximize),
+                                    tint = OrbitTheme.colors.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // 4. 左侧底部轻量悬浮快捷操作栏（红心/态度、EQ均衡器、视效开关、更多菜单）
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color.Black.copy(alpha = 0.30f),
+                        border = BorderStroke(
+                            width = 0.8.dp,
+                            color = Color(0x20FFFFFF)
+                        ),
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 8.dp)
+                    ) {
+                        quickActionsView(Modifier.padding(horizontal = 12.dp, vertical = 2.dp))
+                    }
                 }
 
-                // 右侧全景歌词与控制区 (对称均分 50% 空间)
+                // ── 右侧：全景沉浸歌词 + 播放队列入口 + 进度滑条 + 播放控制 ──
                 Column(
                     modifier = Modifier
                         .weight(1f)
@@ -972,12 +1258,37 @@ fun NowPlayingScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.SpaceBetween
                 ) {
+                    // 右侧顶部快捷操作行：播放列表队列按钮
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = 4.dp, top = 2.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color.Black.copy(alpha = 0.30f),
+                            modifier = Modifier.size(32.dp),
+                            onClick = { showQueueBottomSheet = true }
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                    contentDescription = "Playing Queue",
+                                    tint = OrbitTheme.colors.primary,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
+                        }
+                    }
+
                     lyricsView(Modifier.weight(1f).fillMaxWidth())
-                    spectrumVisualizerView()
-                    Spacer(modifier = Modifier.height(2.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     progressSliderView()
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     controlsRowView()
+                    Spacer(modifier = Modifier.height(2.dp))
                 }
             }
         } else {
@@ -1008,7 +1319,7 @@ fun NowPlayingScreen(
                 Spacer(modifier = Modifier.height(6.dp))
                 trackInfoView()
                 Spacer(modifier = Modifier.height(6.dp))
-                quickActionsView()
+                quickActionsView(Modifier.fillMaxWidth())
                 spectrumVisualizerView()
                 progressSliderView()
                 Spacer(modifier = Modifier.height(10.dp))

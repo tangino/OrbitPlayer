@@ -22,6 +22,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -268,10 +269,11 @@ class MainActivity : ComponentActivity() {
                             ) + fadeOut(animationSpec = tween(160)),
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
-                                .widthIn(max = 680.dp)
+                                .fillMaxWidth()
                         ) {
                             MiniPlayerBar(
                                 playbackState = playbackState,
+                                isTabletMode = uiState.isTabletLandscapeModeEnabled,
                                 onTogglePlay = { musicPlayerViewModel.togglePlayPause() },
                                 onPlayNext = { musicPlayerViewModel.playNext() },
                                 onPlayPrevious = { musicPlayerViewModel.playPrevious() },
