@@ -142,7 +142,8 @@ object SongMetadataHelper {
         }
 
         // 若部分扩展属性在数据库尚未记录，从音频文件头部提取
-        if (track.isBlank() || genre.isBlank() || composer.isBlank() || albumArtist.isBlank()) {
+        if (track.isBlank() || genre.isBlank() || composer.isBlank() || albumArtist.isBlank() ||
+            title == "Unknown Title" || artist == "Unknown Artist" || album == "Unknown Album") {
             val retriever = MediaMetadataRetriever()
             try {
                 retriever.setDataSource(song.path)
@@ -174,6 +175,18 @@ object SongMetadataHelper {
                 try {
                     retriever.release()
                 } catch (_: Exception) {}
+            }
+
+            // 使用原生 AudioTagExtractor 深度补齐未提取出的属性
+            if (track.isBlank() || genre.isBlank() || year.isBlank() ||
+                title == "Unknown Title" || artist == "Unknown Artist" || album == "Unknown Album") {
+                val tags = com.antigravity.equalizer.utils.AudioTagExtractor.extractMetadata(song.path)
+                if (track.isBlank() && tags.trackNumber != null) track = tags.trackNumber.toString()
+                if (genre.isBlank() && !tags.genre.isNullOrBlank()) genre = tags.genre
+                if (year.isBlank() && tags.year != null && tags.year > 0) year = tags.year.toString()
+                if ((title == "Unknown Title" || title.isBlank()) && !tags.title.isNullOrBlank()) title = tags.title
+                if ((artist == "Unknown Artist" || artist.isBlank()) && !tags.artist.isNullOrBlank()) artist = tags.artist
+                if ((album == "Unknown Album" || album.isBlank()) && !tags.album.isNullOrBlank()) album = tags.album
             }
         }
 

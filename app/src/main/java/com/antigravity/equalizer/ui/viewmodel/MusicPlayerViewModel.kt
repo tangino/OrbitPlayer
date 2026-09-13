@@ -75,13 +75,85 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     // 搜索过滤后的歌曲列表
     val filteredSongs: StateFlow<List<Song>> = combine(allSongs, _libraryUiState) { songs, state ->
-        if (state.searchQuery.isBlank()) {
+        val query = state.searchQuery.trim()
+        if (query.isBlank()) {
             songs
         } else {
             songs.filter {
-                it.title.contains(state.searchQuery, ignoreCase = true) ||
-                it.artist.contains(state.searchQuery, ignoreCase = true) ||
-                it.album.contains(state.searchQuery, ignoreCase = true)
+                it.title.contains(query, ignoreCase = true) ||
+                it.artist.contains(query, ignoreCase = true) ||
+                it.album.contains(query, ignoreCase = true)
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    // 搜索过滤后的文件夹列表（文件夹名/路径匹配，或包含符合搜索条件的歌曲）
+    val filteredFolders: StateFlow<List<FolderItem>> = combine(folders, filteredSongs, _libraryUiState) { folderList, songs, state ->
+        val query = state.searchQuery.trim()
+        if (query.isBlank()) {
+            folderList
+        } else {
+            val matchingFolderPaths = songs.map { it.folderPath }.toSet()
+            folderList.filter { folder ->
+                folder.folderName.contains(query, ignoreCase = true) ||
+                folder.folderPath.contains(query, ignoreCase = true) ||
+                matchingFolderPaths.contains(folder.folderPath)
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    // 搜索过滤后的专辑列表（专辑名/艺术家匹配，或包含符合搜索条件的歌曲）
+    val filteredAlbums: StateFlow<List<AlbumItem>> = combine(albums, allSongs, _libraryUiState) { albumList, songList, state ->
+        val query = state.searchQuery.trim()
+        if (query.isBlank()) {
+            albumList
+        } else {
+            val matchingSongs = songList.filter {
+                it.title.contains(query, ignoreCase = true) ||
+                it.artist.contains(query, ignoreCase = true) ||
+                it.album.contains(query, ignoreCase = true)
+            }
+            val matchingAlbumTitles = matchingSongs.map { it.album.trim().lowercase() }.filter { it.isNotBlank() }.toSet()
+            albumList.filter { album ->
+                val albumTitle = album.title.trim().lowercase()
+                album.title.contains(query, ignoreCase = true) ||
+                album.artist.contains(query, ignoreCase = true) ||
+                matchingAlbumTitles.contains(albumTitle)
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    // 搜索过滤后的艺术家列表（艺术家名匹配，或包含符合搜索条件的歌曲）
+    val filteredArtists: StateFlow<List<ArtistItem>> = combine(artists, allSongs, _libraryUiState) { artistList, songList, state ->
+        val query = state.searchQuery.trim()
+        if (query.isBlank()) {
+            artistList
+        } else {
+            val matchingSongs = songList.filter {
+                it.title.contains(query, ignoreCase = true) ||
+                it.artist.contains(query, ignoreCase = true) ||
+                it.album.contains(query, ignoreCase = true)
+            }
+            val matchingArtists = matchingSongs.flatMap { song ->
+                listOf(song.artist.trim().lowercase()) +
+                song.artist.split('/', ',', '&', '、', ';').map { it.trim().lowercase() }
+            }.filter { it.isNotBlank() }.toSet()
+            artistList.filter { artist ->
+                artist.name.contains(query, ignoreCase = true) ||
+                matchingArtists.contains(artist.name.trim().lowercase()) ||
+                matchingArtists.any { it.contains(artist.name.trim().lowercase()) }
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    // 搜索过滤后的播放列表（歌单名称匹配）
+    val filteredPlaylists: StateFlow<List<Playlist>> = combine(playlists, _libraryUiState) { playlistList, state ->
+        val query = state.searchQuery.trim()
+        if (query.isBlank()) {
+            playlistList
+        } else {
+            playlistList.filter { playlist ->
+                playlist.name.contains(query, ignoreCase = true)
             }
         }
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())

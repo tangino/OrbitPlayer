@@ -276,6 +276,10 @@ class MusicPlayerManager private constructor(private val context: Context) {
                         0L
                     }
 
+                    if (!isSameSong) {
+                        visualizerManager.reset()
+                    }
+
                     hasRecordedPlayForCurrentSong = false
                     _playbackState.update {
                         val dur = song.durationMs.coerceAtLeast(1L)
@@ -314,6 +318,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
         hasRecordedPlayForCurrentSong = false
 
         val mediaItems = songs.map { createMediaItem(it) }
+        visualizerManager.reset()
 
         _playbackState.update {
             it.copy(
@@ -392,6 +397,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
         val targetSong = playlist[safeIndex]
 
         hasRecordedPlayForCurrentSong = false
+        visualizerManager.reset()
         _playbackState.update {
             it.copy(
                 currentIndex = safeIndex,

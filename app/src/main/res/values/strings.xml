@@ -266,6 +266,8 @@
     <string name="maximized_cover_right">Right</string>
     <string name="maximized_show_controls">Show Controls</string>
     <string name="maximized_hide_controls">Hide Controls</string>
+    <string name="maximized_clear_screen">Clean Screen</string>
+    <string name="maximized_clear_screen_hint">Screen cleaned. Tap anywhere to restore controls.</string>
     <string name="maximized_cover_alpha">Cover Opacity</string>
     <string name="maximized_cover_alpha_desc">Adjust the opacity of the album cover when visualizer is maximized</string>
     <string name="maximized_follow_cover_color">Follow Album Cover Color</string>

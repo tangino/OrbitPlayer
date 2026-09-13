@@ -266,6 +266,8 @@
     <string name="maximized_cover_right">居右</string>
     <string name="maximized_show_controls">显示控制条</string>
     <string name="maximized_hide_controls">隐藏控制条</string>
+    <string name="maximized_clear_screen">一键清屏</string>
+    <string name="maximized_clear_screen_hint">已一键清屏，轻触屏幕任意处恢复控制条</string>
     <string name="maximized_cover_alpha">封面透明度</string>
     <string name="maximized_cover_alpha_desc">调整最大化时专辑封面的不透明度</string>
     <string name="maximized_follow_cover_color">频谱颜色跟随专辑封面</string>

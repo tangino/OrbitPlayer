@@ -136,11 +136,12 @@ fun MusicLibraryScreen(
     val playbackState by viewModel.playbackState.collectAsState()
     val isScanning by viewModel.isScanning.collectAsState()
 
+    val allSongs by viewModel.allSongs.collectAsState()
     val filteredSongs by viewModel.filteredSongs.collectAsState()
-    val folders by viewModel.folders.collectAsState()
-    val albums by viewModel.albums.collectAsState()
-    val artists by viewModel.artists.collectAsState()
-    val playlists by viewModel.playlists.collectAsState()
+    val folders by viewModel.filteredFolders.collectAsState()
+    val albums by viewModel.filteredAlbums.collectAsState()
+    val artists by viewModel.filteredArtists.collectAsState()
+    val playlists by viewModel.filteredPlaylists.collectAsState()
 
     var showNewPlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
@@ -327,6 +328,12 @@ fun MusicLibraryScreen(
                             Text(openedArtist!!.name, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = OrbitTheme.colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text("${openedArtist!!.albumCount} albums • ${openedArtist!!.songCount} tracks", fontSize = 11.sp, color = OrbitTheme.colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
+                    } else if (openedPlaylist != null) {
+                        // 歌单下钻标题
+                        Column {
+                            Text(openedPlaylist!!.name, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = OrbitTheme.colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(stringResource(R.string.tracks_count, playlistSongs.size), fontSize = 11.sp, color = OrbitTheme.colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     } else {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -348,11 +355,12 @@ fun MusicLibraryScreen(
                     }
                 },
                 navigationIcon = {
-                    if (openedFolderPath != null || openedAlbum != null || openedArtist != null) {
+                    if (openedFolderPath != null || openedAlbum != null || openedArtist != null || openedPlaylist != null) {
                         IconButton(onClick = {
                             openedFolderPath = null
                             openedAlbum = null
                             openedArtist = null
+                            openedPlaylist = null
                         }) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -363,14 +371,12 @@ fun MusicLibraryScreen(
                     }
                 },
                 actions = {
-                    if (openedFolderPath == null && openedAlbum == null && openedArtist == null) {
-                        IconButton(onClick = { viewModel.toggleSearch() }) {
-                            Icon(
-                                imageVector = if (libraryState.isSearching) Icons.Default.Close else Icons.Default.Search,
-                                contentDescription = "Search",
-                                tint = if (libraryState.isSearching) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary
-                            )
-                        }
+                    IconButton(onClick = { viewModel.toggleSearch() }) {
+                        Icon(
+                            imageVector = if (libraryState.isSearching) Icons.Default.Close else Icons.Default.Search,
+                            contentDescription = "Search",
+                            tint = if (libraryState.isSearching) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary
+                        )
                     }
 
                     // 一键切换 7 档视图模式 (包含 Mac OS X 经典 3D Cover Flow)
@@ -405,7 +411,7 @@ fun MusicLibraryScreen(
             )
 
             // 媒体库 Tab 分页栏 (下钻时隐藏 Tab 保持沉浸)
-            if (openedFolderPath == null && openedAlbum == null && openedArtist == null) {
+            if (openedFolderPath == null && openedAlbum == null && openedArtist == null && openedPlaylist == null) {
                 ScrollableTabRow(
                     selectedTabIndex = libraryState.currentTab.ordinal,
                     containerColor = OrbitTheme.colors.background,
@@ -583,11 +589,24 @@ fun MusicLibraryScreen(
 
                 // ========== 如果处于文件夹下钻内部，展示该文件夹的歌曲 ==========
                 if (openedFolderPath != null) {
-                    val folderSongs = filteredSongs.filter { it.folderPath == openedFolderPath }
+                    val currentPath = openedFolderPath!!
+                    val folderSongs = remember(currentPath, allSongs, libraryState.searchQuery) {
+                        val baseSongs = allSongs.filter { it.folderPath == currentPath }
+                        val q = libraryState.searchQuery.trim()
+                        if (q.isBlank()) {
+                            baseSongs
+                        } else {
+                            baseSongs.filter {
+                                it.title.contains(q, ignoreCase = true) ||
+                                it.artist.contains(q, ignoreCase = true) ||
+                                it.album.contains(q, ignoreCase = true)
+                            }
+                        }
+                    }
                     if (folderSongs.isEmpty()) {
                         EmptyStateView(
-                            title = stringResource(R.string.empty_folder_title),
-                            subtitle = stringResource(R.string.empty_folder_desc)
+                            title = if (libraryState.searchQuery.isNotBlank()) stringResource(R.string.search_no_results_title) else stringResource(R.string.empty_folder_title),
+                            subtitle = if (libraryState.searchQuery.isNotBlank()) stringResource(R.string.search_no_results_desc) else stringResource(R.string.empty_folder_desc)
                         )
                     } else if (currentViewMode == LibraryViewMode.COVER_FLOW) {
                         CoverFlowLayout(
@@ -632,13 +651,28 @@ fun MusicLibraryScreen(
                 } else if (openedAlbum != null) {
                     // ========== 如果处于专辑下钻内部，展示该专辑的歌曲 ==========
                     val currentAlbum = openedAlbum!!
-                    val albumSongs = remember(currentAlbum, filteredSongs) {
-                        filteredSongs.filter { it.album == currentAlbum.title }
+                    val albumSongs = remember(currentAlbum, allSongs, libraryState.searchQuery) {
+                        val targetTitle = currentAlbum.title.trim()
+                        val isUnknown = targetTitle == "未知专辑" || targetTitle.equals("Unknown Album", ignoreCase = true)
+                        val baseSongs = allSongs.filter { song ->
+                            val songAlbum = song.album.trim()
+                            songAlbum.equals(targetTitle, ignoreCase = true) ||
+                            (isUnknown && (songAlbum.isBlank() || songAlbum.equals("Unknown Album", ignoreCase = true)))
+                        }
+                        val q = libraryState.searchQuery.trim()
+                        if (q.isBlank()) {
+                            baseSongs
+                        } else {
+                            baseSongs.filter {
+                                it.title.contains(q, ignoreCase = true) ||
+                                it.artist.contains(q, ignoreCase = true)
+                            }
+                        }
                     }
                     if (albumSongs.isEmpty()) {
                         EmptyStateView(
-                            title = stringResource(R.string.empty_album_title),
-                            subtitle = stringResource(R.string.empty_album_desc)
+                            title = if (libraryState.searchQuery.isNotBlank()) stringResource(R.string.search_no_results_title) else stringResource(R.string.empty_album_title),
+                            subtitle = if (libraryState.searchQuery.isNotBlank()) stringResource(R.string.search_no_results_desc) else stringResource(R.string.empty_album_desc)
                         )
                     } else if (currentViewMode == LibraryViewMode.COVER_FLOW) {
                         CoverFlowLayout(
@@ -683,13 +717,29 @@ fun MusicLibraryScreen(
                 } else if (openedArtist != null) {
                     // ========== 如果处于艺术家下钻内部，展示该艺术家的歌曲 ==========
                     val currentArtist = openedArtist!!
-                    val artistSongs = remember(currentArtist, filteredSongs) {
-                        filteredSongs.filter { it.artist == currentArtist.name }
+                    val artistSongs = remember(currentArtist, allSongs, libraryState.searchQuery) {
+                        val targetName = currentArtist.name.trim()
+                        val baseSongs = allSongs.filter { song ->
+                            val songArtist = song.artist.trim()
+                            songArtist.equals(targetName, ignoreCase = true) ||
+                            (targetName == "未知艺术家" && songArtist.isBlank()) ||
+                            songArtist.split('/', ',', '&', '、', ';').any { it.trim().equals(targetName, ignoreCase = true) }
+                        }
+                        val q = libraryState.searchQuery.trim()
+                        if (q.isBlank()) {
+                            baseSongs
+                        } else {
+                            baseSongs.filter {
+                                it.title.contains(q, ignoreCase = true) ||
+                                it.artist.contains(q, ignoreCase = true) ||
+                                it.album.contains(q, ignoreCase = true)
+                            }
+                        }
                     }
                     if (artistSongs.isEmpty()) {
                         EmptyStateView(
-                            title = stringResource(R.string.empty_artist_title),
-                            subtitle = stringResource(R.string.empty_artist_desc)
+                            title = if (libraryState.searchQuery.isNotBlank()) stringResource(R.string.search_no_results_title) else stringResource(R.string.empty_artist_title),
+                            subtitle = if (libraryState.searchQuery.isNotBlank()) stringResource(R.string.search_no_results_desc) else stringResource(R.string.empty_artist_desc)
                         )
                     } else if (currentViewMode == LibraryViewMode.COVER_FLOW) {
                         CoverFlowLayout(
@@ -784,35 +834,43 @@ fun MusicLibraryScreen(
 
                         LibraryTab.FOLDERS -> {
                             // 2. 文件夹目录树 (支持点击进入下钻歌曲列表，支持 Pinch 手势)
-                            LazyColumn(
-                                state = foldersListState,
-                                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 86.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                itemsIndexed(folders, key = { index, folder -> "${folder.folderPath}_$index" }) { _, folder ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(OrbitTheme.colors.surfaceCard)
-                                            .clickable {
-                                                // 点击进入该文件夹展示歌曲
-                                                openedFolderPath = folder.folderPath
+                            if (folders.isEmpty()) {
+                                EmptyStateView(
+                                    title = if (libraryState.searchQuery.isNotBlank()) stringResource(R.string.search_no_results_title) else stringResource(R.string.empty_folder_title),
+                                    subtitle = if (libraryState.searchQuery.isNotBlank()) stringResource(R.string.search_no_results_desc) else stringResource(R.string.empty_folder_desc)
+                                )
+                            } else {
+                                LazyColumn(
+                                    state = foldersListState,
+                                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 86.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    itemsIndexed(folders, key = { index, folder -> "${folder.folderPath}_$index" }) { _, folder ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(OrbitTheme.colors.surfaceCard)
+                                                .clickable {
+                                                    // 点击进入该文件夹展示歌曲
+                                                    viewModel.setSearchQuery("")
+                                                    openedFolderPath = folder.folderPath
+                                                }
+                                                .padding(14.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(Icons.Default.Folder, contentDescription = null, tint = OrbitTheme.colors.tertiary, modifier = Modifier.size(28.dp))
+                                            Spacer(modifier = Modifier.width(14.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(folder.folderName, fontWeight = FontWeight.Bold, color = OrbitTheme.colors.textPrimary, fontSize = 14.sp)
+                                                Text(folder.folderPath, color = OrbitTheme.colors.textSecondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                             }
-                                            .padding(14.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.Folder, contentDescription = null, tint = OrbitTheme.colors.tertiary, modifier = Modifier.size(28.dp))
-                                        Spacer(modifier = Modifier.width(14.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(folder.folderName, fontWeight = FontWeight.Bold, color = OrbitTheme.colors.textPrimary, fontSize = 14.sp)
-                                            Text(folder.folderPath, color = OrbitTheme.colors.textSecondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        }
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text("${folder.songCount} tracks", fontSize = 12.sp, color = OrbitTheme.colors.primary, fontWeight = FontWeight.SemiBold)
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = OrbitTheme.colors.textSecondary, modifier = Modifier.size(18.dp))
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("${folder.songCount} tracks", fontSize = 12.sp, color = OrbitTheme.colors.primary, fontWeight = FontWeight.SemiBold)
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = OrbitTheme.colors.textSecondary, modifier = Modifier.size(18.dp))
+                                            }
                                         }
                                     }
                                 }
@@ -823,8 +881,18 @@ fun MusicLibraryScreen(
                             // 3. 专辑库 (支持全 6 档自适应 Pinch 手势与点击下钻)
                             if (albums.isEmpty()) {
                                 EmptyStateView(
-                                    title = if (isScanning) stringResource(R.string.scanning_library_title) else stringResource(R.string.no_albums_found),
-                                    subtitle = stringResource(R.string.empty_albums_desc)
+                                    title = if (libraryState.searchQuery.isNotBlank()) {
+                                        stringResource(R.string.search_no_results_title)
+                                    } else if (isScanning) {
+                                        stringResource(R.string.scanning_library_title)
+                                    } else {
+                                        stringResource(R.string.no_albums_found)
+                                    },
+                                    subtitle = if (libraryState.searchQuery.isNotBlank()) {
+                                        stringResource(R.string.search_no_results_desc)
+                                    } else {
+                                        stringResource(R.string.empty_albums_desc)
+                                    }
                                 )
                             } else {
                                 LazyVerticalGrid(
@@ -844,6 +912,7 @@ fun MusicLibraryScreen(
                                             isCurrent = isAlbumPlaying,
                                             coverVersion = coverVer,
                                             onClick = {
+                                                viewModel.setSearchQuery("")
                                                 openedAlbum = album
                                             }
                                         )
@@ -856,8 +925,18 @@ fun MusicLibraryScreen(
                         // 4. 艺术家列表 (支持 Pinch 手势与点击下钻展示全部歌曲)
                         if (artists.isEmpty()) {
                             EmptyStateView(
-                                title = if (isScanning) stringResource(R.string.scanning_library_title) else stringResource(R.string.no_artists_found),
-                                subtitle = stringResource(R.string.empty_artists_desc)
+                                title = if (libraryState.searchQuery.isNotBlank()) {
+                                    stringResource(R.string.search_no_results_title)
+                                } else if (isScanning) {
+                                    stringResource(R.string.scanning_library_title)
+                                } else {
+                                    stringResource(R.string.no_artists_found)
+                                },
+                                subtitle = if (libraryState.searchQuery.isNotBlank()) {
+                                    stringResource(R.string.search_no_results_desc)
+                                } else {
+                                    stringResource(R.string.empty_artists_desc)
+                                }
                             )
                         } else {
                             LazyColumn(
@@ -876,6 +955,7 @@ fun MusicLibraryScreen(
                                             .clip(RoundedCornerShape(12.dp))
                                             .background(if (isArtistPlaying) OrbitTheme.colors.primary.copy(alpha = 0.12f) else OrbitTheme.colors.surfaceCard)
                                             .clickable {
+                                                viewModel.setSearchQuery("")
                                                 openedArtist = artist
                                             }
                                             .padding(14.dp),
@@ -907,55 +987,42 @@ fun MusicLibraryScreen(
                         // 5. 播放列表 (支持下钻详情、创建、重命名、删除及歌曲管理)
                         if (openedPlaylist != null) {
                             val currentPlaylist = openedPlaylist!!
+                            val filteredPlaylistSongs = remember(playlistSongs, libraryState.searchQuery) {
+                                val q = libraryState.searchQuery.trim()
+                                if (q.isBlank()) {
+                                    playlistSongs
+                                } else {
+                                    playlistSongs.filter {
+                                        it.title.contains(q, ignoreCase = true) ||
+                                        it.artist.contains(q, ignoreCase = true) ||
+                                        it.album.contains(q, ignoreCase = true)
+                                    }
+                                }
+                            }
+
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(start = 16.dp, end = 16.dp, top = 8.dp)
                             ) {
-                                // 顶部导航栏
+                                // 歌单操作栏（播放全部、添加歌曲、搜索）
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    IconButton(
-                                        onClick = { openedPlaylist = null },
-                                        modifier = Modifier.size(36.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                            contentDescription = "Back",
-                                            tint = OrbitTheme.colors.textPrimary
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = currentPlaylist.name,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 18.sp,
-                                            color = OrbitTheme.colors.textPrimary,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = stringResource(R.string.tracks_count, playlistSongs.size),
-                                            fontSize = 12.sp,
-                                            color = OrbitTheme.colors.textSecondary
-                                        )
-                                    }
-
                                     // 播放全部按钮
-                                    if (playlistSongs.isNotEmpty()) {
+                                    if (filteredPlaylistSongs.isNotEmpty()) {
                                         FilledTonalButton(
-                                            onClick = { viewModel.playSong(playlistSongs, 0) },
+                                            onClick = { viewModel.playSong(filteredPlaylistSongs, 0) },
                                             colors = ButtonDefaults.filledTonalButtonColors(
                                                 containerColor = OrbitTheme.colors.primary.copy(alpha = 0.15f),
                                                 contentColor = OrbitTheme.colors.primary
                                             ),
                                             shape = RoundedCornerShape(20.dp),
-                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.PlayArrow,
@@ -966,34 +1033,110 @@ fun MusicLibraryScreen(
                                             Text(
                                                 text = stringResource(R.string.btn_play_all),
                                                 fontWeight = FontWeight.Bold,
-                                                fontSize = 12.sp
+                                                fontSize = 13.sp
                                             )
                                         }
                                     }
+
+                                    // 添加歌曲按钮 (红心歌单不展示添加歌曲按钮)
+                                    if (currentPlaylist.id != -999L) {
+                                        OutlinedButton(
+                                            onClick = { showAddSongsToPlaylistDialog = true },
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = OrbitTheme.colors.primary),
+                                            border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f)),
+                                            shape = RoundedCornerShape(20.dp),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                        ) {
+                                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(stringResource(R.string.add_songs), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.weight(1f))
+
+                                    // 搜索状态统计 / 快捷搜索按钮
+                                    if (libraryState.searchQuery.isNotBlank()) {
+                                        Text(
+                                            text = "${filteredPlaylistSongs.size} / ${playlistSongs.size}",
+                                            fontSize = 12.sp,
+                                            color = OrbitTheme.colors.primary,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = { viewModel.toggleSearch() },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (libraryState.isSearching) Icons.Default.Close else Icons.Default.Search,
+                                            contentDescription = "Search In Playlist",
+                                            tint = if (libraryState.isSearching) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary
+                                        )
+                                    }
                                 }
 
-                                // 快捷操作栏：添加歌曲按钮
-                                // 快捷操作栏：添加歌曲按钮 (红心歌单不展示添加歌曲按钮)
-                                if (currentPlaylist.id != -999L) {
-                                    OutlinedButton(
-                                        onClick = { showAddSongsToPlaylistDialog = true },
+                                // 歌单内即时搜索输入框
+                                AnimatedVisibility(
+                                    visible = libraryState.isSearching,
+                                    enter = expandVertically() + fadeIn(),
+                                    exit = shrinkVertically() + fadeOut()
+                                ) {
+                                    OutlinedTextField(
+                                        value = libraryState.searchQuery,
+                                        onValueChange = { viewModel.setSearchQuery(it) },
+                                        placeholder = {
+                                            Text(
+                                                text = stringResource(R.string.search_hint),
+                                                fontSize = 13.sp,
+                                                color = OrbitTheme.colors.textSecondary
+                                            )
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.Search,
+                                                contentDescription = "Search",
+                                                tint = OrbitTheme.colors.primary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        },
+                                        trailingIcon = {
+                                            if (libraryState.searchQuery.isNotEmpty()) {
+                                                IconButton(
+                                                    onClick = { viewModel.setSearchQuery("") },
+                                                    modifier = Modifier.size(24.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Clear,
+                                                        contentDescription = "Clear",
+                                                        tint = OrbitTheme.colors.textSecondary,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        singleLine = true,
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedContainerColor = OrbitTheme.colors.surfaceCard,
+                                            unfocusedContainerColor = OrbitTheme.colors.surfaceCard,
+                                            focusedBorderColor = OrbitTheme.colors.primary.copy(alpha = 0.7f),
+                                            unfocusedBorderColor = Color.Transparent,
+                                            cursorColor = OrbitTheme.colors.primary,
+                                            focusedTextColor = OrbitTheme.colors.textPrimary,
+                                            unfocusedTextColor = OrbitTheme.colors.textPrimary
+                                        ),
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(vertical = 6.dp),
-                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = OrbitTheme.colors.primary),
-                                        border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f)),
-                                        shape = RoundedCornerShape(12.dp)
-                                    ) {
-                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(stringResource(R.string.add_songs), fontWeight = FontWeight.SemiBold)
-                                    }
+                                            .padding(bottom = 6.dp)
+                                    )
                                 }
 
                                 Spacer(modifier = Modifier.height(4.dp))
 
                                 // 歌曲列表或空状态
-                                if (playlistSongs.isEmpty()) {
+                                if (filteredPlaylistSongs.isEmpty()) {
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -1012,11 +1155,26 @@ fun MusicLibraryScreen(
                                             )
                                             Spacer(modifier = Modifier.height(12.dp))
                                             Text(
-                                                text = if (currentPlaylist.id == -999L) stringResource(R.string.favorites_empty_hint) else stringResource(R.string.empty_playlist_hint),
+                                                text = if (libraryState.searchQuery.isNotBlank()) {
+                                                    stringResource(R.string.search_no_results_title)
+                                                } else if (currentPlaylist.id == -999L) {
+                                                    stringResource(R.string.favorites_empty_hint)
+                                                } else {
+                                                    stringResource(R.string.empty_playlist_hint)
+                                                },
                                                 fontSize = 13.sp,
                                                 color = OrbitTheme.colors.textSecondary,
                                                 textAlign = TextAlign.Center
                                             )
+                                            if (libraryState.searchQuery.isNotBlank()) {
+                                                Spacer(modifier = Modifier.height(6.dp))
+                                                Text(
+                                                    text = stringResource(R.string.search_no_results_desc),
+                                                    fontSize = 11.sp,
+                                                    color = OrbitTheme.colors.textSecondary.copy(alpha = 0.7f),
+                                                    textAlign = TextAlign.Center
+                                                )
+                                            }
                                         }
                                     }
                                 } else {
@@ -1027,7 +1185,7 @@ fun MusicLibraryScreen(
                                         modifier = Modifier.weight(1f)
                                     ) {
                                         itemsIndexed(
-                                            items = playlistSongs,
+                                            items = filteredPlaylistSongs,
                                             key = { index, song -> "${song.id}_$index" }
                                         ) { index, song ->
                                             SongItem(
@@ -1036,7 +1194,7 @@ fun MusicLibraryScreen(
                                                 isCurrent = playbackState.currentSong?.id == song.id,
                                                 viewMode = libraryState.viewMode,
                                                 coverVersion = coverVer,
-                                                onClick = { handleSongItemClick(playlistSongs, index) },
+                                                onClick = { handleSongItemClick(filteredPlaylistSongs, index) },
                                                 onFavoriteClick = { viewModel.cycleSongAttitude(song) },
                                                 onLongClick = { activeSongForLongClickMenu = song },
                                                 trailingContent = {
@@ -1095,94 +1253,118 @@ fun MusicLibraryScreen(
 
                                 Spacer(modifier = Modifier.height(14.dp))
 
-                                LazyColumn(
-                                    state = playlistsListState,
-                                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                                    contentPadding = PaddingValues(bottom = 98.dp),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    // 置顶显示「我喜欢的音乐」专属卡片
-                                    item {
-                                        val favTitle = stringResource(R.string.favorite_songs)
-                                        Row(
+                                val q = libraryState.searchQuery.trim()
+                                val favTitle = stringResource(R.string.favorite_songs)
+                                val favMatches = q.isBlank() || favTitle.contains(q, ignoreCase = true) || favoriteSongs.any {
+                                    it.title.contains(q, ignoreCase = true) || it.artist.contains(q, ignoreCase = true)
+                                }
+                                val filteredPlaylists = remember(playlists, libraryState.searchQuery) {
+                                    if (q.isBlank()) {
+                                        playlists
+                                    } else {
+                                        playlists.filter { it.name.contains(q, ignoreCase = true) }
+                                    }
+                                }
+
+                                if (filteredPlaylists.isEmpty() && !favMatches) {
+                                    EmptyStateView(
+                                        title = stringResource(R.string.search_no_results_title),
+                                        subtitle = stringResource(R.string.search_no_results_desc)
+                                    )
+                                } else {
+                                    LazyColumn(
+                                        state = playlistsListState,
+                                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        contentPadding = PaddingValues(bottom = 98.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        // 置顶显示「我喜欢的音乐」专属卡片
+                                        if (favMatches) {
+                                            item {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clip(RoundedCornerShape(14.dp))
+                                                        .background(OrbitTheme.colors.surfaceCard)
+                                                        .clickable {
+                                                            viewModel.setSearchQuery("")
+                                                            openedPlaylist = Playlist(
+                                                                id = -999L,
+                                                                name = favTitle,
+                                                                songCount = favoriteSongs.size,
+                                                                createdAt = 0L
+                                                            )
+                                                        }
+                                                        .padding(14.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(42.dp)
+                                                            .clip(RoundedCornerShape(10.dp))
+                                                            .background(Color(0xFFFF3366).copy(alpha = 0.15f)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Favorite,
+                                                            contentDescription = null,
+                                                            tint = Color(0xFFFF3366),
+                                                            modifier = Modifier.size(24.dp)
+                                                        )
+                                                    }
+                                                    Spacer(modifier = Modifier.width(14.dp))
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            text = favTitle,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = OrbitTheme.colors.textPrimary,
+                                                            fontSize = 15.sp,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                        Spacer(modifier = Modifier.height(2.dp))
+                                                        Text(
+                                                            text = stringResource(R.string.tracks_count, favoriteSongs.size),
+                                                            color = OrbitTheme.colors.textSecondary,
+                                                            fontSize = 12.sp
+                                                        )
+                                                    }
+
+                                                    // 快捷播放全部喜欢的音乐
+                                                    if (favoriteSongs.isNotEmpty()) {
+                                                        IconButton(
+                                                            onClick = { viewModel.playSong(favoriteSongs, 0) },
+                                                            modifier = Modifier.size(32.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.PlayArrow,
+                                                                contentDescription = stringResource(R.string.btn_play_all),
+                                                                tint = Color(0xFFFF3366),
+                                                                modifier = Modifier.size(22.dp)
+                                                            )
+                                                        }
+                                                    } else {
+                                                        Icon(
+                                                            imageVector = Icons.Default.ChevronRight,
+                                                            contentDescription = null,
+                                                            tint = OrbitTheme.colors.textSecondary,
+                                                            modifier = Modifier.size(20.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        items(filteredPlaylists, key = { it.id }) { playlist ->
+                                            Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .clip(RoundedCornerShape(14.dp))
                                                 .background(OrbitTheme.colors.surfaceCard)
                                                 .clickable {
-                                                    openedPlaylist = Playlist(
-                                                        id = -999L,
-                                                        name = favTitle,
-                                                        songCount = favoriteSongs.size,
-                                                        createdAt = 0L
-                                                    )
+                                                    viewModel.setSearchQuery("")
+                                                    openedPlaylist = playlist
                                                 }
-                                                .padding(14.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(42.dp)
-                                                    .clip(RoundedCornerShape(10.dp))
-                                                    .background(Color(0xFFFF3366).copy(alpha = 0.15f)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Favorite,
-                                                    contentDescription = null,
-                                                    tint = Color(0xFFFF3366),
-                                                    modifier = Modifier.size(24.dp)
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.width(14.dp))
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = favTitle,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = OrbitTheme.colors.textPrimary,
-                                                    fontSize = 15.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                                Spacer(modifier = Modifier.height(2.dp))
-                                                Text(
-                                                    text = stringResource(R.string.tracks_count, favoriteSongs.size),
-                                                    color = OrbitTheme.colors.textSecondary,
-                                                    fontSize = 12.sp
-                                                )
-                                            }
-
-                                            // 快捷播放全部喜欢的音乐
-                                            if (favoriteSongs.isNotEmpty()) {
-                                                IconButton(
-                                                    onClick = { viewModel.playSong(favoriteSongs, 0) },
-                                                    modifier = Modifier.size(32.dp)
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.PlayArrow,
-                                                        contentDescription = stringResource(R.string.btn_play_all),
-                                                        tint = Color(0xFFFF3366),
-                                                        modifier = Modifier.size(22.dp)
-                                                    )
-                                                }
-                                            } else {
-                                                Icon(
-                                                    imageVector = Icons.Default.ChevronRight,
-                                                    contentDescription = null,
-                                                    tint = OrbitTheme.colors.textSecondary,
-                                                    modifier = Modifier.size(20.dp)
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    items(playlists, key = { it.id }) { playlist ->
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clip(RoundedCornerShape(14.dp))
-                                                .background(OrbitTheme.colors.surfaceCard)
-                                                .clickable { openedPlaylist = playlist }
                                                 .padding(14.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
@@ -1275,6 +1457,7 @@ fun MusicLibraryScreen(
                                         }
                                     }
                                 }
+                                }
                             }
                         }
                     }
@@ -1338,17 +1521,23 @@ fun MusicLibraryScreen(
                     .clipToBounds()
             ) {
                 Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-                    // 仅在下钻（文件夹/专辑/艺术家）时展示返回面包屑栏；未下钻时不展示任何TopBar且不保留空间
-                    val isDrillDown = openedFolderPath != null || openedAlbum != null || openedArtist != null
+                    // 仅在下钻（文件夹/专辑/艺术家/歌单）时展示返回面包屑栏；未下钻时不展示任何TopBar且不保留空间
+                    val isDrillDown = openedFolderPath != null || openedAlbum != null || openedArtist != null || openedPlaylist != null
                     if (isDrillDown) {
                         TabletDrillDownTopBar(
                             openedFolderPath = openedFolderPath,
                             openedAlbum = openedAlbum,
                             openedArtist = openedArtist,
+                            openedPlaylist = openedPlaylist,
+                            isSearching = libraryState.isSearching,
+                            searchQuery = libraryState.searchQuery,
+                            onToggleSearch = { viewModel.toggleSearch() },
+                            onSearchQueryChange = { viewModel.setSearchQuery(it) },
                             onBack = {
                                 openedFolderPath = null
                                 openedAlbum = null
                                 openedArtist = null
+                                openedPlaylist = null
                             }
                         )
                     }
@@ -1628,7 +1817,6 @@ fun MusicLibraryScreen(
     // 4. 播放列表下钻中添加歌曲弹窗
     if (showAddSongsToPlaylistDialog && openedPlaylist != null) {
         val targetPlaylist = openedPlaylist!!
-        val allSongs by viewModel.allSongs.collectAsState()
         var songSearchQuery by remember { mutableStateOf("") }
         val selectableSongs = remember(allSongs, songSearchQuery) {
             if (songSearchQuery.isBlank()) allSongs else {
@@ -2470,6 +2658,11 @@ private fun TabletDrillDownTopBar(
     openedFolderPath: String?,
     openedAlbum: AlbumItem?,
     openedArtist: ArtistItem?,
+    openedPlaylist: Playlist?,
+    isSearching: Boolean,
+    searchQuery: String,
+    onToggleSearch: () -> Unit,
+    onSearchQueryChange: (String) -> Unit,
     onBack: () -> Unit
 ) {
     Surface(
@@ -2498,12 +2691,14 @@ private fun TabletDrillDownTopBar(
                     openedFolderPath != null -> openedFolderPath.substringAfterLast("/").ifEmpty { "Folder" }
                     openedAlbum != null -> openedAlbum.title
                     openedArtist != null -> openedArtist.name
+                    openedPlaylist != null -> openedPlaylist.name
                     else -> ""
                 }
                 val subtitle = when {
                     openedFolderPath != null -> openedFolderPath
                     openedAlbum != null -> "${openedAlbum.artist} • ${openedAlbum.songCount} tracks"
                     openedArtist != null -> "${openedArtist.albumCount} albums • ${openedArtist.songCount} tracks"
+                    openedPlaylist != null -> "${openedPlaylist.songCount} tracks"
                     else -> ""
                 }
                 Text(
@@ -2520,6 +2715,47 @@ private fun TabletDrillDownTopBar(
                     color = OrbitTheme.colors.textSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            AnimatedVisibility(
+                visible = isSearching,
+                enter = fadeIn() + expandHorizontally(),
+                exit = fadeOut() + shrinkHorizontally()
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = onSearchQueryChange,
+                    placeholder = { Text(stringResource(R.string.search_hint), fontSize = 12.sp, color = OrbitTheme.colors.textSecondary) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(20.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = OrbitTheme.colors.surfaceCard,
+                        unfocusedContainerColor = OrbitTheme.colors.surfaceCard,
+                        focusedBorderColor = OrbitTheme.colors.primary.copy(alpha = 0.7f),
+                        unfocusedBorderColor = Color.Transparent,
+                        cursorColor = OrbitTheme.colors.primary,
+                        focusedTextColor = OrbitTheme.colors.textPrimary,
+                        unfocusedTextColor = OrbitTheme.colors.textPrimary
+                    ),
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { onSearchQueryChange("") }, modifier = Modifier.size(20.dp)) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear", tint = OrbitTheme.colors.textSecondary, modifier = Modifier.size(14.dp))
+                            }
+                        }
+                    },
+                    modifier = Modifier.width(220.dp).height(44.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            IconButton(onClick = onToggleSearch) {
+                Icon(
+                    imageVector = if (isSearching) Icons.Default.Close else Icons.Default.Search,
+                    contentDescription = "Search",
+                    tint = if (isSearching) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary
                 )
             }
         }

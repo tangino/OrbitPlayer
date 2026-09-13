@@ -10,6 +10,7 @@ import android.util.Log
 import com.antigravity.equalizer.data.db.AppDatabase
 import com.antigravity.equalizer.data.model.Song
 import com.antigravity.equalizer.data.provider.AudioCoverProvider
+import com.antigravity.equalizer.utils.AudioTagExtractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -73,16 +74,61 @@ class MediaStoreScanner(private val context: Context) {
 
                     val id = cursor.getLong(idCol)
                     val rawTitle = cursor.getString(titleCol)
-                    val title = if (!rawTitle.isNullOrBlank() && rawTitle != "<unknown>") rawTitle else file.nameWithoutExtension
                     val rawArtist = cursor.getString(artistCol)
-                    val artist = if (!rawArtist.isNullOrBlank() && rawArtist != "<unknown>") rawArtist else "Unknown Artist"
                     val rawAlbum = cursor.getString(albumCol)
-                    val album = if (!rawAlbum.isNullOrBlank() && rawAlbum != "<unknown>") rawAlbum else "Unknown Album"
+
+                    var title = if (!rawTitle.isNullOrBlank() && rawTitle != "<unknown>") rawTitle else file.nameWithoutExtension
+                    var artist = if (!rawArtist.isNullOrBlank() && rawArtist != "<unknown>") rawArtist else "Unknown Artist"
+                    var album = if (!rawAlbum.isNullOrBlank() && rawAlbum != "<unknown>") rawAlbum else "Unknown Album"
                     val albumId = cursor.getLong(albumIdCol)
                     val duration = cursor.getLong(durationCol)
                     val size = cursor.getLong(sizeCol)
-                    val year = if (yearCol != -1) cursor.getInt(yearCol) else 0
+                    var year = if (yearCol != -1) cursor.getInt(yearCol) else 0
                     val mime = if (mimeCol != -1) cursor.getString(mimeCol) ?: "audio/*" else "audio/*"
+
+                    val parentFolderName = file.parentFile?.name ?: ""
+                    val isAlbumFolderFallback = !rawAlbum.isNullOrBlank() && (
+                        rawAlbum.equals(parentFolderName, ignoreCase = true) ||
+                        rawAlbum.equals("Music", ignoreCase = true) ||
+                        rawAlbum.equals("Download", ignoreCase = true) ||
+                        rawAlbum.equals("Audio", ignoreCase = true) ||
+                        rawAlbum.equals("netease", ignoreCase = true) ||
+                        rawAlbum.equals("qqmusic", ignoreCase = true) ||
+                        rawAlbum.equals("kuwo", ignoreCase = true) ||
+                        rawAlbum.equals("kugou", ignoreCase = true) ||
+                        rawAlbum == "<unknown>"
+                    )
+
+                    val shouldDeepExtract = artist == "Unknown Artist" || 
+                                            album == "Unknown Album" || 
+                                            title == file.nameWithoutExtension || 
+                                            isAlbumFolderFallback
+
+                    // 当系统 MediaStore 未能有效解析标签时，或专辑名称被系统退化为目录名时，使用原生 AudioTagExtractor 深度读取
+                    if (shouldDeepExtract) {
+                        val tags = AudioTagExtractor.extractMetadata(path)
+                        if (!tags.title.isNullOrBlank()) title = tags.title
+                        if (!tags.artist.isNullOrBlank()) artist = tags.artist
+                        if (tags.year != null && tags.year > 0) year = tags.year
+
+                        if (!tags.album.isNullOrBlank()) {
+                            album = tags.album
+                        } else if (isAlbumFolderFallback) {
+                            // 经原生解析确认文件无有效专辑标签，纠正系统 MediaStore 自动填充的目录名称
+                            album = "Unknown Album"
+                        }
+                    }
+
+                    // 若仍缺少艺术家，尝试从文件名结构（如 "歌手 - 歌曲名"）智能解析
+                    if (artist == "Unknown Artist" || artist.isBlank()) {
+                        val parsed = parseArtistAndTitleFromFileName(file.nameWithoutExtension)
+                        if (parsed != null) {
+                            artist = parsed.first
+                            if (title == file.nameWithoutExtension) {
+                                title = parsed.second
+                            }
+                        }
+                    }
 
                     // 使用单曲唯一绑定的专属封面 URI，彻底告别旧版按 albumId 共享引起的封面错乱与串台
                     val albumArtUri = AudioCoverProvider.buildSongCoverUri(id, path, album)
@@ -211,6 +257,7 @@ class MediaStoreScanner(private val context: Context) {
                     var album = "Unknown Album"
                     var durationMs = 180000L
 
+                    var year = 0
                     try {
                         retriever.setDataSource(path)
                         val metaTitle = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
@@ -223,28 +270,90 @@ class MediaStoreScanner(private val context: Context) {
                         if (!metaAlbum.isNullOrBlank()) album = metaAlbum
                         if (!metaDur.isNullOrBlank()) durationMs = metaDur.toLongOrNull() ?: 180000L
                     } catch (e: Exception) {
-                        // 忽略无法读取元数据的错误，使用文件名
+                        // 忽略系统读取元数据的错误
                     }
 
-                        val songId = path.hashCode().toLong()
-                        val song = Song(
-                            id = songId,
-                            title = title,
-                            artist = artist,
-                            album = album,
-                            albumId = 0L,
-                            durationMs = durationMs,
-                            path = path,
-                            size = f.length(),
-                            albumArtUri = AudioCoverProvider.buildSongCoverUri(songId, path, album),
-                            folderPath = f.parent ?: "",
-                        year = 0,
+                    val parentFolderName = f.parentFile?.name ?: ""
+                    val isAlbumFolderFallback = !album.isNullOrBlank() && (
+                        album.equals(parentFolderName, ignoreCase = true) ||
+                        album.equals("Music", ignoreCase = true) ||
+                        album.equals("Download", ignoreCase = true) ||
+                        album.equals("Audio", ignoreCase = true) ||
+                        album.equals("netease", ignoreCase = true) ||
+                        album.equals("qqmusic", ignoreCase = true) ||
+                        album.equals("kuwo", ignoreCase = true) ||
+                        album.equals("kugou", ignoreCase = true) ||
+                        album == "<unknown>"
+                    )
+
+                    val shouldDeepExtract = artist == "Unknown Artist" || 
+                                            album == "Unknown Album" || 
+                                            title == f.nameWithoutExtension || 
+                                            isAlbumFolderFallback
+
+                    // 使用原生 AudioTagExtractor 进行深度元数据补齐（尤其是 APE/FLAC/WAV/无损格式）
+                    if (shouldDeepExtract) {
+                        val tags = AudioTagExtractor.extractMetadata(path)
+                        if (!tags.title.isNullOrBlank()) title = tags.title
+                        if (!tags.artist.isNullOrBlank()) artist = tags.artist
+                        if (tags.year != null && tags.year > 0) year = tags.year
+
+                        if (!tags.album.isNullOrBlank()) {
+                            album = tags.album
+                        } else if (isAlbumFolderFallback) {
+                            album = "Unknown Album"
+                        }
+                    }
+
+                    // 若仍为未知，尝试文件名智能拆解 (如 "周杰伦 - 晴天")
+                    if (artist == "Unknown Artist" || artist.isBlank()) {
+                        val parsed = parseArtistAndTitleFromFileName(f.nameWithoutExtension)
+                        if (parsed != null) {
+                            artist = parsed.first
+                            if (title == f.nameWithoutExtension) {
+                                title = parsed.second
+                            }
+                        }
+                    }
+
+                    val songId = path.hashCode().toLong()
+                    val song = Song(
+                        id = songId,
+                        title = title,
+                        artist = artist,
+                        album = album,
+                        albumId = 0L,
+                        durationMs = durationMs,
+                        path = path,
+                        size = f.length(),
+                        albumArtUri = AudioCoverProvider.buildSongCoverUri(songId, path, album),
+                        folderPath = f.parent ?: "",
+                        year = year,
                         mimeType = "audio/*"
                     )
                     songMap[path] = song
                 }
             }
         }
+    }
+
+    /**
+     * 从文件名智能拆解艺术家与歌曲名（兼容 "周杰伦 - 晴天"、"01. Eminem - Stan" 等规范）
+     */
+    private fun parseArtistAndTitleFromFileName(nameWithoutExt: String): Pair<String, String>? {
+        // 去除开头可能存在的音轨号如 "01. "、"1 - "、"01 " 等
+        val clean = nameWithoutExt.replaceFirst(Regex("""^\d{1,3}[\s\.\-_]+"""), "").trim()
+        if (clean.contains(" - ")) {
+            val parts = clean.split(" - ")
+            if (parts.size >= 2) {
+                val artistPart = parts[0].trim()
+                val titlePart = parts.drop(1).joinToString(" - ").trim()
+                if (artistPart.isNotBlank() && titlePart.isNotBlank()) {
+                    return Pair(artistPart, titlePart)
+                }
+            }
+        }
+        return null
     }
 
     private fun isAudioFile(path: String): Boolean {

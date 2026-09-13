@@ -211,6 +211,21 @@ class AudioVisualizerManager private constructor(private val context: Context) {
     }
 
     /**
+     * 重置频谱到初始静止状态 (用于切歌场景清除上一首歌的残留柱体与峰值)
+     */
+    fun reset() {
+        for (i in 0 until VisualizerFrame.BAR_COUNT) {
+            smoothedBars[i] = 0f
+            peakCaps[i] = 0f
+            peakVelocities[i] = 0f
+            peakHoldCounters[i] = 0
+        }
+        simulationPhase = 0f
+        lastFftReceivedTimestamp = 0L
+        _visualizerFlow.value = VisualizerFrame()
+    }
+
+    /**
      * 解析原生 1024 点 FFT 数据并计算对数频段与顶峰落差
      * 智能识别有效音频能量，过滤底层静默包以防动画抽搐
      */

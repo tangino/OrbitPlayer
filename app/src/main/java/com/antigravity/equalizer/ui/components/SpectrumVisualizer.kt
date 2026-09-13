@@ -61,6 +61,7 @@ fun PowerampSpectrumVisualizer(
     isSingleColor: Boolean = false,
     backgroundLightColor: Long? = null,
     backgroundDarkColor: Long? = null,
+    resetTrigger: Any? = null,
     onClick: (() -> Unit)? = null
 ) {
     if (style == VisualizerStyle.OFF) return
@@ -177,6 +178,18 @@ fun PowerampSpectrumVisualizer(
     val displayPeaks = remember { FloatArray(maxBars) }
     val peakVelocities = remember { FloatArray(maxBars) }
     val peakHoldTimes = remember { FloatArray(maxBars) }
+
+    // 当触发切歌重置时，立即还原清零所有柱体与峰值顶峰
+    var lastResetTrigger by remember { mutableStateOf(resetTrigger) }
+    LaunchedEffect(resetTrigger) {
+        if (lastResetTrigger != resetTrigger) {
+            displayBars.fill(0f)
+            displayPeaks.fill(0f)
+            peakVelocities.fill(0f)
+            peakHoldTimes.fill(0f)
+            lastResetTrigger = resetTrigger
+        }
+    }
 
     // 使用 rememberUpdatedState 保证 V-Sync 循环永远读取到最新传入的 FFT 数据和播放状态，杜绝闭包停滞
     val latestMagnitudes by rememberUpdatedState(magnitudes)

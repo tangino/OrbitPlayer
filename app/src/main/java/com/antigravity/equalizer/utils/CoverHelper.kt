@@ -93,22 +93,32 @@ object CoverHelper {
             return null
         }
 
-        // 3. 优先级 1：提取单曲自身内嵌 APIC / PIC ID3 封面图片
+        // 3. 优先级 1：提取单曲自身内嵌 APIC / PIC / Vorbis Picture 封面图片
+        var embeddedBytes: ByteArray? = null
         try {
             val retriever = MediaMetadataRetriever()
             retriever.setDataSource(path)
-            val embeddedBytes = retriever.embeddedPicture
+            embeddedBytes = retriever.embeddedPicture
             retriever.release()
+        } catch (e: Exception) {
+            Log.d(TAG, "MediaMetadataRetriever failed for embedded artwork: $path, trying AudioTagExtractor")
+        }
 
-            if (embeddedBytes != null && embeddedBytes.isNotEmpty()) {
+        // 若系统 API 未能读出（大图、APE、FLAC非标块或特殊编码等），使用原生 AudioTagExtractor 深度提取
+        if (embeddedBytes == null || embeddedBytes.isEmpty()) {
+            embeddedBytes = AudioTagExtractor.extractEmbeddedPicture(path)
+        }
+
+        if (embeddedBytes != null && embeddedBytes.isNotEmpty()) {
+            try {
                 FileOutputStream(cacheFile).use { out ->
                     out.write(embeddedBytes)
                     out.flush()
                 }
                 return cacheFile
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to write embedded cover cache for $path", e)
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to extract embedded artwork for: $path", e)
         }
 
         val parentDir = audioFile.parentFile
@@ -123,9 +133,27 @@ object CoverHelper {
                     return sameNameImg
                 }
             }
+
+            // 5. 优先级 3：检查同目录下通用专辑伴随封面 (如 cover.jpg / folder.jpg / front.jpg)
+            // 排除系统公共大根目录（如 Download 或 Storage 根目录），防止串台
+            val parentName = parentDir.name.lowercase()
+            val isPublicRootDir = parentName in listOf("download", "music", "storage", "emulated", "0")
+            if (!isPublicRootDir) {
+                val commonAlbumArtNames = listOf(
+                    "cover", "folder", "front", "album", "albumart", "artwork", "folder_art"
+                )
+                for (cName in commonAlbumArtNames) {
+                    for (ext in candidateExts) {
+                        val albumImg = File(parentDir, "$cName.$ext")
+                        if (albumImg.exists() && albumImg.length() > 128) {
+                            return albumImg
+                        }
+                    }
+                }
+            }
         }
 
-        // 5. 确定无专属封面，记入集合，坚决返回 null，杜绝同目录公共 cover.jpg/folder.jpg 借调错乱
+        // 6. 确定无专属及伴随封面，记入集合，返回 null
         noCoverSet.add(songId)
         return null
     }
