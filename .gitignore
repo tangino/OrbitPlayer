@@ -16,3 +16,6 @@ build/
 Android/
 android studio/
 
+# 截图输出
+screenshot_*.png
+
