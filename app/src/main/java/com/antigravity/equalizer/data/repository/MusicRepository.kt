@@ -156,6 +156,13 @@ class MusicRepository private constructor(private val context: Context) {
         updateCollections(updatedList)
     }
 
+    suspend fun clearAllPlayCounts() = withContext(Dispatchers.IO) {
+        db.songDao.resetAllPlayCounts()
+        val updatedList = _allSongs.value.map { it.copy(playCount = 0) }
+        updateCollections(updatedList)
+        MusicPlayerManager.getInstance(context).resetAllPlayCounts()
+    }
+
     suspend fun getSongMetadata(song: Song): com.antigravity.equalizer.data.model.SongMetadata = withContext(Dispatchers.IO) {
         val fromDb = db.songDao.getSongMetadata(song.path)
         com.antigravity.equalizer.data.model.SongMetadataHelper.extractInitialMetadata(song, fromDb)

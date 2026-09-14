@@ -283,6 +283,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun clearAllPlayCounts() {
+        viewModelScope.launch {
+            repository.clearAllPlayCounts()
+        }
+    }
+
     fun playSong(songs: List<Song>, index: Int) {
         playerManager.playSongList(songs, index)
     }

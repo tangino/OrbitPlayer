@@ -165,6 +165,12 @@
     <string name="scan_excluded_folders_desc">扫描时自动跳过指定目录下的所有音频</string>
     <string name="scan_no_excluded_folders">未配置排除文件夹</string>
     <string name="rescan_library_now">立即重新扫描媒体库</string>
+    <string name="clear_play_counts_title">清除播放次数记录</string>
+    <string name="clear_play_counts_desc">将所有歌曲的播放次数重置为 0（保留红心喜爱与歌单）</string>
+    <string name="clear_play_counts_dialog_title">清除播放次数记录？</string>
+    <string name="clear_play_counts_dialog_msg">确定要重置所有歌曲的播放次数吗？重置后所有歌曲的播放次数将归零，随机播放将重新开始全新一轮均摊。</string>
+    <string name="clear_play_counts_confirm">清除</string>
+    <string name="clear_play_counts_success">已成功清除所有歌曲的播放次数记录</string>
     <string name="quick_select_discovered_folder">从当前已发现的文件夹快捷挑选：</string>
     <string name="syncing_audio_library">正在检索媒体库音频...</string>
     <string name="scan_included_title">仅扫描特定文件夹</string>

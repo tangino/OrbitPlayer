@@ -382,6 +382,11 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
         db.insertWithOnConflict("song_stats", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
+    fun resetAllPlayCounts() {
+        val db = helper.writableDatabase
+        db.execSQL("UPDATE song_stats SET playCount = 0")
+    }
+
     fun getFavoriteSongs(): List<Song> {
         val list = mutableListOf<Song>()
         val sql = """

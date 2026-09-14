@@ -312,27 +312,42 @@ class MusicPlayerManager private constructor(private val context: Context) {
             .build()
     }
 
+    private fun recordPlayImmediately(song: Song) {
+        hasRecordedPlayForCurrentSong = true
+        scope.launch {
+            com.antigravity.equalizer.data.repository.MusicRepository.getInstance(context).recordSongPlay(song)
+        }
+    }
+
     fun playSongList(songs: List<Song>, startIndex: Int = 0) {
         if (songs.isEmpty()) return
         playHistory.clear()
-        hasRecordedPlayForCurrentSong = false
 
-        val mediaItems = songs.map { createMediaItem(it) }
+        val safeIndex = startIndex.coerceIn(0, songs.size - 1)
+        val targetSong = songs[safeIndex]
+        val updatedSong = targetSong.copy(playCount = targetSong.playCount + 1)
+        val updatedSongs = songs.mapIndexed { idx, s ->
+            if (idx == safeIndex) updatedSong else s
+        }
+
+        val mediaItems = updatedSongs.map { createMediaItem(it) }
         visualizerManager.reset()
 
         _playbackState.update {
             it.copy(
-                currentPlaylist = songs,
-                currentIndex = startIndex,
-                currentSong = songs.getOrNull(startIndex)
+                currentPlaylist = updatedSongs,
+                currentIndex = safeIndex,
+                currentSong = updatedSong
             )
         }
 
-        player.setMediaItems(mediaItems, startIndex, 0L)
+        recordPlayImmediately(targetSong)
+
+        player.setMediaItems(mediaItems, safeIndex, 0L)
         player.prepare()
         player.play()
         com.antigravity.equalizer.service.MusicPlaybackService.start(context)
-        saveLastPlayedSong(songs.getOrNull(startIndex), 0L)
+        saveLastPlayedSong(updatedSong, 0L)
     }
 
     fun togglePlayPause() {
@@ -357,18 +372,37 @@ class MusicPlayerManager private constructor(private val context: Context) {
     private fun pickNextShuffleIndex(playlist: List<Song>, currentIndex: Int): Int {
         if (playlist.size <= 1) return 0
         val historySet = playHistory.toSet()
-        // 严格排除标记为不喜欢的歌曲
-        var candidates = playlist.indices.filter { it != currentIndex && it !in historySet && !playlist[it].isDisliked }
-        if (candidates.isEmpty()) {
-            candidates = playlist.indices.filter { it != currentIndex && !playlist[it].isDisliked }
-            if (candidates.isEmpty()) {
-                candidates = playlist.indices.filter { it != currentIndex }
-                if (candidates.isEmpty()) return 0
-            }
-        }
 
         return when (_playbackState.value.shuffleStrategy) {
+            ShuffleStrategy.LEAST_PLAYED -> {
+                // 排除当前正在播放的歌曲及标记为不喜欢的歌曲
+                val validIndices = playlist.indices.filter { it != currentIndex && !playlist[it].isDisliked }.ifEmpty {
+                    playlist.indices.filter { it != currentIndex }
+                }
+                if (validIndices.isEmpty()) return 0
+
+                // 寻找有效曲库中的全局最低播放次数
+                val minPlayCount = validIndices.minOfOrNull { playlist[it].playCount } ?: 0
+                // 仅筛选播放次数等于最低次数的歌曲入候选池（次数更高的全部严格排除）
+                val minPool = validIndices.filter { playlist[it].playCount <= minPlayCount }
+
+                // 在最低播放次数的候选池中，优先挑选未在最近历史栈中的歌曲
+                val freshCandidates = minPool.filter { it !in historySet }
+                if (freshCandidates.isNotEmpty()) {
+                    freshCandidates.random()
+                } else {
+                    minPool.random()
+                }
+            }
             ShuffleStrategy.FAVORITE_FIRST -> {
+                var candidates = playlist.indices.filter { it != currentIndex && it !in historySet && !playlist[it].isDisliked }
+                if (candidates.isEmpty()) {
+                    candidates = playlist.indices.filter { it != currentIndex && !playlist[it].isDisliked }
+                    if (candidates.isEmpty()) {
+                        candidates = playlist.indices.filter { it != currentIndex }
+                        if (candidates.isEmpty()) return 0
+                    }
+                }
                 val favCandidates = candidates.filter { playlist[it].isFavorite }
                 if (favCandidates.isNotEmpty()) {
                     favCandidates.random()
@@ -376,12 +410,15 @@ class MusicPlayerManager private constructor(private val context: Context) {
                     candidates.random()
                 }
             }
-            ShuffleStrategy.LEAST_PLAYED -> {
-                val minPlays = candidates.minOfOrNull { playlist[it].playCount } ?: 0
-                val leastCandidates = candidates.filter { playlist[it].playCount <= minPlays }
-                leastCandidates.random()
-            }
             ShuffleStrategy.STANDARD -> {
+                var candidates = playlist.indices.filter { it != currentIndex && it !in historySet && !playlist[it].isDisliked }
+                if (candidates.isEmpty()) {
+                    candidates = playlist.indices.filter { it != currentIndex && !playlist[it].isDisliked }
+                    if (candidates.isEmpty()) {
+                        candidates = playlist.indices.filter { it != currentIndex }
+                        if (candidates.isEmpty()) return 0
+                    }
+                }
                 candidates.random()
             }
         }
@@ -395,23 +432,29 @@ class MusicPlayerManager private constructor(private val context: Context) {
         if (playlist.isEmpty()) return
         val safeIndex = targetIndex.coerceIn(0, playlist.size - 1)
         val targetSong = playlist[safeIndex]
+        val updatedSong = targetSong.copy(playCount = targetSong.playCount + 1)
+        val updatedPlaylist = playlist.mapIndexed { idx, s ->
+            if (idx == safeIndex) updatedSong else s
+        }
 
-        hasRecordedPlayForCurrentSong = false
         visualizerManager.reset()
         _playbackState.update {
             it.copy(
+                currentPlaylist = updatedPlaylist,
                 currentIndex = safeIndex,
-                currentSong = targetSong,
+                currentSong = updatedSong,
                 currentPositionMs = 0L,
-                durationMs = targetSong.durationMs,
+                durationMs = updatedSong.durationMs,
                 progress = 0f
             )
         }
 
+        recordPlayImmediately(targetSong)
+
         try {
             // 如果底层 ExoPlayer 内部媒体项数量与播放列表脱节（例如冷启动或部分加载），立即完整同步
-            if (player.mediaItemCount != playlist.size) {
-                val mediaItems = playlist.map { createMediaItem(it) }
+            if (player.mediaItemCount != updatedPlaylist.size) {
+                val mediaItems = updatedPlaylist.map { createMediaItem(it) }
                 player.setMediaItems(mediaItems, safeIndex, 0L)
                 player.prepare()
             } else {
@@ -423,11 +466,11 @@ class MusicPlayerManager private constructor(private val context: Context) {
             }
             player.play()
             com.antigravity.equalizer.service.MusicPlaybackService.start(context)
-            saveLastPlayedSong(targetSong, 0L)
+            saveLastPlayedSong(updatedSong, 0L)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to seek to track at index $safeIndex, recovering...", e)
             try {
-                val mediaItems = playlist.map { createMediaItem(it) }
+                val mediaItems = updatedPlaylist.map { createMediaItem(it) }
                 player.setMediaItems(mediaItems, safeIndex, 0L)
                 player.prepare()
                 player.play()
@@ -562,16 +605,20 @@ class MusicPlayerManager private constructor(private val context: Context) {
     }
 
     private fun handlePlaybackEnded() {
-        if (!hasRecordedPlayForCurrentSong) {
-            hasRecordedPlayForCurrentSong = true
-            _playbackState.value.currentSong?.let { song ->
-                scope.launch {
-                    com.antigravity.equalizer.data.repository.MusicRepository.getInstance(context).recordSongPlay(song)
-                }
-            }
-        }
-
         if (_playbackState.value.repeatMode == RepeatMode.ONE) {
+            _playbackState.value.currentSong?.let { song ->
+                val updatedSong = song.copy(playCount = song.playCount + 1)
+                _playbackState.update { state ->
+                    val updatedList = state.currentPlaylist.map {
+                        if (it.path == song.path) updatedSong else it
+                    }
+                    state.copy(
+                        currentPlaylist = updatedList,
+                        currentSong = updatedSong
+                    )
+                }
+                recordPlayImmediately(song)
+            }
             player.seekTo(0L)
             player.play()
         } else if (_playbackState.value.repeatMode == RepeatMode.ALL) {
@@ -589,13 +636,20 @@ class MusicPlayerManager private constructor(private val context: Context) {
                 val duration = player.duration.coerceAtLeast(1L)
                 val progress = (currentPos.toFloat() / duration).coerceIn(0f, 1f)
 
-                // 播放超过 20 秒视为有效播放，累计播放计数
+                // 播放超过 20 秒视为有效播放，累计播放计数（兜底保障）
                 if (currentPos >= 20000L && !hasRecordedPlayForCurrentSong) {
-                    hasRecordedPlayForCurrentSong = true
                     _playbackState.value.currentSong?.let { song ->
-                        scope.launch {
-                            com.antigravity.equalizer.data.repository.MusicRepository.getInstance(context).recordSongPlay(song)
+                        val updatedSong = song.copy(playCount = song.playCount + 1)
+                        _playbackState.update { state ->
+                            val updatedList = state.currentPlaylist.map {
+                                if (it.path == song.path) updatedSong else it
+                            }
+                            state.copy(
+                                currentPlaylist = updatedList,
+                                currentSong = updatedSong
+                            )
                         }
+                        recordPlayImmediately(song)
                     }
                 }
 
@@ -693,6 +747,17 @@ class MusicPlayerManager private constructor(private val context: Context) {
             current.copy(
                 currentSong = newCurrentSong,
                 currentPlaylist = updatedPlaylist
+            )
+        }
+    }
+
+    fun resetAllPlayCounts() {
+        _playbackState.update { current ->
+            val resetPlaylist = current.currentPlaylist.map { it.copy(playCount = 0) }
+            val resetCurrentSong = current.currentSong?.copy(playCount = 0)
+            current.copy(
+                currentPlaylist = resetPlaylist,
+                currentSong = resetCurrentSong
             )
         }
     }

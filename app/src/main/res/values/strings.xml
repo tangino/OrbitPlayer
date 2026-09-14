@@ -165,6 +165,12 @@
     <string name="scan_excluded_folders_desc">Skip all audio files located in these folders</string>
     <string name="scan_no_excluded_folders">No excluded folders configured</string>
     <string name="rescan_library_now">Rescan Library Now</string>
+    <string name="clear_play_counts_title">Clear Play Count Records</string>
+    <string name="clear_play_counts_desc">Reset play counts of all songs to 0 (keeps favorites &amp; playlists)</string>
+    <string name="clear_play_counts_dialog_title">Clear Play Counts?</string>
+    <string name="clear_play_counts_dialog_msg">Are you sure you want to reset the play counts of all songs? All counts will be reset to 0, and least-played shuffle will start a fresh cycle.</string>
+    <string name="clear_play_counts_confirm">Clear</string>
+    <string name="clear_play_counts_success">Play count records have been cleared.</string>
     <string name="quick_select_discovered_folder">Quick select from discovered folders:</string>
     <string name="syncing_audio_library">Syncing audio library...</string>
     <string name="scan_included_title">Scan Specific Folders (Whitelist)</string>

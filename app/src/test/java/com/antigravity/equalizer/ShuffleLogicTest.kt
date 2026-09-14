@@ -247,4 +247,98 @@ class ShuffleLogicTest {
         assertTrue("当所有歌曲均不喜欢时，应安全降级返回除当前歌曲外的其他歌曲", candidates.isNotEmpty())
         assertFalse("降级时不挑当前歌曲", candidates.contains(currentIndex))
     }
+
+    @Test
+    fun testLeastPlayedShuffleWithSevenSongsSequentialRounds() {
+        // 模拟歌曲 a, b, c, d, e, f, g，初始播放次数均为 0
+        data class SongItem(val name: String, var playCount: Int = 0, val isDisliked: Boolean = false)
+        val playlist = mutableListOf(
+            SongItem("a", playCount = 0),
+            SongItem("b", playCount = 0),
+            SongItem("c", playCount = 0),
+            SongItem("d", playCount = 0),
+            SongItem("e", playCount = 0),
+            SongItem("f", playCount = 0),
+            SongItem("g", playCount = 0)
+        )
+
+        val historySet = mutableSetOf<Int>()
+
+        fun pickNextShuffleIndex(currentIndex: Int): Int {
+            val validIndices = playlist.indices.filter { it != currentIndex && !playlist[it].isDisliked }.ifEmpty {
+                playlist.indices.filter { it != currentIndex }
+            }
+            if (validIndices.isEmpty()) return 0
+            val minPlayCount = validIndices.minOfOrNull { playlist[it].playCount } ?: 0
+            val minPool = validIndices.filter { playlist[it].playCount <= minPlayCount }
+            val freshCandidates = minPool.filter { it !in historySet }
+            return if (freshCandidates.isNotEmpty()) freshCandidates.random() else minPool.random()
+        }
+
+        // 1. 用户起初播放歌曲 a (index 0)
+        var currentIndex = 0
+        playlist[currentIndex].playCount++ // a 的播放次数变为 1
+        historySet.add(currentIndex)
+
+        assertEquals("a 播放次数应为 1", 1, playlist[0].playCount)
+        for (i in 1..6) {
+            assertEquals("其余歌曲初始播放次数应为 0", 0, playlist[i].playCount)
+        }
+
+        // 2. 接下来的 6 次随机播放，必须严格从剩余 0 次的歌曲中抽取，绝不能重复抽中 a 或已播歌曲
+        val playedInFirstRound = mutableSetOf(0)
+        repeat(6) {
+            val nextIndex = pickNextShuffleIndex(currentIndex)
+            assertTrue("新抽取的歌曲播放次数必须为 0", playlist[nextIndex].playCount == 0)
+            assertFalse("已被抽过的歌曲绝对不能在同轮内再次抽中", playedInFirstRound.contains(nextIndex))
+
+            // 命中切歌后立即自增并记录
+            playlist[nextIndex].playCount++
+            historySet.add(nextIndex)
+            playedInFirstRound.add(nextIndex)
+            currentIndex = nextIndex
+        }
+
+        // 此时第一轮 7 首歌全部播过一遍，所有歌曲播放次数均变成了 1
+        assertEquals("第一轮结束后 7 首歌均已被播放过", 7, playedInFirstRound.size)
+        for (song in playlist) {
+            assertEquals("第一轮结束后所有歌曲的播放次数均应递增为 1", 1, song.playCount)
+        }
+
+        // 3. 第 8 次随机抽取（进入第 2 轮）：最低播放次数自动平滑递进为 1，候选池重新覆盖剩余歌曲
+        val nextRoundPick = pickNextShuffleIndex(currentIndex)
+        assertNotEquals("第二轮首曲不应是上一轮刚结束的曲目", currentIndex, nextRoundPick)
+        assertEquals("第二轮首曲在被抽取时的原播放次数应为 1", 1, playlist[nextRoundPick].playCount)
+    }
+
+    @Test
+    fun testManualPlayIncrementsCountAndExcludesFromCurrentRound() {
+        data class SongItem(val name: String, var playCount: Int = 0, val isDisliked: Boolean = false)
+        val playlist = mutableListOf(
+            SongItem("a", playCount = 0),
+            SongItem("b", playCount = 0),
+            SongItem("c", playCount = 0),
+            SongItem("d", playCount = 0)
+        )
+
+        fun pickNext(current: Int): Int {
+            val validIndices = playlist.indices.filter { it != current && !playlist[it].isDisliked }.ifEmpty {
+                playlist.indices.filter { it != current }
+            }
+            val minPlayCount = validIndices.minOfOrNull { playlist[it].playCount } ?: 0
+            val minPool = validIndices.filter { playlist[it].playCount <= minPlayCount }
+            return minPool.random()
+        }
+
+        // 用户在列表手动点击了 d (index 3)
+        var current = 3
+        playlist[current].playCount++ // d 次数变为 1
+
+        // 接下来进行随机切歌：由于 a, b, c 的播放次数是 0，d 是 1，因此随机挑选必须严格排除 d
+        repeat(30) {
+            val picked = pickNext(current)
+            assertTrue("随机切歌时播放次数多的歌曲必须被排除", playlist[picked].playCount == 0)
+            assertNotEquals("歌曲 d 绝不能被挑中", 3, picked)
+        }
+    }
 }

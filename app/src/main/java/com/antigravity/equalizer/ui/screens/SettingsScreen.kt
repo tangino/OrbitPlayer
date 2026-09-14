@@ -58,6 +58,7 @@ fun SettingsScreen(
     var exportedJson by remember { mutableStateOf("") }
 
     var showAddFolderDialog by remember { mutableStateOf(false) }
+    var showClearPlayCountsDialog by remember { mutableStateOf(false) }
     var isAddingIncludedFolder by remember { mutableStateOf(true) }
     var customFolderPath by remember { mutableStateOf("") }
 
@@ -1237,6 +1238,40 @@ fun SettingsScreen(
                                 )
                             }
                         }
+
+                        HorizontalDivider(color = GridLineColor)
+
+                        // 4. 清除播放次数记录
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showClearPlayCountsDialog = true
+                                }
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.clear_play_counts_title),
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 14.sp,
+                                    color = OrbitTheme.colors.textPrimary
+                                )
+                                Text(
+                                    text = stringResource(R.string.clear_play_counts_desc),
+                                    fontSize = 11.sp,
+                                    color = OrbitTheme.colors.textSecondary
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Default.DeleteOutline,
+                                contentDescription = stringResource(R.string.clear_play_counts_title),
+                                tint = OrbitTheme.colors.textSecondary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -1523,6 +1558,52 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showAddFolderDialog = false }) {
+                    Text(stringResource(R.string.cancel), color = OrbitTheme.colors.textSecondary)
+                }
+            },
+            containerColor = OrbitTheme.colors.surfaceDialog
+        )
+    }
+
+    // 清除播放次数记录二次确认弹窗
+    if (showClearPlayCountsDialog && musicViewModel != null) {
+        AlertDialog(
+            onDismissRequest = { showClearPlayCountsDialog = false },
+            title = {
+                Text(
+                    text = stringResource(R.string.clear_play_counts_dialog_title),
+                    fontWeight = FontWeight.Bold,
+                    color = OrbitTheme.colors.textPrimary
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.clear_play_counts_dialog_msg),
+                    color = OrbitTheme.colors.textSecondary,
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showClearPlayCountsDialog = false
+                        musicViewModel.clearAllPlayCounts()
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.clear_play_counts_success),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.danger)
+                ) {
+                    Text(
+                        text = stringResource(R.string.clear_play_counts_confirm),
+                        color = Color.White
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearPlayCountsDialog = false }) {
                     Text(stringResource(R.string.cancel), color = OrbitTheme.colors.textSecondary)
                 }
             },
