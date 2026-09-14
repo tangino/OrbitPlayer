@@ -306,6 +306,9 @@ class MainActivity : ComponentActivity() {
                                 onToggleCoverVisualizer = { show ->
                                     equalizerViewModel.setShowNowPlayingVisualizer(show)
                                 },
+                                onToggleShowLyrics = { show ->
+                                    equalizerViewModel.setShowNowPlayingLyrics(show)
+                                },
                                 onToggleVisualizerMaximized = { max ->
                                     equalizerViewModel.setVisualizerMaximized(max)
                                 },

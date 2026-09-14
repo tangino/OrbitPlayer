@@ -67,6 +67,7 @@ data class EqualizerUiState(
     val visualizerPeakDecayEnabled: Boolean = true,
     val visualizerColorScheme: VisualizerColorScheme = VisualizerColorScheme.FOLLOW_BACKGROUND,
     val showNowPlayingVisualizer: Boolean = false,
+    val showNowPlayingLyrics: Boolean = false,
     val visualizerBarWidthDp: Float = 5.0f,
     val visualizerCustomColor: Long = 0xFF00E5FFL,
     val visualizerCustomColor2: Long = 0xFF7C4DFFL,
@@ -125,6 +126,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         val savedVizPeakDecay = prefs.getBoolean(KEY_VIZ_PEAK_DECAY, true)
         val savedVizColor = VisualizerColorScheme.fromId(prefs.getString(KEY_VIZ_COLOR, VisualizerColorScheme.FOLLOW_BACKGROUND.id))
         val savedShowNowPlayingVisualizer = prefs.getBoolean(KEY_SHOW_NOW_PLAYING_VISUALIZER, false)
+        val savedShowNowPlayingLyrics = prefs.getBoolean(KEY_SHOW_NOW_PLAYING_LYRICS, false)
         val savedBarWidthDp = prefs.getFloat(KEY_VIZ_BAR_WIDTH_DP, 5.0f)
         val savedCustomColor = prefs.getLong(KEY_VIZ_CUSTOM_COLOR, 0xFF00E5FFL)
         val savedCustomColor2 = prefs.getLong(KEY_VIZ_CUSTOM_COLOR2, 0xFF7C4DFFL)
@@ -179,6 +181,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
                 visualizerPeakDecayEnabled = savedVizPeakDecay,
                 visualizerColorScheme = savedVizColor,
                 showNowPlayingVisualizer = savedShowNowPlayingVisualizer,
+                showNowPlayingLyrics = savedShowNowPlayingLyrics,
                 visualizerBarWidthDp = savedBarWidthDp,
                 visualizerCustomColor = savedCustomColor,
                 visualizerCustomColor2 = savedCustomColor2,
@@ -612,6 +615,11 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         prefs.edit().putBoolean(KEY_SHOW_NOW_PLAYING_VISUALIZER, show).apply()
     }
 
+    fun setShowNowPlayingLyrics(show: Boolean) {
+        _uiState.update { it.copy(showNowPlayingLyrics = show) }
+        prefs.edit().putBoolean(KEY_SHOW_NOW_PLAYING_LYRICS, show).apply()
+    }
+
     fun setVisualizerBarWidth(widthDp: Float) {
         _uiState.update { it.copy(visualizerBarWidthDp = widthDp) }
         prefs.edit().putFloat(KEY_VIZ_BAR_WIDTH_DP, widthDp).apply()
@@ -874,6 +882,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         private const val KEY_VIZ_PEAK_DECAY = "key_viz_peak_decay"
         private const val KEY_VIZ_COLOR = "key_viz_color"
         private const val KEY_SHOW_NOW_PLAYING_VISUALIZER = "key_show_now_playing_visualizer"
+        private const val KEY_SHOW_NOW_PLAYING_LYRICS = "key_show_now_playing_lyrics"
         private const val KEY_VIZ_BAR_WIDTH_DP = "key_viz_bar_width_dp"
         private const val KEY_VIZ_CUSTOM_COLOR = "key_viz_custom_color"
         private const val KEY_VIZ_CUSTOM_COLOR2 = "key_viz_custom_color2"

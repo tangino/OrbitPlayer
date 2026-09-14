@@ -89,7 +89,7 @@
     <string name="dsp_latency_title">DSP Latency</string>
     <string name="dsp_latency_value">&lt; 2.5 ms</string>
     <string name="version_title">Version</string>
-    <string name="version_value">0.1.4</string>
+    <string name="version_value">0.1.5</string>
 
     <!-- Import / Export Dialogs -->
     <string name="import_dialog_title">Import Preset / AutoEQ</string>
@@ -242,6 +242,10 @@
     <string name="switch_visualizer_style">Switch visualizer style</string>
     <string name="visualizer_swipe_up_hint">Swipe up for spectrum</string>
     <string name="visualizer_swipe_down_hint">Swipe down for cover</string>
+    <string name="lyrics_toggle">Lyrics</string>
+    <string name="lyrics_toggle_show">Show lyrics</string>
+    <string name="lyrics_toggle_hide">Hide lyrics</string>
+    <string name="lyrics_empty_hint">No lyrics available or pure instrumental</string>
 
     <!-- Spectrum Bar Width & Custom Color Wheel -->
     <string name="visualizer_bar_width_title">Spectrum Bar Width</string>
