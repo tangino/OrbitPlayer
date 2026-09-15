@@ -198,7 +198,7 @@ class MainActivity : ComponentActivity() {
                 handleBackFromSettings()
             }
 
-            val hasCustomBg = uiState.customBackgroundPath != null
+            val hasCustomBg = uiState.customBackgroundPath != null || uiState.customSolidBackgroundColor != null
             CompositionLocalProvider(
                 LocalConfiguration provides updatedConfig,
                 LocalContext provides localizedContext,
@@ -206,11 +206,13 @@ class MainActivity : ComponentActivity() {
             ) {
                 MusicEqualizerTheme(
                     themeMode = uiState.themeMode,
-                    hasCustomBackground = hasCustomBg
+                    hasCustomBackground = hasCustomBg,
+                    customSolidBackgroundColor = uiState.customSolidBackgroundColor
                 ) {
                     Box(modifier = Modifier.fillMaxSize()) {
                         AppBackgroundLayer(
                             customBackgroundPath = uiState.customBackgroundPath,
+                            customSolidBackgroundColor = uiState.customSolidBackgroundColor,
                             blurRadius = uiState.backgroundBlurRadius,
                             blurStyle = uiState.backgroundBlurStyle,
                             dimAlpha = uiState.backgroundDimAlpha

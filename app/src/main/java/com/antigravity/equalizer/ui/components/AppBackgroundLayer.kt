@@ -33,12 +33,24 @@ import java.io.File
 @Composable
 fun AppBackgroundLayer(
     customBackgroundPath: String?,
+    customSolidBackgroundColor: Long? = null,
     blurRadius: Float,
     blurStyle: String,
     dimAlpha: Float,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+
+    if (customSolidBackgroundColor != null) {
+        val solidColor = remember(customSolidBackgroundColor) { Color(customSolidBackgroundColor) }
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(solidColor)
+        )
+        return
+    }
+
     val isValidBg = remember(customBackgroundPath) {
         customBackgroundPath != null && File(customBackgroundPath).exists()
     }

@@ -87,6 +87,8 @@ data class EqualizerUiState(
     val visualizerBarBorderAlpha: Float = 0.8f,
     val visualizerBarBorderOnly: Boolean = false,
     val customBackgroundPath: String? = null,
+    val customSolidBackgroundColor: Long? = null,
+    val customUserSolidColors: List<Long> = emptyList(),
     val backgroundBlurRadius: Float = 20f,
     val backgroundBlurStyle: String = "frosted_glass",
     val backgroundDimAlpha: Float = 0.35f,
@@ -152,6 +154,10 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         val savedCustomBgPath = prefs.getString(KEY_CUSTOM_BG_PATH, null)?.let { path ->
             if (File(path).exists()) path else null
         }
+        val savedCustomSolidBgColor = if (prefs.contains(KEY_CUSTOM_SOLID_BG_COLOR)) prefs.getLong(KEY_CUSTOM_SOLID_BG_COLOR, 0L) else null
+        val savedCustomUserSolidColors = prefs.getString(KEY_CUSTOM_USER_SOLID_COLORS, null)?.let { str ->
+            str.split(",").mapNotNull { it.trim().toLongOrNull() }
+        } ?: emptyList()
         val savedBgBlurRadius = prefs.getFloat(KEY_BG_BLUR_RADIUS, 20f)
         val savedBgBlurStyle = prefs.getString(KEY_BG_BLUR_STYLE, "frosted_glass") ?: "frosted_glass"
         val savedBgDimAlpha = prefs.getFloat(KEY_BG_DIM_ALPHA, 0.35f)
@@ -199,6 +205,8 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
                 visualizerBarBorderAlpha = savedVizBarBorderAlpha,
                 visualizerBarBorderOnly = savedVizBarBorderOnly,
                 customBackgroundPath = savedCustomBgPath,
+                customSolidBackgroundColor = savedCustomSolidBgColor,
+                customUserSolidColors = savedCustomUserSolidColors,
                 backgroundBlurRadius = savedBgBlurRadius,
                 backgroundBlurStyle = savedBgBlurStyle,
                 backgroundDimAlpha = savedBgDimAlpha,
@@ -792,6 +800,35 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         extractAndApplyBackgroundColors(null)
     }
 
+    fun setCustomSolidBackgroundColor(color: Long?) {
+        _uiState.update { it.copy(customSolidBackgroundColor = color) }
+        if (color != null) {
+            prefs.edit().putLong(KEY_CUSTOM_SOLID_BG_COLOR, color).apply()
+        } else {
+            prefs.edit().remove(KEY_CUSTOM_SOLID_BG_COLOR).apply()
+        }
+    }
+
+    fun clearCustomSolidBackgroundColor() {
+        setCustomSolidBackgroundColor(null)
+    }
+
+    fun addCustomUserSolidColor(color: Long) {
+        val current = _uiState.value.customUserSolidColors.toMutableList()
+        current.remove(color)
+        current.add(0, color)
+        val limited = current.take(30)
+        _uiState.update { it.copy(customUserSolidColors = limited) }
+        prefs.edit().putString(KEY_CUSTOM_USER_SOLID_COLORS, limited.joinToString(",")).apply()
+        setCustomSolidBackgroundColor(color)
+    }
+
+    fun removeCustomUserSolidColor(color: Long) {
+        val updated = _uiState.value.customUserSolidColors.filter { it != color }
+        _uiState.update { it.copy(customUserSolidColors = updated) }
+        prefs.edit().putString(KEY_CUSTOM_USER_SOLID_COLORS, updated.joinToString(",")).apply()
+    }
+
     private fun extractAndApplyBackgroundColors(path: String?) {
         viewModelScope.launch {
             val extracted = com.antigravity.equalizer.utils.PaletteHelper.extractColorsFromImage(path)
@@ -896,6 +933,8 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         private const val KEY_SHOW_COVER_IN_QUEUE = "key_show_cover_in_queue"
         private const val KEY_VIZ_BAR_ALPHA = "key_viz_bar_alpha"
         private const val KEY_CUSTOM_BG_PATH = "key_custom_bg_path"
+        private const val KEY_CUSTOM_SOLID_BG_COLOR = "key_custom_solid_bg_color"
+        private const val KEY_CUSTOM_USER_SOLID_COLORS = "key_custom_user_solid_colors"
         private const val KEY_BG_BLUR_RADIUS = "key_bg_blur_radius"
         private const val KEY_BG_BLUR_STYLE = "key_bg_blur_style"
         private const val KEY_BG_DIM_ALPHA = "key_bg_dim_alpha"

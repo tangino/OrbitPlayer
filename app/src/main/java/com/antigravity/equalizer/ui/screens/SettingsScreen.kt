@@ -7,6 +7,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -36,11 +38,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.antigravity.equalizer.R
 import com.antigravity.equalizer.audio.ShuffleStrategy
+import com.antigravity.equalizer.ui.components.ColorPickerDialog
 import com.antigravity.equalizer.ui.theme.*
 import com.antigravity.equalizer.ui.viewmodel.EqualizerViewModel
 import com.antigravity.equalizer.ui.viewmodel.MusicPlayerViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SettingsScreen(
     viewModel: EqualizerViewModel,
@@ -61,6 +64,9 @@ fun SettingsScreen(
     var showClearPlayCountsDialog by remember { mutableStateOf(false) }
     var isAddingIncludedFolder by remember { mutableStateOf(true) }
     var customFolderPath by remember { mutableStateOf("") }
+    var customSolidHexInput by remember { mutableStateOf("") }
+    var showSolidColorPickerDialog by remember { mutableStateOf(false) }
+    var solidColorToDelete by remember { mutableStateOf<Long?>(null) }
 
     val includedFolders by musicViewModel?.includedFolders?.collectAsState() ?: remember { mutableStateOf(emptySet()) }
     val excludedFolders by musicViewModel?.excludedFolders?.collectAsState() ?: remember { mutableStateOf(emptySet()) }
@@ -144,7 +150,370 @@ fun SettingsScreen(
                 }
             }
 
-            // 0.1.0 自定义程序背景与磨砂玻璃模糊 (沉浸透光背景)
+            // 0.1.0 自定义纯色背景
+            item {
+                SettingsSectionHeader(stringResource(R.string.custom_solid_background_title))
+                SettingsCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        // 顶部标题与说明
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(OrbitTheme.colors.primary.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Palette,
+                                    contentDescription = null,
+                                    tint = OrbitTheme.colors.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.custom_solid_background_title),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium,
+                                    color = OrbitTheme.colors.textPrimary
+                                )
+                                Text(
+                                    text = stringResource(R.string.custom_solid_background_subtitle),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = OrbitTheme.colors.textSecondary
+                                )
+                            }
+                        }
+
+                        // 精选经典预设色块排布 (多层次色谱：纯黑、高级深色、莫兰迪中明度、轻盈浅色)
+                        val isEnLocale = remember {
+                            context.resources.configuration.locales[0].language.lowercase().startsWith("en")
+                        }
+                        val solidColorPresets = remember(isEnLocale) {
+                            listOf(
+                                // 极致暗黑
+                                0xFF000000L to if (isEnLocale) "AMOLED Black" else "AMOLED 纯黑",
+                                // 沉浸深色 (具备明确雅致色相)
+                                0xFF131D2EL to if (isEnLocale) "Deep Navy" else "深邃深蓝",
+                                0xFF1A1B26L to if (isEnLocale) "Tokyo Night" else "东京暗夜",
+                                0xFF1E1E2EL to if (isEnLocale) "Dark Mocha" else "摩卡深紫",
+                                0xFF15221BL to if (isEnLocale) "Dark Forest" else "暗夜苍绿",
+                                0xFF261924L to if (isEnLocale) "Plum Wine" else "暗梅深绛",
+                                // 莫兰迪与中明度雅致调 (视觉柔和不沉闷)
+                                0xFF2E3440L to if (isEnLocale) "Nord Frost" else "极地灰蓝",
+                                0xFF384959L to if (isEnLocale) "Slate Blue" else "雾霾石蓝",
+                                0xFF3B4D3EL to if (isEnLocale) "Sage Green" else "松石灰绿",
+                                0xFF4E3D35L to if (isEnLocale) "Dark Walnut" else "复古胡桃",
+                                0xFF4A3C52L to if (isEnLocale) "Smoky Lilac" else "烟熏丁香",
+                                0xFF5C3B3CL to if (isEnLocale) "Muted Rouge" else "干枯玫瑰",
+                                // 轻盈柔和浅色系
+                                0xFFF5F5F7L to if (isEnLocale) "Pure Ivory" else "极简象牙",
+                                0xFFE8ECEFL to if (isEnLocale) "Glacier Mist" else "冰川晨雾",
+                                0xFFF4EDE4L to if (isEnLocale) "Warm Cream" else "暖阳米杏",
+                                0xFFEBF2EBL to if (isEnLocale) "Mint Dew" else "薄荷柔露"
+                            )
+                        }
+
+                        // 预设色块横向滑动列表 (带清晰标签与高亮选中框)
+                        // 预设与自选色块横向滑动列表 (调色盘添加 + 用户自选 + 经典色块)
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            contentPadding = PaddingValues(vertical = 4.dp)
+                        ) {
+                            // 1. 调色盘快速添加入口卡片
+                            item {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .clickable { showSolidColorPickerDialog = true }
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(46.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(
+                                                Brush.linearGradient(
+                                                    listOf(
+                                                        Color(0xFFFF5252).copy(alpha = 0.20f),
+                                                        Color(0xFFFFD700).copy(alpha = 0.20f),
+                                                        Color(0xFF00E676).copy(alpha = 0.20f),
+                                                        Color(0xFF2979FF).copy(alpha = 0.20f),
+                                                        Color(0xFFD500F9).copy(alpha = 0.20f)
+                                                    )
+                                                )
+                                            )
+                                            .border(
+                                                width = 1.5.dp,
+                                                brush = Brush.linearGradient(
+                                                    listOf(
+                                                        Color(0xFFFF5252),
+                                                        Color(0xFFFFD700),
+                                                        Color(0xFF00E676),
+                                                        Color(0xFF2979FF),
+                                                        Color(0xFFD500F9)
+                                                    )
+                                                ),
+                                                shape = RoundedCornerShape(12.dp)
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Palette,
+                                            contentDescription = stringResource(R.string.custom_solid_color_picker),
+                                            tint = OrbitTheme.colors.primary,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = stringResource(R.string.custom_solid_color_picker),
+                                        fontSize = 10.sp,
+                                        color = OrbitTheme.colors.primary,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            // 2. 用户通过调色盘添加的自选颜色 (支持点击应用、长按删除)
+                            items(uiState.customUserSolidColors) { userColor ->
+                                val isSelected = uiState.customSolidBackgroundColor == userColor
+                                val isDarkPreset = remember(userColor) {
+                                    val r = ((userColor shr 16) and 0xFF) / 255f
+                                    val g = ((userColor shr 8) and 0xFF) / 255f
+                                    val b = (userColor and 0xFF) / 255f
+                                    (0.299f * r + 0.587f * g + 0.114f * b) < 0.5f
+                                }
+                                val hexLabel = remember(userColor) {
+                                    String.format("#%06X", (userColor and 0x00FFFFFFL))
+                                }
+
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .combinedClickable(
+                                            onClick = {
+                                                viewModel.setCustomSolidBackgroundColor(userColor)
+                                                customSolidHexInput = hexLabel
+                                                Toast.makeText(context, context.getString(R.string.custom_solid_bg_success), Toast.LENGTH_SHORT).show()
+                                            },
+                                            onLongClick = {
+                                                solidColorToDelete = userColor
+                                            }
+                                        )
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(46.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(Color(userColor))
+                                            .border(
+                                                width = if (isSelected) 2.5.dp else 1.dp,
+                                                color = if (isSelected) OrbitTheme.colors.primary else Color.White.copy(alpha = 0.25f),
+                                                shape = RoundedCornerShape(12.dp)
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "Selected",
+                                                tint = if (isDarkPreset) Color.White else Color.Black,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = hexLabel,
+                                        fontSize = 9.5.sp,
+                                        color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+
+                            // 3. 经典系统预设色块
+                            items(solidColorPresets) { (presetColor, label) ->
+                                val isSelected = uiState.customSolidBackgroundColor == presetColor
+                                val isDarkPreset = remember(presetColor) {
+                                    val r = ((presetColor shr 16) and 0xFF) / 255f
+                                    val g = ((presetColor shr 8) and 0xFF) / 255f
+                                    val b = (presetColor and 0xFF) / 255f
+                                    (0.299f * r + 0.587f * g + 0.114f * b) < 0.5f
+                                }
+
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .clickable {
+                                            viewModel.setCustomSolidBackgroundColor(presetColor)
+                                            Toast.makeText(context, context.getString(R.string.custom_solid_bg_success), Toast.LENGTH_SHORT).show()
+                                        }
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(46.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(Color(presetColor))
+                                            .border(
+                                                width = if (isSelected) 2.5.dp else 1.dp,
+                                                color = if (isSelected) OrbitTheme.colors.primary else Color.White.copy(alpha = 0.25f),
+                                                shape = RoundedCornerShape(12.dp)
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (isSelected) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "Selected",
+                                                tint = if (isDarkPreset) Color.White else Color.Black,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = label,
+                                        fontSize = 10.sp,
+                                        color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            }
+                        }
+
+                        // 颜色代码自定义输入栏 (HEX 取色输入与调色盘快捷联动)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val cleanInput = customSolidHexInput.trim().removePrefix("#")
+                            val liveColor = remember(cleanInput) {
+                                try {
+                                    when (cleanInput.length) {
+                                        6 -> Color(0xFF000000L or cleanInput.toLong(16))
+                                        8 -> Color(cleanInput.toLong(16))
+                                        else -> null
+                                    }
+                                } catch (e: Exception) { null }
+                            }
+
+                            OutlinedTextField(
+                                value = customSolidHexInput,
+                                onValueChange = { customSolidHexInput = it },
+                                placeholder = {
+                                    Text(
+                                        text = stringResource(R.string.custom_solid_bg_input_hint),
+                                        fontSize = 12.sp,
+                                        color = OrbitTheme.colors.textSecondary
+                                    )
+                                },
+                                leadingIcon = {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .clip(CircleShape)
+                                            .background(liveColor ?: (uiState.customSolidBackgroundColor?.let { Color(it) } ?: OrbitTheme.colors.surfaceCard))
+                                            .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+                                            .clickable { showSolidColorPickerDialog = true }
+                                    )
+                                },
+                                trailingIcon = {
+                                    IconButton(
+                                        onClick = { showSolidColorPickerDialog = true },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Palette,
+                                            contentDescription = stringResource(R.string.custom_solid_color_picker),
+                                            tint = OrbitTheme.colors.primary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                },
+                                singleLine = true,
+                                shape = RoundedCornerShape(10.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = OrbitTheme.colors.surfaceCard,
+                                    unfocusedContainerColor = OrbitTheme.colors.surfaceCard,
+                                    focusedBorderColor = OrbitTheme.colors.primary,
+                                    unfocusedBorderColor = Color.Transparent,
+                                    cursorColor = OrbitTheme.colors.primary,
+                                    focusedTextColor = OrbitTheme.colors.textPrimary,
+                                    unfocusedTextColor = OrbitTheme.colors.textPrimary
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                            )
+
+                            Button(
+                                onClick = {
+                                    if (liveColor != null) {
+                                        val argbLong = when (cleanInput.length) {
+                                            6 -> 0xFF000000L or cleanInput.toLong(16)
+                                            8 -> cleanInput.toLong(16)
+                                            else -> 0L
+                                        }
+                                        viewModel.setCustomSolidBackgroundColor(argbLong)
+                                        Toast.makeText(context, context.getString(R.string.custom_solid_bg_success), Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, context.getString(R.string.custom_solid_bg_invalid), Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                                modifier = Modifier.height(48.dp)
+                            ) {
+                                Text(stringResource(R.string.custom_solid_bg_apply), fontSize = 12.sp)
+                            }
+                        }
+
+                        // 恢复默认底色按钮 (仅在已设置自定义纯色背景时显示)
+                        if (uiState.customSolidBackgroundColor != null) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        viewModel.clearCustomSolidBackgroundColor()
+                                        customSolidHexInput = ""
+                                        Toast.makeText(context, context.getString(R.string.custom_solid_bg_cleared), Toast.LENGTH_SHORT).show()
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Refresh,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = OrbitTheme.colors.textSecondary
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = stringResource(R.string.custom_solid_bg_reset),
+                                        fontSize = 12.sp,
+                                        color = OrbitTheme.colors.textSecondary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 0.1.1 自定义程序壁纸与磨砂玻璃模糊 (沉浸透光背景)
             item {
                 SettingsSectionHeader(stringResource(R.string.section_custom_background))
                 SettingsCard {
@@ -1469,6 +1838,66 @@ fun SettingsScreen(
                 onDismissRequest = { showColorPickerDialog = false }
             )
         }
+    }
+
+    // 自定义纯色背景 HSV 调色盘对话框
+    if (showSolidColorPickerDialog) {
+        val initialSolidColor = remember(customSolidHexInput, uiState.customSolidBackgroundColor) {
+            val clean = customSolidHexInput.trim().removePrefix("#")
+            try {
+                when (clean.length) {
+                    6 -> 0xFF000000L or clean.toLong(16)
+                    8 -> clean.toLong(16)
+                    else -> uiState.customSolidBackgroundColor ?: 0xFF121212L
+                }
+            } catch (e: Exception) {
+                uiState.customSolidBackgroundColor ?: 0xFF121212L
+            }
+        }
+
+        ColorPickerDialog(
+            initialColor = initialSolidColor,
+            customColors = uiState.customUserSolidColors,
+            title = stringResource(R.string.custom_solid_color_picker),
+            onColorConfirmed = { chosenColor ->
+                viewModel.setCustomSolidBackgroundColor(chosenColor)
+                customSolidHexInput = String.format("#%06X", (chosenColor and 0x00FFFFFFL))
+                Toast.makeText(context, context.getString(R.string.custom_solid_bg_success), Toast.LENGTH_SHORT).show()
+            },
+            onSaveToCustomColors = { colorToAdd ->
+                viewModel.addCustomUserSolidColor(colorToAdd)
+                customSolidHexInput = String.format("#%06X", (colorToAdd and 0x00FFFFFFL))
+                Toast.makeText(context, context.getString(R.string.custom_solid_bg_success), Toast.LENGTH_SHORT).show()
+            },
+            onRemoveCustomColor = { colorToRemove ->
+                viewModel.removeCustomUserSolidColor(colorToRemove)
+            },
+            onDismissRequest = { showSolidColorPickerDialog = false }
+        )
+    }
+
+    // 移除自选颜色确认弹窗
+    if (solidColorToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { solidColorToDelete = null },
+            title = { Text(stringResource(R.string.custom_solid_delete_color_title)) },
+            text = { Text(stringResource(R.string.custom_solid_delete_color_msg)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        solidColorToDelete?.let { viewModel.removeCustomUserSolidColor(it) }
+                        solidColorToDelete = null
+                    }
+                ) {
+                    Text(stringResource(R.string.btn_delete), color = Color(0xFFFF5252))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { solidColorToDelete = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
     }
 
     // 添加扫描/排除文件夹弹窗

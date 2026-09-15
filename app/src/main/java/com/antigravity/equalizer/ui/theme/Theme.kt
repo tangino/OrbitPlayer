@@ -86,21 +86,36 @@ private val LightColorScheme = lightColorScheme(
     onSurfaceVariant = TextSecondaryLight
 )
 
+private fun isDarkColor(colorLong: Long): Boolean {
+    val r = ((colorLong shr 16) and 0xFF) / 255f
+    val g = ((colorLong shr 8) and 0xFF) / 255f
+    val b = (colorLong and 0xFF) / 255f
+    val luminance = 0.299f * r + 0.587f * g + 0.114f * b
+    return luminance < 0.5f
+}
+
 @Composable
 fun MusicEqualizerTheme(
     themeMode: String = "system",
     hasCustomBackground: Boolean = false,
+    customSolidBackgroundColor: Long? = null,
     content: @Composable () -> Unit
 ) {
     val isSystemDark = isSystemInDarkTheme()
-    val isDark = when (themeMode.lowercase()) {
-        "dark" -> true
-        "light" -> false
-        else -> isSystemDark
+    val isDark = if (customSolidBackgroundColor != null) {
+        isDarkColor(customSolidBackgroundColor)
+    } else {
+        when (themeMode.lowercase()) {
+            "dark" -> true
+            "light" -> false
+            else -> isSystemDark
+        }
     }
 
+    val isCustomBg = hasCustomBackground || customSolidBackgroundColor != null
+
     val baseColorScheme = if (isDark) DarkColorScheme else LightColorScheme
-    val colorScheme = if (hasCustomBackground) {
+    val colorScheme = if (isCustomBg) {
         baseColorScheme.copy(
             background = Color.Transparent
         )
@@ -110,10 +125,10 @@ fun MusicEqualizerTheme(
 
     val orbitColors = if (isDark) {
         OrbitColors(
-            background = if (hasCustomBackground) Color.Transparent else DarkBackground,
-            surface = if (hasCustomBackground) Color(0x5916181F) else SurfaceDark,
-            surfaceCard = if (hasCustomBackground) Color(0x851B1E26) else SurfaceCard,
-            surfaceBorder = if (hasCustomBackground) Color(0x40FFFFFF) else SurfaceCardBorder,
+            background = if (isCustomBg) Color.Transparent else DarkBackground,
+            surface = if (isCustomBg) Color(0x5916181F) else SurfaceDark,
+            surfaceCard = if (isCustomBg) Color(0x851B1E26) else SurfaceCard,
+            surfaceBorder = if (isCustomBg) Color(0x40FFFFFF) else SurfaceCardBorder,
             surfaceDialog = Color(0xFF1E222B),
             primary = PrimaryNeonCyan,
             secondary = AccentPurple,
@@ -127,10 +142,10 @@ fun MusicEqualizerTheme(
         )
     } else {
         OrbitColors(
-            background = if (hasCustomBackground) Color.Transparent else LightBackground,
-            surface = if (hasCustomBackground) Color(0x73FFFFFF) else SurfaceLight,
-            surfaceCard = if (hasCustomBackground) Color(0x99F5F7FA) else SurfaceCardLight,
-            surfaceBorder = if (hasCustomBackground) Color(0x33000000) else SurfaceCardBorderLight,
+            background = if (isCustomBg) Color.Transparent else LightBackground,
+            surface = if (isCustomBg) Color(0x73FFFFFF) else SurfaceLight,
+            surfaceCard = if (isCustomBg) Color(0x99F5F7FA) else SurfaceCardLight,
+            surfaceBorder = if (isCustomBg) Color(0x33000000) else SurfaceCardBorderLight,
             surfaceDialog = Color(0xFFFFFFFF),
             primary = PrimaryCyanLight,
             secondary = AccentPurpleLight,

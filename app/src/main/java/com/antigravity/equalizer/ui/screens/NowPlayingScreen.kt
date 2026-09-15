@@ -98,6 +98,7 @@ import com.antigravity.equalizer.data.model.VisualizerColorScheme
 import com.antigravity.equalizer.data.model.VisualizerStyle
 import com.antigravity.equalizer.ui.components.AppBackgroundLayer
 import com.antigravity.equalizer.ui.components.EditSongTagsDialog
+import com.antigravity.equalizer.utils.FastToast
 import com.antigravity.equalizer.ui.components.PowerampSpectrumVisualizer
 import com.antigravity.equalizer.ui.components.SelectAlbumCoverDialog
 import com.antigravity.equalizer.ui.theme.*
@@ -224,6 +225,7 @@ fun NowPlayingScreen(
     Box(modifier = modifier.fillMaxSize()) {
         AppBackgroundLayer(
             customBackgroundPath = equalizerUiState.customBackgroundPath,
+            customSolidBackgroundColor = equalizerUiState.customSolidBackgroundColor,
             blurRadius = equalizerUiState.backgroundBlurRadius,
             blurStyle = equalizerUiState.backgroundBlurStyle,
             dimAlpha = equalizerUiState.backgroundDimAlpha
@@ -781,7 +783,7 @@ fun NowPlayingScreen(
                                     SongAttitude.DISLIKED -> R.string.attitude_disliked
                                     SongAttitude.NONE -> R.string.attitude_none
                                 }
-                                Toast.makeText(context, context.getString(msgRes) as CharSequence, Toast.LENGTH_SHORT).show()
+                                FastToast.show(context, msgRes)
                             }
                         }
                     },
@@ -847,14 +849,14 @@ fun NowPlayingScreen(
                 }
 
                 // 频谱视效形态切换与封面可视化控制 (单击切换封面位置可视化展示/关闭，长按切换频谱样式)
-                val vizActive = showCoverVisualizer || (equalizerUiState.visualizerEnabled && equalizerUiState.visualizerStyle != VisualizerStyle.OFF)
+                val vizActive = showCoverVisualizer && equalizerUiState.visualizerEnabled && equalizerUiState.visualizerStyle != VisualizerStyle.OFF
                 Box(
                     modifier = Modifier
                         .size(38.dp)
                         .clip(CircleShape)
                         .combinedClickable(
                             onClick = {
-                                if (showCoverVisualizer) {
+                                if (vizActive) {
                                     onToggleCoverVisualizer(false)
                                 } else {
                                     if (equalizerUiState.visualizerStyle == VisualizerStyle.OFF) {
@@ -865,6 +867,9 @@ fun NowPlayingScreen(
                             },
                             onLongClick = {
                                 onCycleVisualizerStyle?.invoke()
+                                if (!showCoverVisualizer) {
+                                    onToggleCoverVisualizer(true)
+                                }
                             }
                         ),
                     contentAlignment = Alignment.Center
@@ -979,7 +984,7 @@ fun NowPlayingScreen(
                     IconButton(
                         onClick = {
                             val toastResId = viewModel.toggleShuffle()
-                            Toast.makeText(context, context.getString(toastResId) as CharSequence, Toast.LENGTH_SHORT).show()
+                            FastToast.show(context, toastResId)
                         }
                     ) {
                         Box(contentAlignment = Alignment.Center) {
@@ -2976,6 +2981,7 @@ private fun MaximizedVisualizerOverlay(
         // 0. 全局沉浸背景层 (彻底遮挡普通播放页面的大封面与按钮，呈现纯净壁纸/暗黑底色)
         AppBackgroundLayer(
             customBackgroundPath = equalizerUiState.customBackgroundPath,
+            customSolidBackgroundColor = equalizerUiState.customSolidBackgroundColor,
             blurRadius = equalizerUiState.backgroundBlurRadius,
             blurStyle = equalizerUiState.backgroundBlurStyle,
             dimAlpha = equalizerUiState.backgroundDimAlpha

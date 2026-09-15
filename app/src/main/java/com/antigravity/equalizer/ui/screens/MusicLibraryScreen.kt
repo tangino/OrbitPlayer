@@ -74,6 +74,9 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.grid.LazyGridState
 
+private const val FAVORITE_PLAYLIST_ID = -999L
+private const val DISLIKED_PLAYLIST_ID = -998L
+
 /**
  * 跨 ViewMode 视图模式的同步滚动状态管理器：
  * 为每个 LibraryViewMode 维护独立的 LazyGridState，彻底杜绝 AnimatedContent 交叉淡入淡出期间
@@ -158,6 +161,7 @@ fun MusicLibraryScreen(
 
     // 歌曲添加对话框
     var showAddSongsToPlaylistDialog by remember { mutableStateOf(false) }
+    var showClearDislikesDialog by remember { mutableStateOf(false) }
     var songToAddToPlaylist by remember { mutableStateOf<Song?>(null) }
     var activeSongForLongClickMenu by remember { mutableStateOf<Song?>(null) }
     var showSelectAlbumCoverDialog by remember { mutableStateOf(false) }
@@ -175,13 +179,16 @@ fun MusicLibraryScreen(
     var openedArtist by remember { mutableStateOf<ArtistItem?>(null) }
 
     val favoriteSongs by viewModel.favoriteSongs.collectAsState()
+    val dislikedSongs by viewModel.dislikedSongs.collectAsState()
 
     // 监听 openedPlaylist 变化动态获取歌曲列表
-    LaunchedEffect(openedPlaylist, playlists, favoriteSongs) {
+    LaunchedEffect(openedPlaylist, playlists, favoriteSongs, dislikedSongs) {
         val p = openedPlaylist
         if (p != null) {
-            if (p.id == -999L) {
+            if (p.id == FAVORITE_PLAYLIST_ID) {
                 playlistSongs = favoriteSongs
+            } else if (p.id == DISLIKED_PLAYLIST_ID) {
+                playlistSongs = dislikedSongs
             } else {
                 playlistSongs = viewModel.getSongsInPlaylist(p.id)
                 val updated = playlists.find { it.id == p.id }
@@ -1038,8 +1045,8 @@ fun MusicLibraryScreen(
                                         }
                                     }
 
-                                    // 添加歌曲按钮 (红心歌单不展示添加歌曲按钮)
-                                    if (currentPlaylist.id != -999L) {
+                                    // 添加歌曲按钮 (红心歌单与不喜欢歌单不展示添加歌曲按钮)
+                                    if (currentPlaylist.id != FAVORITE_PLAYLIST_ID && currentPlaylist.id != DISLIKED_PLAYLIST_ID) {
                                         OutlinedButton(
                                             onClick = { showAddSongsToPlaylistDialog = true },
                                             colors = ButtonDefaults.outlinedButtonColors(contentColor = OrbitTheme.colors.primary),
@@ -1050,6 +1057,18 @@ fun MusicLibraryScreen(
                                             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                                             Spacer(modifier = Modifier.width(4.dp))
                                             Text(stringResource(R.string.add_songs), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                        }
+                                    } else if (currentPlaylist.id == DISLIKED_PLAYLIST_ID && filteredPlaylistSongs.isNotEmpty()) {
+                                        OutlinedButton(
+                                            onClick = { showClearDislikesDialog = true },
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE57373)),
+                                            border = BorderStroke(1.dp, Color(0xFFE57373).copy(alpha = 0.5f)),
+                                            shape = RoundedCornerShape(20.dp),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                        ) {
+                                            Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(stringResource(R.string.clear_all_dislikes), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                                         }
                                     }
 
@@ -1148,19 +1167,27 @@ fun MusicLibraryScreen(
                                             modifier = Modifier.padding(32.dp)
                                         ) {
                                             Icon(
-                                                imageVector = if (currentPlaylist.id == -999L) Icons.Default.Favorite else Icons.AutoMirrored.Filled.PlaylistPlay,
+                                                imageVector = when (currentPlaylist.id) {
+                                                    FAVORITE_PLAYLIST_ID -> Icons.Default.Favorite
+                                                    DISLIKED_PLAYLIST_ID -> Icons.Default.ThumbDown
+                                                    else -> Icons.AutoMirrored.Filled.PlaylistPlay
+                                                },
                                                 contentDescription = null,
-                                                tint = if (currentPlaylist.id == -999L) Color(0xFFFF3366).copy(alpha = 0.4f) else OrbitTheme.colors.textSecondary.copy(alpha = 0.35f),
+                                                tint = when (currentPlaylist.id) {
+                                                    FAVORITE_PLAYLIST_ID -> Color(0xFFFF3366).copy(alpha = 0.4f)
+                                                    DISLIKED_PLAYLIST_ID -> Color(0xFFE57373).copy(alpha = 0.4f)
+                                                    else -> OrbitTheme.colors.textSecondary.copy(alpha = 0.35f)
+                                                },
                                                 modifier = Modifier.size(64.dp)
                                             )
                                             Spacer(modifier = Modifier.height(12.dp))
                                             Text(
                                                 text = if (libraryState.searchQuery.isNotBlank()) {
                                                     stringResource(R.string.search_no_results_title)
-                                                } else if (currentPlaylist.id == -999L) {
-                                                    stringResource(R.string.favorites_empty_hint)
-                                                } else {
-                                                    stringResource(R.string.empty_playlist_hint)
+                                                } else when (currentPlaylist.id) {
+                                                    FAVORITE_PLAYLIST_ID -> stringResource(R.string.favorites_empty_hint)
+                                                    DISLIKED_PLAYLIST_ID -> stringResource(R.string.disliked_empty_hint)
+                                                    else -> stringResource(R.string.empty_playlist_hint)
                                                 },
                                                 fontSize = 13.sp,
                                                 color = OrbitTheme.colors.textSecondary,
@@ -1200,8 +1227,10 @@ fun MusicLibraryScreen(
                                                 trailingContent = {
                                                     IconButton(
                                                         onClick = {
-                                                            if (currentPlaylist.id == -999L) {
+                                                            if (currentPlaylist.id == FAVORITE_PLAYLIST_ID) {
                                                                 viewModel.toggleFavorite(song)
+                                                            } else if (currentPlaylist.id == DISLIKED_PLAYLIST_ID) {
+                                                                viewModel.removeDislike(song)
                                                             } else {
                                                                 viewModel.removeSongFromPlaylist(currentPlaylist.id, song.id)
                                                                 playlistSongs = playlistSongs.filter { it.id != song.id }
@@ -1210,9 +1239,21 @@ fun MusicLibraryScreen(
                                                         modifier = Modifier.size(32.dp)
                                                     ) {
                                                         Icon(
-                                                            imageVector = if (currentPlaylist.id == -999L) Icons.Default.Favorite else Icons.Default.Close,
-                                                            contentDescription = stringResource(R.string.remove_from_playlist),
-                                                            tint = if (currentPlaylist.id == -999L) Color(0xFFFF3366) else OrbitTheme.colors.textSecondary.copy(alpha = 0.6f),
+                                                            imageVector = when (currentPlaylist.id) {
+                                                                FAVORITE_PLAYLIST_ID -> Icons.Default.Favorite
+                                                                DISLIKED_PLAYLIST_ID -> Icons.Default.ThumbDown
+                                                                else -> Icons.Default.Close
+                                                            },
+                                                            contentDescription = when (currentPlaylist.id) {
+                                                                FAVORITE_PLAYLIST_ID -> stringResource(R.string.remove_from_favorites)
+                                                                DISLIKED_PLAYLIST_ID -> stringResource(R.string.remove_dislike)
+                                                                else -> stringResource(R.string.remove_from_playlist)
+                                                            },
+                                                            tint = when (currentPlaylist.id) {
+                                                                FAVORITE_PLAYLIST_ID -> Color(0xFFFF3366)
+                                                                DISLIKED_PLAYLIST_ID -> Color(0xFFE57373)
+                                                                else -> OrbitTheme.colors.textSecondary.copy(alpha = 0.6f)
+                                                            },
                                                             modifier = Modifier.size(18.dp)
                                                         )
                                                     }
@@ -1258,6 +1299,10 @@ fun MusicLibraryScreen(
                                 val favMatches = q.isBlank() || favTitle.contains(q, ignoreCase = true) || favoriteSongs.any {
                                     it.title.contains(q, ignoreCase = true) || it.artist.contains(q, ignoreCase = true)
                                 }
+                                val dislikedTitle = stringResource(R.string.disliked_songs)
+                                val dislikedMatches = dislikedSongs.isNotEmpty() && (q.isBlank() || dislikedTitle.contains(q, ignoreCase = true) || dislikedSongs.any {
+                                    it.title.contains(q, ignoreCase = true) || it.artist.contains(q, ignoreCase = true)
+                                })
                                 val filteredPlaylists = remember(playlists, libraryState.searchQuery) {
                                     if (q.isBlank()) {
                                         playlists
@@ -1266,7 +1311,7 @@ fun MusicLibraryScreen(
                                     }
                                 }
 
-                                if (filteredPlaylists.isEmpty() && !favMatches) {
+                                if (filteredPlaylists.isEmpty() && !favMatches && !dislikedMatches) {
                                     EmptyStateView(
                                         title = stringResource(R.string.search_no_results_title),
                                         subtitle = stringResource(R.string.search_no_results_desc)
@@ -1289,7 +1334,7 @@ fun MusicLibraryScreen(
                                                         .clickable {
                                                             viewModel.setSearchQuery("")
                                                             openedPlaylist = Playlist(
-                                                                id = -999L,
+                                                                id = FAVORITE_PLAYLIST_ID,
                                                                 name = favTitle,
                                                                 songCount = favoriteSongs.size,
                                                                 createdAt = 0L
@@ -1340,6 +1385,83 @@ fun MusicLibraryScreen(
                                                                 imageVector = Icons.Default.PlayArrow,
                                                                 contentDescription = stringResource(R.string.btn_play_all),
                                                                 tint = Color(0xFFFF3366),
+                                                                modifier = Modifier.size(22.dp)
+                                                            )
+                                                        }
+                                                    } else {
+                                                        Icon(
+                                                            imageVector = Icons.Default.ChevronRight,
+                                                            contentDescription = null,
+                                                            tint = OrbitTheme.colors.textSecondary,
+                                                            modifier = Modifier.size(20.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // 置顶显示「不喜欢的歌曲」专属卡片（当存在被标记为不喜欢的歌曲时显示）
+                                        if (dislikedMatches) {
+                                            item {
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clip(RoundedCornerShape(14.dp))
+                                                        .background(OrbitTheme.colors.surfaceCard)
+                                                        .clickable {
+                                                            viewModel.setSearchQuery("")
+                                                            openedPlaylist = Playlist(
+                                                                id = DISLIKED_PLAYLIST_ID,
+                                                                name = dislikedTitle,
+                                                                songCount = dislikedSongs.size,
+                                                                createdAt = 0L
+                                                            )
+                                                        }
+                                                        .padding(14.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(42.dp)
+                                                            .clip(RoundedCornerShape(10.dp))
+                                                            .background(Color(0xFFE57373).copy(alpha = 0.15f)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.ThumbDown,
+                                                            contentDescription = null,
+                                                            tint = Color(0xFFE57373),
+                                                            modifier = Modifier.size(24.dp)
+                                                        )
+                                                    }
+                                                    Spacer(modifier = Modifier.width(14.dp))
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            text = dislikedTitle,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = OrbitTheme.colors.textPrimary,
+                                                            fontSize = 15.sp,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                        Spacer(modifier = Modifier.height(2.dp))
+                                                        Text(
+                                                            text = stringResource(R.string.tracks_count, dislikedSongs.size),
+                                                            color = OrbitTheme.colors.textSecondary,
+                                                            fontSize = 12.sp
+                                                        )
+                                                    }
+
+                                                    // 快捷播放全部不喜欢的音乐（方便重新试听确认）
+                                                    if (dislikedSongs.isNotEmpty()) {
+                                                        IconButton(
+                                                            onClick = { viewModel.playSong(dislikedSongs, 0) },
+                                                            modifier = Modifier.size(32.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.PlayArrow,
+                                                                contentDescription = stringResource(R.string.btn_play_all),
+                                                                tint = Color(0xFFE57373),
                                                                 modifier = Modifier.size(22.dp)
                                                             )
                                                         }
@@ -1529,6 +1651,7 @@ fun MusicLibraryScreen(
                             openedAlbum = openedAlbum,
                             openedArtist = openedArtist,
                             openedPlaylist = openedPlaylist,
+                            playlistSongsCount = playlistSongs.size,
                             isSearching = libraryState.isSearching,
                             searchQuery = libraryState.searchQuery,
                             onToggleSearch = { viewModel.toggleSearch() },
@@ -1807,6 +1930,44 @@ fun MusicLibraryScreen(
             },
             dismissButton = {
                 TextButton(onClick = { deletingPlaylist = null }) {
+                    Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
+                }
+            },
+            containerColor = OrbitTheme.colors.surfaceDialog
+        )
+    }
+
+    // 3.5 清空不喜欢列表确认弹窗
+    if (showClearDislikesDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearDislikesDialog = false },
+            title = {
+                Text(
+                    text = stringResource(R.string.clear_all_dislikes),
+                    color = OrbitTheme.colors.textPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.clear_all_dislikes_confirm),
+                    color = OrbitTheme.colors.textSecondary,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.clearAllDislikes()
+                        showClearDislikesDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE57373))
+                ) {
+                    Text(stringResource(R.string.btn_ok), color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearDislikesDialog = false }) {
                     Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
                 }
             },
@@ -2118,6 +2279,36 @@ fun MusicLibraryScreen(
                         fontWeight = FontWeight.Medium,
                         color = OrbitTheme.colors.textPrimary
                     )
+                }
+
+                // 操作项 0.5：取消标记不喜欢
+                if (longClickedSong.isDisliked) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable {
+                                val target = longClickedSong
+                                activeSongForLongClickMenu = null
+                                viewModel.removeDislike(target)
+                            }
+                            .padding(vertical = 12.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ThumbDown,
+                            contentDescription = null,
+                            tint = Color(0xFFE57373),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = stringResource(R.string.remove_dislike),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = OrbitTheme.colors.textPrimary
+                        )
+                    }
                 }
 
                 // 操作项 1：添加到播放列表
@@ -2659,6 +2850,7 @@ private fun TabletDrillDownTopBar(
     openedAlbum: AlbumItem?,
     openedArtist: ArtistItem?,
     openedPlaylist: Playlist?,
+    playlistSongsCount: Int = 0,
     isSearching: Boolean,
     searchQuery: String,
     onToggleSearch: () -> Unit,
@@ -2696,9 +2888,12 @@ private fun TabletDrillDownTopBar(
                 }
                 val subtitle = when {
                     openedFolderPath != null -> openedFolderPath
-                    openedAlbum != null -> "${openedAlbum.artist} • ${openedAlbum.songCount} tracks"
-                    openedArtist != null -> "${openedArtist.albumCount} albums • ${openedArtist.songCount} tracks"
-                    openedPlaylist != null -> "${openedPlaylist.songCount} tracks"
+                    openedAlbum != null -> "${openedAlbum.artist} • ${stringResource(R.string.tracks_count, openedAlbum.songCount)}"
+                    openedArtist != null -> "${openedArtist.albumCount} albums • ${stringResource(R.string.tracks_count, openedArtist.songCount)}"
+                    openedPlaylist != null -> {
+                        val count = if (playlistSongsCount > 0 || openedPlaylist.id in listOf(FAVORITE_PLAYLIST_ID, DISLIKED_PLAYLIST_ID)) playlistSongsCount else openedPlaylist.songCount
+                        stringResource(R.string.tracks_count, count)
+                    }
                     else -> ""
                 }
                 Text(

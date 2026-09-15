@@ -75,7 +75,7 @@
     <string name="dsp_latency_title">处理延迟</string>
     <string name="dsp_latency_value">&lt; 2.5 毫秒 (极低延迟)</string>
     <string name="version_title">软件版本</string>
-    <string name="version_value">0.1.5</string>
+    <string name="version_value">0.1.6</string>
 
     <!-- Import / Export Dialogs -->
     <string name="import_dialog_title">导入预设 / AutoEQ 调音</string>
@@ -124,6 +124,12 @@
     <string name="add_to_favorites">添加到喜欢</string>
     <string name="remove_from_favorites">取消喜欢</string>
     <string name="favorites_empty_hint">还没有红心歌曲，点击歌曲上的爱心图标即可添加！</string>
+    <string name="disliked_songs">不喜欢的歌曲</string>
+    <string name="remove_dislike">取消标记不喜欢</string>
+    <string name="remove_from_disliked">移出不喜欢列表</string>
+    <string name="disliked_empty_hint">暂无不喜欢的歌曲</string>
+    <string name="clear_all_dislikes">清空不喜欢列表</string>
+    <string name="clear_all_dislikes_confirm">确定要将所有歌曲移出不喜欢列表吗？</string>
     <string name="play_count_label">播放 %1$d 次</string>
 
     <!-- Shuffle Strategies -->
@@ -220,4 +226,20 @@
     <string name="visualizer_style_octgrams">八芒星阵</string>
     <string name="visualizer_style_sound_city">音乐都市</string>
     <string name="visualizer_style_fractal_galaxy">分形星系</string>
+    <string name="custom_solid_background_title">自定义纯色背景</string>
+    <string name="custom_solid_background_subtitle">选择经典纯色或输入 16 进制颜色代码 (如 #000000)</string>
+    <string name="custom_solid_bg_reset">恢复默认底色</string>
+    <string name="custom_solid_bg_input_hint">输入 HEX 色值 (如 #1A1B26)</string>
+    <string name="custom_solid_bg_apply">应用颜色</string>
+    <string name="custom_solid_bg_invalid">请输入有效的 16 进制颜色代码</string>
+    <string name="custom_solid_bg_success">纯色背景已成功应用</string>
+    <string name="custom_solid_bg_cleared">已恢复默认底色</string>
+    <string name="custom_solid_color_picker">调色盘</string>
+    <string name="custom_solid_add_color">添加颜色</string>
+    <string name="custom_solid_apply_and_save">添加到色板并应用</string>
+    <string name="custom_solid_my_colors">我的色板</string>
+    <string name="custom_solid_delete_color_title">移除自选颜色</string>
+    <string name="custom_solid_delete_color_msg">是否从自定义色板中移除该颜色？</string>
+    <string name="custom_solid_quick_palette">推荐基准色</string>
+    <string name="custom_solid_custom_tag">自选</string>
 </resources>

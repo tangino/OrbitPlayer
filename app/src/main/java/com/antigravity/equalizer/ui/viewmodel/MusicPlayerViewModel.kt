@@ -66,6 +66,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     val allSongs: StateFlow<List<Song>> = repository.allSongs
     val favoriteSongs: StateFlow<List<Song>> = repository.favoriteSongs
+    val dislikedSongs: StateFlow<List<Song>> = repository.dislikedSongs
     val folders: StateFlow<List<FolderItem>> = repository.folders
     val albums: StateFlow<List<AlbumItem>> = repository.albums
     val artists: StateFlow<List<ArtistItem>> = repository.artists
@@ -344,6 +345,18 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun toggleFavorite(song: Song) {
         viewModelScope.launch {
             repository.toggleFavorite(song)
+        }
+    }
+
+    fun removeDislike(song: Song) {
+        viewModelScope.launch {
+            repository.removeDislike(song)
+        }
+    }
+
+    fun clearAllDislikes() {
+        viewModelScope.launch {
+            repository.clearAllDislikes()
         }
     }
 

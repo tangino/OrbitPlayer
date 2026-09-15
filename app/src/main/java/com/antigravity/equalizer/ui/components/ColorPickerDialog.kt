@@ -168,6 +168,7 @@ fun ColorPickerDialog(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = stringResource(R.string.add_to_custom_colors),
+                            color = OrbitTheme.colors.primary,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -315,6 +316,12 @@ fun ColorPickerDialog(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 // 7. 确认应用按钮
+                val primaryColor = OrbitTheme.colors.primary
+                val isPrimaryDark = remember(primaryColor) {
+                    (0.299f * primaryColor.red + 0.587f * primaryColor.green + 0.114f * primaryColor.blue) < 0.5f
+                }
+                val confirmButtonTextColor = if (isPrimaryDark) Color.White else Color(0xFF0F1115)
+
                 Button(
                     onClick = {
                         onColorConfirmed(currentColorLong)
@@ -326,11 +333,12 @@ fun ColorPickerDialog(
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = OrbitTheme.colors.primary,
-                        contentColor = OrbitTheme.colors.background
+                        contentColor = confirmButtonTextColor
                     )
                 ) {
                     Text(
                         text = stringResource(R.string.color_picker_confirm),
+                        color = confirmButtonTextColor,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )

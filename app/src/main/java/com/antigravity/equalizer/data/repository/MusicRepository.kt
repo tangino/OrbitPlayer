@@ -43,6 +43,9 @@ class MusicRepository private constructor(private val context: Context) {
     private val _favoriteSongs = MutableStateFlow<List<Song>>(emptyList())
     val favoriteSongs: StateFlow<List<Song>> = _favoriteSongs.asStateFlow()
 
+    private val _dislikedSongs = MutableStateFlow<List<Song>>(emptyList())
+    val dislikedSongs: StateFlow<List<Song>> = _dislikedSongs.asStateFlow()
+
     private val _folders = MutableStateFlow<List<FolderItem>>(emptyList())
     val folders: StateFlow<List<FolderItem>> = _folders.asStateFlow()
 
@@ -148,6 +151,27 @@ class MusicRepository private constructor(private val context: Context) {
         MusicPlayerManager.getInstance(context).updateSongFavorite(song.path, newFavorite)
     }
 
+    suspend fun removeDislike(song: Song) = withContext(Dispatchers.IO) {
+        db.songDao.updateSongAttitude(song.path, isFavorite = false, isDisliked = false)
+        val updatedList = _allSongs.value.map {
+            if (it.path == song.path) it.copy(isFavorite = false, isDisliked = false) else it
+        }
+        updateCollections(updatedList)
+        MusicPlayerManager.getInstance(context).updateSongAttitude(song.path, isFavorite = false, isDisliked = false)
+    }
+
+    suspend fun clearAllDislikes() = withContext(Dispatchers.IO) {
+        val disliked = _dislikedSongs.value
+        for (song in disliked) {
+            db.songDao.updateSongAttitude(song.path, isFavorite = false, isDisliked = false)
+            MusicPlayerManager.getInstance(context).updateSongAttitude(song.path, isFavorite = false, isDisliked = false)
+        }
+        val updatedList = _allSongs.value.map {
+            if (it.isDisliked) it.copy(isDisliked = false) else it
+        }
+        updateCollections(updatedList)
+    }
+
     suspend fun recordSongPlay(song: Song) = withContext(Dispatchers.IO) {
         db.songDao.incrementPlayCount(song.path)
         val updatedList = _allSongs.value.map {
@@ -211,6 +235,7 @@ class MusicRepository private constructor(private val context: Context) {
     private fun updateCollections(songs: List<Song>) {
         _allSongs.value = songs
         _favoriteSongs.value = songs.filter { it.isFavorite && !it.isDisliked }
+        _dislikedSongs.value = songs.filter { it.isDisliked }
 
         // 1. 构建文件夹树 (Folders)
         val folderMap = songs.groupBy { it.folderPath }

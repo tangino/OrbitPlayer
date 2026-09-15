@@ -89,7 +89,7 @@
     <string name="dsp_latency_title">DSP Latency</string>
     <string name="dsp_latency_value">&lt; 2.5 ms</string>
     <string name="version_title">Version</string>
-    <string name="version_value">0.1.5</string>
+    <string name="version_value">0.1.6</string>
 
     <!-- Import / Export Dialogs -->
     <string name="import_dialog_title">Import Preset / AutoEQ</string>
@@ -138,6 +138,12 @@
     <string name="add_to_favorites">Add to Favorites</string>
     <string name="remove_from_favorites">Remove from Favorites</string>
     <string name="favorites_empty_hint">No favorite songs yet. Tap the heart icon on any song to add it!</string>
+    <string name="disliked_songs">Disliked Songs</string>
+    <string name="remove_dislike">Remove Dislike</string>
+    <string name="remove_from_disliked">Remove from Disliked</string>
+    <string name="disliked_empty_hint">No disliked songs</string>
+    <string name="clear_all_dislikes">Clear Disliked List</string>
+    <string name="clear_all_dislikes_confirm">Are you sure you want to remove all songs from the disliked list?</string>
     <string name="play_count_label">%1$d plays</string>
 
     <!-- Shuffle Strategies -->
@@ -315,6 +321,22 @@
     <string name="background_dim_alpha_subtitle">Adjust darkness overlay to keep text and controls sharp and legible</string>
     <string name="background_select_success">Background applied successfully</string>
     <string name="background_reset_success">Reset to default background</string>
+    <string name="custom_solid_background_title">Custom Solid Color Background</string>
+    <string name="custom_solid_background_subtitle">Choose a classic solid color or enter a HEX color code (e.g. #000000)</string>
+    <string name="custom_solid_bg_reset">Reset to Default Color</string>
+    <string name="custom_solid_bg_input_hint">Enter HEX code (e.g. #1A1B26)</string>
+    <string name="custom_solid_bg_apply">Apply Color</string>
+    <string name="custom_solid_bg_invalid">Please enter a valid HEX color code</string>
+    <string name="custom_solid_bg_success">Solid color background applied successfully</string>
+    <string name="custom_solid_bg_cleared">Reset to default color</string>
+    <string name="custom_solid_color_picker">Color Picker</string>
+    <string name="custom_solid_add_color">Add Color</string>
+    <string name="custom_solid_apply_and_save">Add to Palette &amp; Apply</string>
+    <string name="custom_solid_my_colors">My Palette</string>
+    <string name="custom_solid_delete_color_title">Remove Color</string>
+    <string name="custom_solid_delete_color_msg">Remove this color from your custom palette?</string>
+    <string name="custom_solid_quick_palette">Preset Palettes</string>
+    <string name="custom_solid_custom_tag">Custom</string>
 
     <!-- Spectrum Solid Single Color Mode -->
     <string name="visualizer_single_color_title">Solid Single Color</string>
