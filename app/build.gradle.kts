@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.antigravity.equalizer"
+    namespace = "com.orbit.music"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.antigravity.equalizer"
+        applicationId = "com.orbit.music"
         minSdk = 21
         targetSdk = 34
         versionCode = 7

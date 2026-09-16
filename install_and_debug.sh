@@ -77,7 +77,7 @@ fi
 
 # 5. 启动应用并进入实时调试日志
 echo -e "\n${YELLOW}[4/4] 正在启动应用并捕获实时 DSP 日志...${NC}"
-PACKAGE_NAME="com.antigravity.equalizer"
+PACKAGE_NAME="com.orbit.music"
 ACTIVITY_NAME=".ui.MainActivity"
 
 adb shell am start -n "${PACKAGE_NAME}/${ACTIVITY_NAME}"

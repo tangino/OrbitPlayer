@@ -78,7 +78,7 @@ Write-Host "[SUCCESS] Installation finished!" -ForegroundColor Green
 
 # 5. Launch application and stream logs
 Write-Host "`n[4/4] Starting app and streaming logs..." -ForegroundColor Yellow
-$packageName = "com.antigravity.equalizer"
+$packageName = "com.orbit.music"
 $activityName = ".ui.MainActivity"
 
 adb -s $targetDevice shell am start -n "$packageName/$activityName"

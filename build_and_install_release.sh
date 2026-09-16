@@ -198,7 +198,7 @@ echo -e "  正在传输与安装 ${RELEASE_APK} ..."
 if adb -s "$FIRST_DEVICE" install -r -d -t "$RELEASE_APK"; then
     echo -e "  ${GREEN}✓ 安装成功！${NC}"
     
-    PACKAGE_NAME="com.antigravity.equalizer"
+    PACKAGE_NAME="com.orbit.music"
     ACTIVITY_NAME=".ui.MainActivity"
     
     echo -e "  正在启动 Orbit Player 发布版本..."

@@ -75,7 +75,7 @@ echo [SUCCESS] App installed successfully!
 :: 5. Launch App and start logcat
 echo.
 echo [4/4] Launching application and streaming DSP logs...
-set "PACKAGE_NAME=com.antigravity.equalizer"
+set "PACKAGE_NAME=com.orbit.music"
 set "ACTIVITY_NAME=.ui.MainActivity"
 
 adb -s %DEVICE_FOUND% shell am start -n "%PACKAGE_NAME%/%ACTIVITY_NAME%"

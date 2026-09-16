@@ -125,16 +125,16 @@
             android:name=".service.PlaybackControlReceiver"
             android:exported="false">
             <intent-filter>
-                <action android:name="com.antigravity.equalizer.ACTION_PREV" />
-                <action android:name="com.antigravity.equalizer.ACTION_PLAY_PAUSE" />
-                <action android:name="com.antigravity.equalizer.ACTION_NEXT" />
+                <action android:name="com.orbit.music.ACTION_PREV" />
+                <action android:name="com.orbit.music.ACTION_PLAY_PAUSE" />
+                <action android:name="com.orbit.music.ACTION_NEXT" />
             </intent-filter>
         </receiver>
 
         <!-- 单曲专属高保真封面内容提供者 (杜绝 albumId 混淆串台) -->
         <provider
             android:name=".data.provider.AudioCoverProvider"
-            android:authorities="com.antigravity.equalizer.cover"
+            android:authorities="com.orbit.music.cover"
             android:exported="true"
             android:grantUriPermissions="true" />
 

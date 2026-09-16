@@ -76,7 +76,7 @@ echo ======================================================
 echo [SUCCESS] OrbitPlayer release APK installed successfully!
 echo ======================================================
 
-set "PACKAGE_NAME=com.antigravity.equalizer"
+set "PACKAGE_NAME=com.orbit.music"
 set "ACTIVITY_NAME=.ui.MainActivity"
 echo.
 echo Launching application...

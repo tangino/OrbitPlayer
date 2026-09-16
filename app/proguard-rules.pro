@@ -3,5 +3,5 @@
     native <methods>;
 }
 
--keep class com.antigravity.equalizer.native.** { *; }
--keep class com.antigravity.equalizer.data.model.** { *; }
+-keep class com.orbit.music.native.** { *; }
+-keep class com.orbit.music.data.model.** { *; }
