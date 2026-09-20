@@ -75,7 +75,7 @@
     <string name="dsp_latency_title">处理延迟</string>
     <string name="dsp_latency_value">&lt; 2.5 毫秒 (极低延迟)</string>
     <string name="version_title">软件版本</string>
-    <string name="version_value">0.1.6</string>
+    <string name="version_value">0.1.7</string>
 
     <!-- Import / Export Dialogs -->
     <string name="import_dialog_title">导入预设 / AutoEQ 调音</string>
@@ -242,4 +242,32 @@
     <string name="custom_solid_delete_color_msg">是否从自定义色板中移除该颜色？</string>
     <string name="custom_solid_quick_palette">推荐基准色</string>
     <string name="custom_solid_custom_tag">自选</string>
+
+    <!-- 歌曲删除 -->
+    <string name="menu_delete_song">删除歌曲</string>
+    <string name="delete_song_dialog_title">删除歌曲</string>
+    <string name="delete_song_confirm_message">确定要删除歌曲《%1$s》吗？</string>
+    <string name="delete_local_file_checkbox">同时删除本地文件</string>
+    <string name="delete_song_success">已删除歌曲</string>
+    <string name="delete_song_failed">删除失败</string>
+
+    <!-- 歌曲详细信息 -->
+    <string name="menu_song_details">详细信息</string>
+    <string name="label_song_title">歌名：</string>
+    <string name="label_artist">歌手：</string>
+    <string name="label_album">专辑：</string>
+    <string name="label_track_number">序号：</string>
+    <string name="label_lyrics">歌词：</string>
+    <string name="label_lyrics_empty">暂无歌词</string>
+    <string name="header_more_info">更多信息</string>
+    <string name="label_format">格式：</string>
+    <string name="label_size">大小：</string>
+    <string name="label_duration">时长：</string>
+    <string name="label_bitrate">码率：</string>
+    <string name="label_sample_rate">采样率：</string>
+    <string name="label_bit_depth">位深：</string>
+    <string name="label_channels">声道：</string>
+    <string name="label_file_path">文件路径：</string>
+    <string name="change_cover">修改封面</string>
+    <string name="copied_path_toast">文件路径已复制到剪贴板</string>
 </resources>

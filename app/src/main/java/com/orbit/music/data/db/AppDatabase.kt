@@ -459,6 +459,25 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
         helper.writableDatabase.delete("songs", null, null)
     }
 
+    fun deleteSong(songId: Long, path: String) {
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            if (songId > 0L) {
+                db.delete("songs", "id = ?", arrayOf(songId.toString()))
+                db.delete("playlist_songs", "songId = ?", arrayOf(songId.toString()))
+            }
+            if (path.isNotBlank()) {
+                db.delete("songs", "path = ?", arrayOf(path))
+                db.delete("song_stats", "path = ?", arrayOf(path))
+                db.delete("song_tags", "path = ?", arrayOf(path))
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     fun updateSongMetadata(songId: Long, title: String, artist: String, album: String, year: Int = 0) {
         val db = helper.writableDatabase
         val cv = ContentValues().apply {

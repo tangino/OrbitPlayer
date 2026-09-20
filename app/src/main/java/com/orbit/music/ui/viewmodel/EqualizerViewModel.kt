@@ -98,7 +98,8 @@ data class EqualizerUiState(
     val followCoverColorInMaximized: Boolean = false,
     val autoMatchOnlineCover: Boolean = true,
     val onlineCoverWifiOnly: Boolean = true,
-    val isTabletLandscapeModeEnabled: Boolean = false
+    val isTabletLandscapeModeEnabled: Boolean = false,
+    val isMiniPlayerCollapsed: Boolean = false
 )
 
 class EqualizerViewModel(application: Application) : AndroidViewModel(application) {
@@ -117,6 +118,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         val savedLang = prefs.getString(KEY_LANGUAGE, "system") ?: "system"
         val savedTheme = prefs.getString(KEY_THEME_MODE, "system") ?: "system"
         val savedPersistentMiniPlayer = prefs.getBoolean(KEY_PERSISTENT_MINI_PLAYER, true)
+        val savedIsMiniPlayerCollapsed = prefs.getBoolean(KEY_IS_MINI_PLAYER_COLLAPSED, false)
         val savedTrailStyle = prefs.getString(KEY_PROGRESS_TRAIL_STYLE, ProgressTrailStyle.NEON_PULSE.id) ?: ProgressTrailStyle.NEON_PULSE.id
         val savedTrailStartWidth = prefs.getFloat(KEY_TRAIL_START_WIDTH, 3.8f)
         val savedTrailEndWidth = prefs.getFloat(KEY_TRAIL_END_WIDTH, 1.2f)
@@ -176,6 +178,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
                 selectedLanguage = savedLang,
                 themeMode = savedTheme,
                 persistentMiniPlayer = savedPersistentMiniPlayer,
+                isMiniPlayerCollapsed = savedIsMiniPlayerCollapsed,
                 progressTrailStyle = savedTrailStyle,
                 trailStartWidth = savedTrailStartWidth,
                 trailEndWidth = savedTrailEndWidth,
@@ -891,6 +894,11 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         prefs.edit().putBoolean(KEY_TABLET_LANDSCAPE_MODE, enabled).apply()
     }
 
+    fun setMiniPlayerCollapsed(collapsed: Boolean) {
+        _uiState.update { it.copy(isMiniPlayerCollapsed = collapsed) }
+        prefs.edit().putBoolean(KEY_IS_MINI_PLAYER_COLLAPSED, collapsed).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "equalizer_ui_state_prefs"
         const val KEY_TABLET_LANDSCAPE_MODE = "key_tablet_landscape_mode"
@@ -908,6 +916,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         private const val KEY_THEME_MODE = "key_theme_mode"
         private const val KEY_LAUNCH_AS_EQUALIZER_ONLY = "key_launch_as_equalizer_only"
         private const val KEY_PERSISTENT_MINI_PLAYER = "key_persistent_mini_player"
+        private const val KEY_IS_MINI_PLAYER_COLLAPSED = "key_is_mini_player_collapsed"
         private const val KEY_PROGRESS_TRAIL_STYLE = "key_progress_trail_style"
         private const val KEY_TRAIL_START_WIDTH = "key_trail_start_width"
         private const val KEY_TRAIL_END_WIDTH = "key_trail_end_width"

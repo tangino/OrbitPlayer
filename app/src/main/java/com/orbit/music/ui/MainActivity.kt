@@ -276,6 +276,8 @@ class MainActivity : ComponentActivity() {
                             MiniPlayerBar(
                                 playbackState = playbackState,
                                 isTabletMode = uiState.isTabletLandscapeModeEnabled,
+                                isCollapsed = uiState.isMiniPlayerCollapsed,
+                                onToggleCollapse = { equalizerViewModel.setMiniPlayerCollapsed(it) },
                                 onTogglePlay = { musicPlayerViewModel.togglePlayPause() },
                                 onPlayNext = { musicPlayerViewModel.playNext() },
                                 onPlayPrevious = { musicPlayerViewModel.playPrevious() },
@@ -389,6 +391,23 @@ class MainActivity : ComponentActivity() {
 
         if (permissionsToRequest.isNotEmpty()) {
             requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
+        }
+
+        // Android 11+ 检查并引导所有文件管理权限 (用于物理删除本地歌曲、扫描自定义目录与编辑音频标签)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!android.os.Environment.isExternalStorageManager()) {
+                try {
+                    val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                        data = android.net.Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                } catch (_: Exception) {
+                    try {
+                        val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                        startActivity(intent)
+                    } catch (_: Exception) {}
+                }
+            }
         }
     }
 }

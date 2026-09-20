@@ -407,6 +407,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun deleteSong(
+        song: Song,
+        deleteLocalFile: Boolean,
+        onComplete: ((Boolean) -> Unit)? = null
+    ) {
+        viewModelScope.launch {
+            val success = repository.deleteSong(song, deleteLocalFile)
+            onComplete?.invoke(success)
+        }
+    }
+
     companion object {
         private const val PREFS_NAME = "music_library_ui_prefs"
         private const val KEY_TAB = "key_library_tab"

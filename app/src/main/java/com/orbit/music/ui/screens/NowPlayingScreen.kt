@@ -160,6 +160,7 @@ fun NowPlayingScreen(
     var newPlaylistName by remember { mutableStateOf("") }
     var showMoreOptionsMenu by remember { mutableStateOf(false) }
     var showEditSongTagsDialog by remember { mutableStateOf(false) }
+    var showSongDetailInfoDialog by remember { mutableStateOf(false) }
     var currentSongMetadata by remember { mutableStateOf(com.orbit.music.data.model.SongMetadata()) }
     var showSelectAlbumCoverDialog by remember { mutableStateOf(false) }
     var candidateCovers by remember { mutableStateOf<List<com.orbit.music.data.cover.MusicBrainzCoverService.AlbumCoverCandidate>>(emptyList()) }
@@ -177,6 +178,9 @@ fun NowPlayingScreen(
 
     // 实时异步加载并解析同目录下同名歌词文件
     var lyricLines by remember { mutableStateOf<List<LyricLine>>(emptyList()) }
+    var songTechSpecs by remember { mutableStateOf<com.orbit.music.data.model.AudioTechSpecs?>(null) }
+    var showDeleteSongDialog by remember { mutableStateOf(false) }
+    var deleteLocalFileChecked by remember { mutableStateOf(false) }
     val coverVer by com.orbit.music.utils.CoverHelper.coverVersion.collectAsState()
 
     LaunchedEffect(song?.id, song?.path) {
@@ -184,8 +188,12 @@ fun NowPlayingScreen(
             lyricLines = withContext(Dispatchers.IO) {
                 LyricParser.loadLyricForSong(song.path)
             }
+            songTechSpecs = withContext(Dispatchers.IO) {
+                com.orbit.music.data.model.SongMetadataHelper.extractTechSpecs(song)
+            }
         } else {
             lyricLines = emptyList()
+            songTechSpecs = null
         }
     }
 
@@ -481,27 +489,34 @@ fun NowPlayingScreen(
                     ) {
                         AnimatedContent(
                             targetState = Pair(song?.albumArtUri, coverVer),
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center,
                             transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) },
                             label = "AlbumArtAnim"
                         ) { (artUri, _) ->
-                            if (artUri != null) {
-                                AsyncImage(
-                                    model = coil.request.ImageRequest.Builder(LocalContext.current)
-                                        .data(artUri)
-                                        .memoryCacheKey("${artUri}_$coverVer")
-                                        .diskCacheKey("${artUri}_$coverVer")
-                                        .build(),
-                                    contentDescription = song?.title,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                Icon(
-                                    imageVector = Icons.Default.MusicNote,
-                                    contentDescription = null,
-                                    tint = OrbitTheme.colors.primary,
-                                    modifier = Modifier.size(if (isLandscape) 52.dp else 84.dp)
-                                )
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (!artUri.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = coil.request.ImageRequest.Builder(LocalContext.current)
+                                            .data(artUri)
+                                            .memoryCacheKey("${artUri}_$coverVer")
+                                            .diskCacheKey("${artUri}_$coverVer")
+                                            .build(),
+                                        contentDescription = song?.title,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.MusicNote,
+                                        contentDescription = null,
+                                        tint = OrbitTheme.colors.primary,
+                                        modifier = Modifier.size(if (isLandscape) 52.dp else 84.dp)
+                                    )
+                                }
                             }
                         }
 
@@ -762,6 +777,81 @@ fun NowPlayingScreen(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+            }
+        }
+
+        // 3.5 歌曲技术规格参数栏 (比特率、时长、格式、采样率等)
+        val techSpecsView: @Composable (Modifier) -> Unit = { mod ->
+            val specs = songTechSpecs
+            val formatText = specs?.format?.uppercase() ?: (song?.mimeType?.takeIf { it.isNotBlank() }?.substringAfterLast('/')?.uppercase() ?: "AUDIO")
+            val bitrateText = if ((specs?.bitrateKbps ?: 0) > 0) "${specs?.bitrateKbps} kbps" else ""
+            val sampleRateText = if ((specs?.sampleRateHz ?: 0) > 0) {
+                val sr = specs!!.sampleRateHz
+                if (sr % 1000 == 0) "${sr / 1000} kHz" else "%.1f kHz".format(sr / 1000f)
+            } else ""
+            val bitDepthText = if ((specs?.bitDepth ?: 0) > 0) "${specs?.bitDepth} bit" else ""
+            val durationText = specs?.durationFormatted?.ifBlank { song?.formattedDuration } ?: (song?.formattedDuration ?: "0:00")
+
+            Row(
+                modifier = mod,
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 格式胶囊 (FLAC, MP3, WAV 等)
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = OrbitTheme.colors.primary.copy(alpha = 0.15f),
+                    border = BorderStroke(0.6.dp, OrbitTheme.colors.primary.copy(alpha = 0.35f))
+                ) {
+                    Text(
+                        text = formatText,
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = OrbitTheme.colors.primary,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                    )
+                }
+
+                if (bitrateText.isNotBlank()) {
+                    Text(
+                        text = "•",
+                        fontSize = 10.sp,
+                        color = OrbitTheme.colors.textSecondary.copy(alpha = 0.4f)
+                    )
+                    Text(
+                        text = bitrateText,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = OrbitTheme.colors.textSecondary.copy(alpha = 0.85f)
+                    )
+                }
+
+                if (sampleRateText.isNotBlank() || bitDepthText.isNotBlank()) {
+                    val rateAndDepth = listOf(sampleRateText, bitDepthText).filter { it.isNotBlank() }.joinToString(" / ")
+                    Text(
+                        text = "•",
+                        fontSize = 10.sp,
+                        color = OrbitTheme.colors.textSecondary.copy(alpha = 0.4f)
+                    )
+                    Text(
+                        text = rateAndDepth,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = OrbitTheme.colors.textSecondary.copy(alpha = 0.75f)
+                    )
+                }
+
+                Text(
+                    text = "•",
+                    fontSize = 10.sp,
+                    color = OrbitTheme.colors.textSecondary.copy(alpha = 0.4f)
+                )
+                Text(
+                    text = durationText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = OrbitTheme.colors.textSecondary.copy(alpha = 0.85f)
+                )
             }
         }
 
@@ -1312,6 +1402,8 @@ fun NowPlayingScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            techSpecsView(Modifier.padding(top = 1.dp))
                         }
                     }
 
@@ -1474,18 +1566,22 @@ fun NowPlayingScreen(
                             coverView(Modifier.fillMaxWidth())
                             Spacer(modifier = Modifier.height(14.dp))
                             trackInfoView()
+                            Spacer(modifier = Modifier.height(6.dp))
+                            techSpecsView(Modifier.fillMaxWidth())
                         }
                     }
                 }
 
-                // 歌词模式下单独在歌词下方紧凑呈现歌曲信息
+                // 歌词模式下单独在歌词下方紧凑呈现歌曲信息与技术参数
                 if (equalizerUiState.showNowPlayingLyrics) {
                     Spacer(modifier = Modifier.height(6.dp))
                     trackInfoView()
+                    Spacer(modifier = Modifier.height(4.dp))
+                    techSpecsView(Modifier.fillMaxWidth())
                 }
 
-                // 歌曲信息与快捷小图标之间的舒展呼吸留白 (彻底拉大间距，不靠近小图标)
-                Spacer(modifier = Modifier.height(if (equalizerUiState.showNowPlayingLyrics) 16.dp else 26.dp))
+                // 歌曲信息与快捷小图标之间的舒展呼吸留白
+                Spacer(modifier = Modifier.height(if (equalizerUiState.showNowPlayingLyrics) 12.dp else 16.dp))
 
                 quickActionsView(Modifier.fillMaxWidth())
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1932,6 +2028,33 @@ fun NowPlayingScreen(
                         )
                     }
 
+                    // 2.5 详细信息
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                showMoreOptionsMenu = false
+                                showSongDetailInfoDialog = true
+                            }
+                            .padding(vertical = 12.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = OrbitTheme.colors.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = stringResource(R.string.menu_song_details),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = OrbitTheme.colors.textPrimary
+                        )
+                    }
+
                     // 3. 添加到播放列表
                     Row(
                         modifier = Modifier
@@ -1958,12 +2081,169 @@ fun NowPlayingScreen(
                             color = OrbitTheme.colors.textPrimary
                         )
                     }
+
+                    // 4. 删除歌曲
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                showMoreOptionsMenu = false
+                                deleteLocalFileChecked = false
+                                showDeleteSongDialog = true
+                            }
+                            .padding(vertical = 12.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteOutline,
+                            contentDescription = null,
+                            tint = Color(0xFFFF4D4F),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = stringResource(R.string.menu_delete_song),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFFFF4D4F)
+                        )
+                    }
                 }
             },
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showMoreOptionsMenu = false }) {
                     Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
+                }
+            },
+            containerColor = OrbitTheme.colors.surfaceDialog
+        )
+    }
+
+    // 歌曲详细信息弹窗 (参考图高质感展示)
+    if (showSongDetailInfoDialog && song != null) {
+        val targetSong = song
+        com.orbit.music.ui.components.SongDetailInfoDialog(
+            song = targetSong,
+            onDismissRequest = { showSongDetailInfoDialog = false },
+            onChangeCover = { s ->
+                showSongDetailInfoDialog = false
+                candidateSong = s
+                val cached = com.orbit.music.data.cover.MusicBrainzCoverService.getCachedCandidates(s.id)
+                if (cached != null) {
+                    candidateArtistName = cached.first
+                    candidateCovers = cached.second
+                } else {
+                    candidateArtistName = s.artist
+                    candidateCovers = emptyList()
+                }
+                showSelectAlbumCoverDialog = true
+            },
+            onViewLyrics = {
+                showSongDetailInfoDialog = false
+                onToggleShowLyrics(true)
+            }
+        )
+    }
+
+    // 删除歌曲确认对话框 (可勾选是否同时删除本地文件)
+    if (showDeleteSongDialog && song != null) {
+        val targetSong = song
+        AlertDialog(
+            onDismissRequest = { showDeleteSongDialog = false },
+            title = {
+                Text(
+                    text = stringResource(R.string.delete_song_dialog_title),
+                    color = OrbitTheme.colors.textPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.delete_song_confirm_message, targetSong.title),
+                        fontSize = 14.sp,
+                        color = OrbitTheme.colors.textSecondary
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { deleteLocalFileChecked = !deleteLocalFileChecked }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = deleteLocalFileChecked,
+                            onCheckedChange = { deleteLocalFileChecked = it },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = OrbitTheme.colors.primary,
+                                uncheckedColor = OrbitTheme.colors.textSecondary
+                            )
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.delete_local_file_checkbox),
+                            fontSize = 13.sp,
+                            color = OrbitTheme.colors.textPrimary
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val deleteLocal = deleteLocalFileChecked
+                        showDeleteSongDialog = false
+
+                        if (deleteLocal && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R && !android.os.Environment.isExternalStorageManager()) {
+                            try {
+                                val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                    data = android.net.Uri.parse("package:${context.packageName}")
+                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            } catch (_: Exception) {
+                                try {
+                                    val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).apply {
+                                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (_: Exception) {}
+                            }
+                        }
+
+                        viewModel.deleteSong(targetSong, deleteLocal) { success ->
+                            if (success) {
+                                FastToast.show(context, R.string.delete_song_success)
+                            } else {
+                                FastToast.show(context, R.string.delete_song_failed)
+                            }
+                            if (playbackState.currentPlaylist.size <= 1) {
+                                onBack()
+                            }
+                        }
+                    }
+                ) {
+                    Text(
+                        text = stringResource(R.string.btn_delete),
+                        color = Color(0xFFFF4D4F),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteSongDialog = false }) {
+                    Text(
+                        text = stringResource(R.string.btn_cancel),
+                        color = OrbitTheme.colors.textSecondary
+                    )
                 }
             },
             containerColor = OrbitTheme.colors.surfaceDialog

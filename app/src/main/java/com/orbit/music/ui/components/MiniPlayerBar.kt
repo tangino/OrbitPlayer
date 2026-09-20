@@ -88,6 +88,8 @@ fun MiniPlayerBar(
     onPlayNext: () -> Unit,
     onPlayPrevious: () -> Unit,
     onClick: () -> Unit,
+    isCollapsed: Boolean = false,
+    onToggleCollapse: (Boolean) -> Unit = {},
     isTabletMode: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -104,9 +106,6 @@ fun MiniPlayerBar(
             configuration.screenWidthDp > configuration.screenHeightDp
     // 是否正在使用平板UI布局（必须开启平板模式且处于横屏/宽屏，与 MusicLibraryScreen 中的 useTabletLayout 保持严格一致）
     val isTabletLayout = isTabletMode && (isLandscape || configuration.screenWidthDp >= 600)
-
-    // 收起/展开物理变形状态
-    var isCollapsed by rememberSaveable { mutableStateOf(false) }
 
     val morphProgress by animateFloatAsState(
         targetValue = if (isCollapsed) 1f else 0f,
@@ -308,7 +307,7 @@ fun MiniPlayerBar(
                     if (isCollapsed) {
                         detectHorizontalDragGestures { change, dragAmount ->
                             if (dragAmount < -15f) {
-                                isCollapsed = false
+                                onToggleCollapse(false)
                                 change.consume()
                             }
                         }
@@ -341,7 +340,7 @@ fun MiniPlayerBar(
                                 } else if (gestureMode == 2) {
                                     val collapseThreshold = 80f
                                     if (totalX > collapseThreshold) {
-                                        isCollapsed = true
+                                        onToggleCollapse(true)
                                     }
                                 }
                                 totalX = 0f
@@ -386,7 +385,7 @@ fun MiniPlayerBar(
                     indication = if (isCollapsed) rememberRipple(bounded = true, radius = 24.dp) else rememberRipple(bounded = true, color = colors.primary.copy(alpha = 0.15f)),
                     onClick = {
                         if (isCollapsed) {
-                            isCollapsed = false
+                            onToggleCollapse(false)
                         } else {
                             onClick()
                         }

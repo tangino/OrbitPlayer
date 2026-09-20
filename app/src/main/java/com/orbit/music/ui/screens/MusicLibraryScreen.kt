@@ -57,6 +57,7 @@ import com.orbit.music.ui.components.CoverFlowLayout
 import com.orbit.music.ui.components.MiniPlayerBar
 import com.orbit.music.ui.components.SelectAlbumCoverDialog
 import com.orbit.music.ui.components.SongItem
+import com.orbit.music.utils.FastToast
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.res.stringResource
@@ -170,6 +171,9 @@ fun MusicLibraryScreen(
     var candidateSong by remember { mutableStateOf<Song?>(null) }
     var isApplyingCover by remember { mutableStateOf(false) }
     var searchingSong by remember { mutableStateOf<Song?>(null) }
+    var songToDelete by remember { mutableStateOf<Song?>(null) }
+    var deleteLocalFileChecked by remember { mutableStateOf(false) }
+    var songForDetailInfo by remember { mutableStateOf<Song?>(null) }
 
     // 文件夹下钻：当前展开的文件夹路径
     var openedFolderPath by remember { mutableStateOf<String?>(null) }
@@ -1007,92 +1011,251 @@ fun MusicLibraryScreen(
                                 }
                             }
 
+                            // 随机获取歌单封面 (从歌单现有歌曲中挑选)
+                            val randomCoverArtUri = remember(currentPlaylist.id, playlistSongs) {
+                                val songsWithArt = playlistSongs.filter { !it.albumArtUri.isNullOrBlank() }
+                                if (songsWithArt.isNotEmpty()) {
+                                    songsWithArt.random().albumArtUri
+                                } else if (playlistSongs.isNotEmpty()) {
+                                    playlistSongs.random().albumArtUri
+                                } else {
+                                    null
+                                }
+                            }
+
+                            // 歌单时长统计
+                            val totalDurationMs = remember(playlistSongs) {
+                                playlistSongs.sumOf { it.durationMs }
+                            }
+                            val totalDurationText = remember(totalDurationMs) {
+                                val totalSeconds = totalDurationMs / 1000
+                                val hours = totalSeconds / 3600
+                                val minutes = (totalSeconds % 3600) / 60
+                                if (hours > 0) {
+                                    "${hours}小时 ${minutes}分钟"
+                                } else {
+                                    "${minutes}分钟"
+                                }
+                            }
+
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(start = 16.dp, end = 16.dp, top = 8.dp)
                             ) {
-                                // 歌单操作栏（播放全部、添加歌曲、搜索）
-                                Row(
+                                // 精致歌单详情 Header 卡片
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.75f),
+                                    border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.15f)),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        .padding(bottom = 10.dp)
                                 ) {
-                                    // 播放全部按钮
-                                    if (filteredPlaylistSongs.isNotEmpty()) {
-                                        FilledTonalButton(
-                                            onClick = { viewModel.playSong(filteredPlaylistSongs, 0) },
-                                            colors = ButtonDefaults.filledTonalButtonColors(
-                                                containerColor = OrbitTheme.colors.primary.copy(alpha = 0.15f),
-                                                contentColor = OrbitTheme.colors.primary
-                                            ),
-                                            shape = RoundedCornerShape(20.dp),
-                                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.PlayArrow,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                text = stringResource(R.string.btn_play_all),
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp
-                                            )
-                                        }
-                                    }
-
-                                    // 添加歌曲按钮 (红心歌单与不喜欢歌单不展示添加歌曲按钮)
-                                    if (currentPlaylist.id != FAVORITE_PLAYLIST_ID && currentPlaylist.id != DISLIKED_PLAYLIST_ID) {
-                                        OutlinedButton(
-                                            onClick = { showAddSongsToPlaylistDialog = true },
-                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = OrbitTheme.colors.primary),
-                                            border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f)),
-                                            shape = RoundedCornerShape(20.dp),
-                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                        ) {
-                                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(stringResource(R.string.add_songs), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                        }
-                                    } else if (currentPlaylist.id == DISLIKED_PLAYLIST_ID && filteredPlaylistSongs.isNotEmpty()) {
-                                        OutlinedButton(
-                                            onClick = { showClearDislikesDialog = true },
-                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE57373)),
-                                            border = BorderStroke(1.dp, Color(0xFFE57373).copy(alpha = 0.5f)),
-                                            shape = RoundedCornerShape(20.dp),
-                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                        ) {
-                                            Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(16.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(stringResource(R.string.clear_all_dislikes), fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                        }
-                                    }
-
-                                    Spacer(modifier = Modifier.weight(1f))
-
-                                    // 搜索状态统计 / 快捷搜索按钮
-                                    if (libraryState.searchQuery.isNotBlank()) {
-                                        Text(
-                                            text = "${filteredPlaylistSongs.size} / ${playlistSongs.size}",
-                                            fontSize = 12.sp,
-                                            color = OrbitTheme.colors.primary,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
-
-                                    IconButton(
-                                        onClick = { viewModel.toggleSearch() },
-                                        modifier = Modifier.size(36.dp)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(
-                                            imageVector = if (libraryState.isSearching) Icons.Default.Close else Icons.Default.Search,
-                                            contentDescription = "Search In Playlist",
-                                            tint = if (libraryState.isSearching) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary
-                                        )
+                                        // 左侧：随机封面大图 (100.dp x 100.dp)
+                                        Box(
+                                            modifier = Modifier
+                                                .size(100.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(
+                                                    Brush.linearGradient(
+                                                        colors = listOf(
+                                                            OrbitTheme.colors.surface,
+                                                            OrbitTheme.colors.primary.copy(alpha = 0.2f)
+                                                        )
+                                                    )
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (randomCoverArtUri != null) {
+                                                AsyncImage(
+                                                    model = ImageRequest.Builder(context)
+                                                        .data(randomCoverArtUri)
+                                                        .memoryCacheKey("${randomCoverArtUri}_$coverVer")
+                                                        .diskCacheKey("${randomCoverArtUri}_$coverVer")
+                                                        .build(),
+                                                    contentDescription = currentPlaylist.name,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = when (currentPlaylist.id) {
+                                                        FAVORITE_PLAYLIST_ID -> Icons.Default.Favorite
+                                                        DISLIKED_PLAYLIST_ID -> Icons.Default.ThumbDown
+                                                        else -> Icons.AutoMirrored.Filled.PlaylistPlay
+                                                    },
+                                                    contentDescription = null,
+                                                    tint = when (currentPlaylist.id) {
+                                                        FAVORITE_PLAYLIST_ID -> Color(0xFFFF3366).copy(alpha = 0.7f)
+                                                        DISLIKED_PLAYLIST_ID -> Color(0xFFE57373).copy(alpha = 0.7f)
+                                                        else -> OrbitTheme.colors.primary.copy(alpha = 0.6f)
+                                                    },
+                                                    modifier = Modifier.size(44.dp)
+                                                )
+                                            }
+
+                                            // 右下角徽章（我喜欢的音乐 / 不喜欢列表）
+                                            if (currentPlaylist.id == FAVORITE_PLAYLIST_ID) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .align(Alignment.BottomEnd)
+                                                        .padding(4.dp)
+                                                        .size(24.dp)
+                                                        .clip(CircleShape)
+                                                        .background(Color(0xFFFF3366)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Favorite,
+                                                        contentDescription = null,
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(13.dp)
+                                                    )
+                                                }
+                                            } else if (currentPlaylist.id == DISLIKED_PLAYLIST_ID) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .align(Alignment.BottomEnd)
+                                                        .padding(4.dp)
+                                                        .size(24.dp)
+                                                        .clip(CircleShape)
+                                                        .background(Color(0xFFE57373)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.ThumbDown,
+                                                        contentDescription = null,
+                                                        tint = Color.White,
+                                                        modifier = Modifier.size(13.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.width(14.dp))
+
+                                        // 右侧：歌单信息与主要操作
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            // 歌单标题
+                                            Text(
+                                                text = currentPlaylist.name,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 17.sp,
+                                                color = OrbitTheme.colors.textPrimary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+
+                                            // 统计信息：歌曲数 · 总时长
+                                            Text(
+                                                text = if (playlistSongs.isNotEmpty()) {
+                                                    stringResource(R.string.tracks_count, playlistSongs.size) + " · " + totalDurationText
+                                                } else {
+                                                    stringResource(R.string.tracks_count, 0)
+                                                },
+                                                fontSize = 12.sp,
+                                                color = OrbitTheme.colors.textSecondary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+
+                                            Spacer(modifier = Modifier.height(4.dp))
+
+                                            // 底部操作按钮行
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                // 播放全部按钮
+                                                if (filteredPlaylistSongs.isNotEmpty()) {
+                                                    Button(
+                                                        onClick = { viewModel.playSong(filteredPlaylistSongs, 0) },
+                                                        colors = ButtonDefaults.buttonColors(
+                                                            containerColor = OrbitTheme.colors.primary,
+                                                            contentColor = Color.White
+                                                        ),
+                                                        shape = RoundedCornerShape(20.dp),
+                                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                                        modifier = Modifier.height(32.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.PlayArrow,
+                                                            contentDescription = null,
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.width(2.dp))
+                                                        Text(
+                                                            text = stringResource(R.string.btn_play_all),
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontSize = 12.sp
+                                                        )
+                                                    }
+                                                }
+
+                                                // 添加歌曲按钮 (普通歌单)
+                                                if (currentPlaylist.id != FAVORITE_PLAYLIST_ID && currentPlaylist.id != DISLIKED_PLAYLIST_ID) {
+                                                    OutlinedButton(
+                                                        onClick = { showAddSongsToPlaylistDialog = true },
+                                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = OrbitTheme.colors.primary),
+                                                        border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f)),
+                                                        shape = RoundedCornerShape(20.dp),
+                                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                        modifier = Modifier.height(32.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                        Spacer(modifier = Modifier.width(2.dp))
+                                                        Text(stringResource(R.string.add_songs), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                                    }
+                                                } else if (currentPlaylist.id == DISLIKED_PLAYLIST_ID && filteredPlaylistSongs.isNotEmpty()) {
+                                                    OutlinedButton(
+                                                        onClick = { showClearDislikesDialog = true },
+                                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE57373)),
+                                                        border = BorderStroke(1.dp, Color(0xFFE57373).copy(alpha = 0.5f)),
+                                                        shape = RoundedCornerShape(20.dp),
+                                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                        modifier = Modifier.height(32.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.DeleteSweep, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                        Spacer(modifier = Modifier.width(2.dp))
+                                                        Text(stringResource(R.string.clear_all_dislikes), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                                    }
+                                                }
+
+                                                Spacer(modifier = Modifier.weight(1f))
+
+                                                // 搜索状态统计 / 快捷搜索按钮
+                                                if (libraryState.searchQuery.isNotBlank()) {
+                                                    Text(
+                                                        text = "${filteredPlaylistSongs.size}/${playlistSongs.size}",
+                                                        fontSize = 11.sp,
+                                                        color = OrbitTheme.colors.primary,
+                                                        fontWeight = FontWeight.SemiBold
+                                                    )
+                                                }
+
+                                                IconButton(
+                                                    onClick = { viewModel.toggleSearch() },
+                                                    modifier = Modifier.size(32.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = if (libraryState.isSearching) Icons.Default.Close else Icons.Default.Search,
+                                                        contentDescription = "Search In Playlist",
+                                                        tint = if (libraryState.isSearching) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
                                 }
 
@@ -1296,9 +1459,9 @@ fun MusicLibraryScreen(
 
                                 val q = libraryState.searchQuery.trim()
                                 val favTitle = stringResource(R.string.favorite_songs)
-                                val favMatches = q.isBlank() || favTitle.contains(q, ignoreCase = true) || favoriteSongs.any {
+                                val favMatches = favoriteSongs.isNotEmpty() && (q.isBlank() || favTitle.contains(q, ignoreCase = true) || favoriteSongs.any {
                                     it.title.contains(q, ignoreCase = true) || it.artist.contains(q, ignoreCase = true)
-                                }
+                                })
                                 val dislikedTitle = stringResource(R.string.disliked_songs)
                                 val dislikedMatches = dislikedSongs.isNotEmpty() && (q.isBlank() || dislikedTitle.contains(q, ignoreCase = true) || dislikedSongs.any {
                                     it.title.contains(q, ignoreCase = true) || it.artist.contains(q, ignoreCase = true)
@@ -2406,8 +2569,186 @@ fun MusicLibraryScreen(
                         color = OrbitTheme.colors.textPrimary
                     )
                 }
+
+                // 操作项 3.5：详细信息
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable {
+                            val target = longClickedSong
+                            activeSongForLongClickMenu = null
+                            songForDetailInfo = target
+                        }
+                        .padding(vertical = 12.dp, horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = null,
+                        tint = OrbitTheme.colors.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Text(
+                        text = stringResource(R.string.menu_song_details),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = OrbitTheme.colors.textPrimary
+                    )
+                }
+
+                // 操作项 4：删除歌曲
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable {
+                            val target = longClickedSong
+                            activeSongForLongClickMenu = null
+                            deleteLocalFileChecked = false
+                            songToDelete = target
+                        }
+                        .padding(vertical = 12.dp, horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteOutline,
+                        contentDescription = null,
+                        tint = Color(0xFFFF4D4F),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Text(
+                        text = stringResource(R.string.menu_delete_song),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFFFF4D4F)
+                    )
+                }
             }
         }
+    }
+
+    // 歌曲详细信息弹窗 (参考图高质感展示)
+    songForDetailInfo?.let { targetSong ->
+        com.orbit.music.ui.components.SongDetailInfoDialog(
+            song = targetSong,
+            onDismissRequest = { songForDetailInfo = null },
+            onChangeCover = { s ->
+                songForDetailInfo = null
+                candidateSong = s
+                val cached = com.orbit.music.data.cover.MusicBrainzCoverService.getCachedCandidates(s.id)
+                if (cached != null) {
+                    candidateArtistName = cached.first
+                    candidateCovers = cached.second
+                } else {
+                    candidateArtistName = s.artist
+                    candidateCovers = emptyList()
+                }
+                showSelectAlbumCoverDialog = true
+            }
+        )
+    }
+
+    // 删除歌曲确认对话框 (可勾选是否同时删除本地文件)
+    if (songToDelete != null) {
+        val target = songToDelete!!
+        AlertDialog(
+            onDismissRequest = { songToDelete = null },
+            title = {
+                Text(
+                    text = stringResource(R.string.delete_song_dialog_title),
+                    color = OrbitTheme.colors.textPrimary,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.delete_song_confirm_message, target.title),
+                        fontSize = 14.sp,
+                        color = OrbitTheme.colors.textSecondary
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { deleteLocalFileChecked = !deleteLocalFileChecked }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = deleteLocalFileChecked,
+                            onCheckedChange = { deleteLocalFileChecked = it },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = OrbitTheme.colors.primary,
+                                uncheckedColor = OrbitTheme.colors.textSecondary
+                            )
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.delete_local_file_checkbox),
+                            fontSize = 13.sp,
+                            color = OrbitTheme.colors.textPrimary
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val deleteLocal = deleteLocalFileChecked
+                        songToDelete = null
+
+                        if (deleteLocal && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R && !android.os.Environment.isExternalStorageManager()) {
+                            try {
+                                val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                    data = android.net.Uri.parse("package:${context.packageName}")
+                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            } catch (_: Exception) {
+                                try {
+                                    val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION).apply {
+                                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (_: Exception) {}
+                            }
+                        }
+
+                        viewModel.deleteSong(target, deleteLocal) { success ->
+                            if (success) {
+                                FastToast.show(context, R.string.delete_song_success)
+                            } else {
+                                FastToast.show(context, R.string.delete_song_failed)
+                            }
+                        }
+                    }
+                ) {
+                    Text(
+                        text = stringResource(R.string.btn_delete),
+                        color = Color(0xFFFF4D4F),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { songToDelete = null }) {
+                    Text(
+                        text = stringResource(R.string.btn_cancel),
+                        color = OrbitTheme.colors.textSecondary
+                    )
+                }
+            },
+            containerColor = OrbitTheme.colors.surfaceDialog
+        )
     }
 
     // 候选专辑封面选择对话框 (展示已有封面或在线检索封面，支持下载/重新下载并保存)

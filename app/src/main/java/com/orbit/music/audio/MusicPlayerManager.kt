@@ -762,6 +762,88 @@ class MusicPlayerManager private constructor(private val context: Context) {
         }
     }
 
+    fun removeSongFromPlayback(song: Song) {
+        scope.launch(Dispatchers.Main) {
+            val current = _playbackState.value
+            val isCurrentPlaying = current.currentSong?.id == song.id || current.currentSong?.path == song.path
+            val newPlaylist = current.currentPlaylist.filter { it.id != song.id && it.path != song.path }
+
+            if (newPlaylist.isEmpty()) {
+                stopProgressTracker()
+                stopVisualizerWatchdog()
+                player.stop()
+                player.clearMediaItems()
+                visualizerManager.reset()
+                _playbackState.update {
+                    it.copy(
+                        isPlaying = false,
+                        currentSong = null,
+                        currentIndex = 0,
+                        currentPlaylist = emptyList(),
+                        currentPositionMs = 0L,
+                        durationMs = 0L,
+                        progress = 0f
+                    )
+                }
+                prefs.edit().clear().apply()
+                return@launch
+            }
+
+            if (isCurrentPlaying) {
+                val oldIndex = current.currentIndex
+                val nextIndex = if (oldIndex in newPlaylist.indices) oldIndex else 0
+                val nextSong = newPlaylist[nextIndex]
+                
+                try {
+                    val mediaItems = newPlaylist.map { createMediaItem(it) }
+                    player.setMediaItems(mediaItems, nextIndex, 0L)
+                    player.prepare()
+                    if (current.isPlaying) {
+                        player.play()
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error switching track on song remove", e)
+                }
+                
+                _playbackState.update {
+                    it.copy(
+                        currentPlaylist = newPlaylist,
+                        currentIndex = nextIndex,
+                        currentSong = nextSong,
+                        currentPositionMs = 0L,
+                        durationMs = nextSong.durationMs,
+                        progress = 0f
+                    )
+                }
+                saveLastPlayedSong(nextSong, 0L, syncImmediately = true)
+            } else {
+                val newCurrentIndex = newPlaylist.indexOfFirst { it.id == current.currentSong?.id }.let {
+                    if (it >= 0) it else 0
+                }
+                
+                try {
+                    val currentPos = player.currentPosition
+                    val isPlaying = player.isPlaying
+                    val mediaItems = newPlaylist.map { createMediaItem(it) }
+                    player.setMediaItems(mediaItems, newCurrentIndex, currentPos)
+                    player.prepare()
+                    if (isPlaying) {
+                        player.play()
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error updating queue on song remove", e)
+                }
+                
+                _playbackState.update {
+                    it.copy(
+                        currentPlaylist = newPlaylist,
+                        currentIndex = newCurrentIndex
+                    )
+                }
+            }
+        }
+    }
+
     fun release() {
         stopProgressTracker()
         stopVisualizerWatchdog()

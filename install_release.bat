@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo ======================================================
-echo    Orbit Player - Windows Install Release (v0.1.6)
+echo    Orbit Player - Windows Install Release (v0.1.7)
 echo ======================================================
 
 if not defined ANDROID_HOME if exist "E:\softwares\Android\sdk" set "ANDROID_HOME=E:\softwares\Android\sdk"
