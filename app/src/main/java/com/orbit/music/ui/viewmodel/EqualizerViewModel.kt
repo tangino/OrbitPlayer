@@ -60,8 +60,8 @@ data class EqualizerUiState(
     val trailStartWidth: Float = 3.8f,
     val trailEndWidth: Float = 1.2f,
     val trailOrbitRadius: Float = 9.5f,
-    val trailColor1: Long = 0xFF00FFFFL,
-    val trailColor2: Long = 0xFF5E72E4L,
+    val trailColor1: Long = 0xFF00B8D4L,
+    val trailColor2: Long = 0xFF818CF8L,
     val visualizerEnabled: Boolean = true,
     val visualizerStyle: VisualizerStyle = VisualizerStyle.BARS_WITH_PEAKS,
     val visualizerPeakDecayEnabled: Boolean = true,
@@ -69,10 +69,10 @@ data class EqualizerUiState(
     val showNowPlayingVisualizer: Boolean = false,
     val showNowPlayingLyrics: Boolean = false,
     val visualizerBarWidthDp: Float = 5.0f,
-    val visualizerCustomColor: Long = 0xFF00E5FFL,
-    val visualizerCustomColor2: Long = 0xFF7C4DFFL,
+    val visualizerCustomColor: Long = 0xFF00B8D4L,
+    val visualizerCustomColor2: Long = 0xFF818CF8L,
     val customVisualizerColors: List<Long> = listOf(
-        0xFF00E5FFL, 0xFF00F5D4L, 0xFF7C4DFFL, 0xFFFF007FL, 0xFFFF9100L, 0xFF00E676L
+        0xFF00B8D4L, 0xFF38BDF8L, 0xFF818CF8L, 0xFFF59E0BL, 0xFFF43F5EL, 0xFF10B981L
     ),
     val isVisualizerMaximized: Boolean = false,
     val maximizedShowCover: Boolean = true,
@@ -123,8 +123,8 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         val savedTrailStartWidth = prefs.getFloat(KEY_TRAIL_START_WIDTH, 3.8f)
         val savedTrailEndWidth = prefs.getFloat(KEY_TRAIL_END_WIDTH, 1.2f)
         val savedTrailOrbitRadius = prefs.getFloat(KEY_TRAIL_ORBIT_RADIUS, 9.5f)
-        val savedTrailColor1 = prefs.getLong(KEY_TRAIL_COLOR1, 0xFF00FFFFL)
-        val savedTrailColor2 = prefs.getLong(KEY_TRAIL_COLOR2, 0xFF5E72E4L)
+        val savedTrailColor1 = prefs.getLong(KEY_TRAIL_COLOR1, 0xFF00B8D4L)
+        val savedTrailColor2 = prefs.getLong(KEY_TRAIL_COLOR2, 0xFF818CF8L)
         val savedVizEnabled = prefs.getBoolean(KEY_VIZ_ENABLED, true)
         val savedVizStyle = VisualizerStyle.fromId(prefs.getString(KEY_VIZ_STYLE, VisualizerStyle.BARS_WITH_PEAKS.id))
         val savedVizPeakDecay = prefs.getBoolean(KEY_VIZ_PEAK_DECAY, true)
@@ -132,18 +132,18 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         val savedShowNowPlayingVisualizer = prefs.getBoolean(KEY_SHOW_NOW_PLAYING_VISUALIZER, false)
         val savedShowNowPlayingLyrics = prefs.getBoolean(KEY_SHOW_NOW_PLAYING_LYRICS, false)
         val savedBarWidthDp = prefs.getFloat(KEY_VIZ_BAR_WIDTH_DP, 5.0f)
-        val savedCustomColor = prefs.getLong(KEY_VIZ_CUSTOM_COLOR, 0xFF00E5FFL)
-        val savedCustomColor2 = prefs.getLong(KEY_VIZ_CUSTOM_COLOR2, 0xFF7C4DFFL)
+        val savedCustomColor = prefs.getLong(KEY_VIZ_CUSTOM_COLOR, 0xFF00B8D4L)
+        val savedCustomColor2 = prefs.getLong(KEY_VIZ_CUSTOM_COLOR2, 0xFF818CF8L)
         val savedCustomColorsJson = prefs.getString(KEY_CUSTOM_VIZ_COLORS, null)
         val savedCustomColors = if (!savedCustomColorsJson.isNullOrBlank()) {
             try {
                 val jsonArr = org.json.JSONArray(savedCustomColorsJson)
                 List(jsonArr.length()) { idx -> jsonArr.getLong(idx) }
             } catch (e: Exception) {
-                listOf(0xFF00E5FFL, 0xFF00F5D4L, 0xFF7C4DFFL, 0xFFFF007FL, 0xFFFF9100L, 0xFF00E676L)
+                listOf(0xFF00B8D4L, 0xFF38BDF8L, 0xFF818CF8L, 0xFFF59E0BL, 0xFFF43F5EL, 0xFF10B981L)
             }
         } else {
-            listOf(0xFF00E5FFL, 0xFF00F5D4L, 0xFF7C4DFFL, 0xFFFF007FL, 0xFFFF9100L, 0xFF00E676L)
+            listOf(0xFF00B8D4L, 0xFF38BDF8L, 0xFF818CF8L, 0xFFF59E0BL, 0xFFF43F5EL, 0xFF10B981L)
         }
         val savedIsVisualizerMaximized = prefs.getBoolean(KEY_IS_VISUALIZER_MAXIMIZED, false)
         val savedMaximizedShowCover = prefs.getBoolean(KEY_MAXIMIZED_SHOW_COVER, true)
@@ -392,16 +392,16 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
             .putFloat(KEY_TRAIL_START_WIDTH, 3.8f)
             .putFloat(KEY_TRAIL_END_WIDTH, 1.2f)
             .putFloat(KEY_TRAIL_ORBIT_RADIUS, 9.5f)
-            .putLong(KEY_TRAIL_COLOR1, 0xFF00FFFFL)
-            .putLong(KEY_TRAIL_COLOR2, 0xFF5E72E4L)
+            .putLong(KEY_TRAIL_COLOR1, 0xFF00B8D4L)
+            .putLong(KEY_TRAIL_COLOR2, 0xFF818CF8L)
             .apply()
         _uiState.update {
             it.copy(
                 trailStartWidth = 3.8f,
                 trailEndWidth = 1.2f,
                 trailOrbitRadius = 9.5f,
-                trailColor1 = 0xFF00FFFFL,
-                trailColor2 = 0xFF5E72E4L
+                trailColor1 = 0xFF00B8D4L,
+                trailColor2 = 0xFF818CF8L
             )
         }
     }

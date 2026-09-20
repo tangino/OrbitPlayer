@@ -23,11 +23,11 @@ object PaletteHelper {
     )
 
     /**
-     * 默认保底色彩 (赛博霓虹青与紫罗兰)
+     * 默认保底色彩 (声学钛青蓝与雅致群青紫)
      */
     val DEFAULT_COLORS = ExtractedColors(
-        lightColor = 0xFF00E5FFL,
-        darkColor = 0xFF7C4DFFL
+        lightColor = 0xFF00B8D4L,
+        darkColor = 0xFF818CF8L
     )
 
     /**

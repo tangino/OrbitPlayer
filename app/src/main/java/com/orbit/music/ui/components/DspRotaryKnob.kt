@@ -119,8 +119,7 @@ fun DspRotaryKnob(
                     drawArc(
                         brush = Brush.sweepGradient(
                             listOf(
-                                colors.primary,
-                                colors.secondary,
+                                colors.primary.copy(alpha = 0.70f),
                                 colors.primary
                             )
                         ),
@@ -153,16 +152,16 @@ fun DspRotaryKnob(
                     .shadow(
                         elevation = 8.dp,
                         shape = CircleShape,
-                        spotColor = if (enabled) colors.primary.copy(alpha = 0.4f) else Color.Black
+                        spotColor = if (enabled) colors.primary.copy(alpha = 0.35f) else Color.Black
                     )
                     .clip(CircleShape)
                     .background(
                         if (colors.isDark) {
                             Brush.radialGradient(
                                 listOf(
-                                    Color(0xFF3C4358),
-                                    Color(0xFF222634),
-                                    Color(0xFF151722)
+                                    Color(0xFF2E323A),
+                                    Color(0xFF1E2127),
+                                    Color(0xFF14161A)
                                 )
                             )
                         } else {

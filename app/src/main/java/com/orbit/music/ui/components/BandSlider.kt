@@ -121,11 +121,11 @@ fun BandSlider(
                             if (colors.isDark) {
                                 if (isEnabled) {
                                     Brush.verticalGradient(
-                                        listOf(Color(0xFF353C4E), Color(0xFF1E222D), Color(0xFF151820))
+                                        listOf(Color(0xFF2E323A), Color(0xFF1E2127), Color(0xFF14161A))
                                     )
                                 } else {
                                     Brush.verticalGradient(
-                                        listOf(Color(0xFF2A2D36), Color(0xFF1A1C22))
+                                        listOf(Color(0xFF252830), Color(0xFF181A20))
                                     )
                                 }
                             } else {

@@ -118,7 +118,7 @@ fun AlbumItem(
                                     Icon(
                                         imageVector = Icons.Default.Album,
                                         contentDescription = null,
-                                        tint = TextSecondary.copy(alpha = 0.45f),
+                                        tint = colors.textSecondary.copy(alpha = 0.45f),
                                         modifier = Modifier.size(if (viewMode == LibraryViewMode.GRID_4_COL) 20.dp else 34.dp)
                                     )
                                 }
@@ -131,7 +131,7 @@ fun AlbumItem(
                                     Icon(
                                         imageVector = Icons.Default.Album,
                                         contentDescription = null,
-                                        tint = TextSecondary.copy(alpha = 0.45f),
+                                        tint = colors.textSecondary.copy(alpha = 0.45f),
                                         modifier = Modifier.size(if (viewMode == LibraryViewMode.GRID_4_COL) 20.dp else 34.dp)
                                     )
                                 }
@@ -141,7 +141,7 @@ fun AlbumItem(
                         Icon(
                             imageVector = Icons.Default.Album,
                             contentDescription = null,
-                            tint = TextSecondary,
+                            tint = colors.textSecondary,
                             modifier = Modifier.size(if (viewMode == LibraryViewMode.GRID_4_COL) 20.dp else 34.dp)
                         )
                     }
@@ -176,7 +176,7 @@ fun AlbumItem(
                     Text(
                         text = "${album.songCount} tracks",
                         fontSize = 9.sp,
-                        color = TextSecondary,
+                        color = colors.textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -219,7 +219,7 @@ fun AlbumItem(
                                         Icon(
                                             imageVector = Icons.Default.Album,
                                             contentDescription = null,
-                                            tint = TextSecondary.copy(alpha = 0.45f),
+                                            tint = colors.textSecondary.copy(alpha = 0.45f),
                                             modifier = Modifier.size(if (viewMode == LibraryViewMode.LIST_LARGE_ART) 28.dp else 22.dp)
                                         )
                                     }
@@ -232,7 +232,7 @@ fun AlbumItem(
                                         Icon(
                                             imageVector = Icons.Default.Album,
                                             contentDescription = null,
-                                            tint = TextSecondary.copy(alpha = 0.45f),
+                                            tint = colors.textSecondary.copy(alpha = 0.45f),
                                             modifier = Modifier.size(if (viewMode == LibraryViewMode.LIST_LARGE_ART) 28.dp else 22.dp)
                                         )
                                     }
@@ -242,7 +242,7 @@ fun AlbumItem(
                             Icon(
                                 imageVector = Icons.Default.Album,
                                 contentDescription = null,
-                                tint = TextSecondary,
+                                tint = colors.textSecondary,
                                 modifier = Modifier.size(if (viewMode == LibraryViewMode.LIST_LARGE_ART) 28.dp else 22.dp)
                             )
                         }

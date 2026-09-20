@@ -2850,11 +2850,11 @@ private fun EmptyStateView(title: String, subtitle: String) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(Icons.Default.LibraryMusic, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(64.dp))
+        Icon(Icons.Default.LibraryMusic, contentDescription = null, tint = OrbitTheme.colors.textSecondary, modifier = Modifier.size(64.dp))
         Spacer(modifier = Modifier.height(16.dp))
-        Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = TextPrimary)
+        Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = OrbitTheme.colors.textPrimary)
         Spacer(modifier = Modifier.height(4.dp))
-        Text(subtitle, fontSize = 12.sp, color = TextSecondary)
+        Text(subtitle, fontSize = 12.sp, color = OrbitTheme.colors.textSecondary)
     }
 }
 

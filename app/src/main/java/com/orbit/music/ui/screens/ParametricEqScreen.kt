@@ -241,36 +241,36 @@ private fun ParametricBandCard(
 
         // 频率 Frequency Slider (20Hz ~ 20kHz)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.freq_label, band.frequency.toInt()), fontSize = 11.sp, color = TextSecondary, modifier = Modifier.width(90.dp))
+            Text(stringResource(R.string.freq_label, band.frequency.toInt()), fontSize = 11.sp, color = OrbitTheme.colors.textSecondary, modifier = Modifier.width(90.dp))
             Slider(
                 value = band.frequency,
                 onValueChange = { onUpdate(band.copy(frequency = it)) },
                 valueRange = 20f..20000f,
-                colors = SliderDefaults.colors(thumbColor = PrimaryNeonCyan, activeTrackColor = PrimaryNeonCyan),
+                colors = SliderDefaults.colors(thumbColor = OrbitTheme.colors.primary, activeTrackColor = OrbitTheme.colors.primary),
                 modifier = Modifier.weight(1f)
             )
         }
 
         // 增益 Gain Slider (-7dB ~ +7dB)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.gain_label, band.gainDb), fontSize = 11.sp, color = TextSecondary, modifier = Modifier.width(90.dp))
+            Text(stringResource(R.string.gain_label, band.gainDb), fontSize = 11.sp, color = OrbitTheme.colors.textSecondary, modifier = Modifier.width(90.dp))
             Slider(
                 value = band.gainDb,
                 onValueChange = { onUpdate(band.copy(gainDb = it)) },
                 valueRange = -7f..7f,
-                colors = SliderDefaults.colors(thumbColor = AccentPurple, activeTrackColor = AccentPurple),
+                colors = SliderDefaults.colors(thumbColor = OrbitTheme.colors.secondary, activeTrackColor = OrbitTheme.colors.secondary),
                 modifier = Modifier.weight(1f)
             )
         }
 
         // Q 值 Slider (0.1 ~ 8.0)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.q_label, band.q), fontSize = 11.sp, color = TextSecondary, modifier = Modifier.width(90.dp))
+            Text(stringResource(R.string.q_label, band.q), fontSize = 11.sp, color = OrbitTheme.colors.textSecondary, modifier = Modifier.width(90.dp))
             Slider(
                 value = band.q,
                 onValueChange = { onUpdate(band.copy(q = it)) },
                 valueRange = 0.1f..8.0f,
-                colors = SliderDefaults.colors(thumbColor = AccentOrange, activeTrackColor = AccentOrange),
+                colors = SliderDefaults.colors(thumbColor = OrbitTheme.colors.tertiary, activeTrackColor = OrbitTheme.colors.tertiary),
                 modifier = Modifier.weight(1f)
             )
         }

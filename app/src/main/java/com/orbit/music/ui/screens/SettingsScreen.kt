@@ -243,23 +243,19 @@ fun SettingsScreen(
                                             .background(
                                                 Brush.linearGradient(
                                                     listOf(
-                                                        Color(0xFFFF5252).copy(alpha = 0.20f),
-                                                        Color(0xFFFFD700).copy(alpha = 0.20f),
-                                                        Color(0xFF00E676).copy(alpha = 0.20f),
-                                                        Color(0xFF2979FF).copy(alpha = 0.20f),
-                                                        Color(0xFFD500F9).copy(alpha = 0.20f)
+                                                        OrbitTheme.colors.primary.copy(alpha = 0.18f),
+                                                        OrbitTheme.colors.secondary.copy(alpha = 0.18f),
+                                                        OrbitTheme.colors.tertiary.copy(alpha = 0.18f)
                                                     )
                                                 )
                                             )
                                             .border(
-                                                width = 1.5.dp,
+                                                width = 1.2.dp,
                                                 brush = Brush.linearGradient(
                                                     listOf(
-                                                        Color(0xFFFF5252),
-                                                        Color(0xFFFFD700),
-                                                        Color(0xFF00E676),
-                                                        Color(0xFF2979FF),
-                                                        Color(0xFFD500F9)
+                                                        OrbitTheme.colors.primary,
+                                                        OrbitTheme.colors.secondary,
+                                                        OrbitTheme.colors.tertiary
                                                     )
                                                 ),
                                                 shape = RoundedCornerShape(12.dp)
@@ -270,7 +266,7 @@ fun SettingsScreen(
                                             imageVector = Icons.Default.Palette,
                                             contentDescription = stringResource(R.string.custom_solid_color_picker),
                                             tint = OrbitTheme.colors.primary,
-                                            modifier = Modifier.size(24.dp)
+                                            modifier = Modifier.size(22.dp)
                                         )
                                     }
                                     Spacer(modifier = Modifier.height(4.dp))
@@ -2047,7 +2043,7 @@ private fun SettingsSectionHeader(title: String) {
         text = title,
         fontSize = 11.sp,
         fontWeight = FontWeight.Bold,
-        color = PrimaryNeonCyan,
+        color = OrbitTheme.colors.primary,
         letterSpacing = 1.sp,
         modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
     )
@@ -2179,10 +2175,10 @@ private fun SettingsInfoItem(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = title, tint = TextSecondary, modifier = Modifier.size(22.dp))
+        Icon(icon, contentDescription = title, tint = OrbitTheme.colors.textSecondary, modifier = Modifier.size(22.dp))
         Spacer(modifier = Modifier.width(14.dp))
-        Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = TextPrimary, modifier = Modifier.weight(1f))
-        Text(value, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = TextSecondary)
+        Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = OrbitTheme.colors.textPrimary, modifier = Modifier.weight(1f))
+        Text(value, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = OrbitTheme.colors.textSecondary)
     }
 }
 

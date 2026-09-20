@@ -126,9 +126,9 @@ fun MusicEqualizerTheme(
     val orbitColors = if (isDark) {
         OrbitColors(
             background = if (isCustomBg) Color.Transparent else DarkBackground,
-            surface = if (isCustomBg) Color(0x5916181F) else SurfaceDark,
-            surfaceCard = if (isCustomBg) Color(0x851B1E26) else SurfaceCard,
-            surfaceBorder = if (isCustomBg) Color(0x40FFFFFF) else SurfaceCardBorder,
+            surface = if (isCustomBg) Color(0x66101216) else SurfaceDark,
+            surfaceCard = if (isCustomBg) Color(0x80171A20) else SurfaceCard,
+            surfaceBorder = if (isCustomBg) Color(0x2EFFFFFF) else SurfaceCardBorder,
             surfaceDialog = Color(0xFF1E222B),
             primary = PrimaryNeonCyan,
             secondary = AccentPurple,
@@ -143,9 +143,9 @@ fun MusicEqualizerTheme(
     } else {
         OrbitColors(
             background = if (isCustomBg) Color.Transparent else LightBackground,
-            surface = if (isCustomBg) Color(0x73FFFFFF) else SurfaceLight,
-            surfaceCard = if (isCustomBg) Color(0x99F5F7FA) else SurfaceCardLight,
-            surfaceBorder = if (isCustomBg) Color(0x33000000) else SurfaceCardBorderLight,
+            surface = if (isCustomBg) Color(0x80FFFFFF) else SurfaceLight,
+            surfaceCard = if (isCustomBg) Color(0x99F1F5F9) else SurfaceCardLight,
+            surfaceBorder = if (isCustomBg) Color(0x26000000) else SurfaceCardBorderLight,
             surfaceDialog = Color(0xFFFFFFFF),
             primary = PrimaryCyanLight,
             secondary = AccentPurpleLight,

@@ -3,37 +3,39 @@ package com.orbit.music.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // ==========================================
-// 深色主题发烧级配色 (Dark Theme)
+// 深色主题发烧级声学调色盘 (Dark Theme)
 // ==========================================
-val DarkBackground = Color(0xFF0F1115)
-val SurfaceDark = Color(0xFF181B22)
-val SurfaceCard = Color(0xFF212631)
-val SurfaceCardBorder = Color(0xFF2A313D)
+val DarkBackground = Color(0xFF101216)         // 深邃黑曜石底色，避免泛蓝塑料感
+val SurfaceDark = Color(0xFF171A20)            // 顶栏与底层面板
+val SurfaceCard = Color(0xFF1E222B)            // 控件与卡片精密衬底
+val SurfaceCardBorder = Color(0xFF2B303C)      // 铝合金阳极氧化微质感边框
 
-val PrimaryNeonCyan = Color(0xFF00E5FF)
-val AccentPurple = Color(0xFF7C4DFF)
-val AccentOrange = Color(0xFFFF9100)
-val DangerRed = Color(0xFFFF1744)
+// 主调色：采用纯正清透、自然耐看的声学钛青蓝，告别刺眼高荧光
+val PrimaryNeonCyan = Color(0xFF00B8D4)        // 声学钛青蓝 (Acoustic Cyan)
+val AccentPurple = Color(0xFF818CF8)           // 雅致温润群青紫 (Indigo Accent)
+val AccentOrange = Color(0xFFF59E0B)           // 经典声学琥珀金 (Acoustic Amber Gold)
+val DangerRed = Color(0xFFF43F5E)              // 柔和高级朱砂红 (Crimson Red)
 
-val TextPrimary = Color(0xFFF0F4F8)
-val TextSecondary = Color(0xFF90A4AE)
-val GridLineColor = Color(0x33546E7A)
-val CurveGlow = Color(0x6600E5FF)
+val TextPrimary = Color(0xFFF1F5F9)            // Slate 100 纯正微暖柔白
+val TextSecondary = Color(0xFF94A3B8)          // Slate 400 专业中性冷灰
+val GridLineColor = Color(0x2664748B)          // 频谱与曲线精密网格线
+val CurveGlow = Color(0x2600B8D4)              // 曲线自然柔润光韵
 
 // ==========================================
-// 亮色主题高端发烧级配色 (Light Theme)
+// 亮色主题高保真专业调色盘 (Light Theme)
 // ==========================================
-val LightBackground = Color(0xFFF6F8FA)        // 柔和耐看的浅灰白底色，避免纯白眩光
-val SurfaceLight = Color(0xFFFFFFFF)           // 纯白表面/顶栏底色
-val SurfaceCardLight = Color(0xFFEDF2F7)       // 控件槽位/卡片柔和衬底
-val SurfaceCardBorderLight = Color(0xFFE2E8F0) // 精致浅灰微边框
+val LightBackground = Color(0xFFF8FAFC)        // Slate 50 极致清爽白灰
+val SurfaceLight = Color(0xFFFFFFFF)           // 纯白高光表面
+val SurfaceCardLight = Color(0xFFF1F5F9)       // Slate 100 柔和微底色
+val SurfaceCardBorderLight = Color(0xFFE2E8F0) // Slate 200 精致浅灰边框
 
-val PrimaryCyanLight = Color(0xFF00838F)       // 高对比度电光深青（在亮色底上极为醒目且保持高保真科技感）
-val AccentPurpleLight = Color(0xFF673AB7)      // 发烧紫色（亮色系）
-val AccentOrangeLight = Color(0xFFE65100)      // 高保真橙（亮色系）
-val DangerRedLight = Color(0xFFD32F2F)
+val PrimaryCyanLight = Color(0xFF0284C7)       // Sky 600 高保真湛青蓝
+val AccentPurpleLight = Color(0xFF6366F1)      // Indigo 500 经典群青
+val AccentOrangeLight = Color(0xFFD97706)      // Amber 600 复古琥珀
+val DangerRedLight = Color(0xFFE11D48)         // Rose 600 玫瑰朱砂
 
-val TextPrimaryLight = Color(0xFF0F172A)       // 深石墨黑主字（Slate 900）
-val TextSecondaryLight = Color(0xFF64748B)     // 冷灰副字（Slate 500）
-val GridLineColorLight = Color(0x1F334155)     // 频谱与曲线微网格线
-val CurveGlowLight = Color(0x2200838F)         // 曲线柔光
+val TextPrimaryLight = Color(0xFF0F172A)       // Slate 900 深邃黑炭主字
+val TextSecondaryLight = Color(0xFF64748B)     // Slate 500 自然中性副字
+val GridLineColorLight = Color(0x1A475569)     // 频谱与曲线微网格线
+val CurveGlowLight = Color(0x1F0284C7)         // 曲线柔光
+

@@ -160,7 +160,7 @@ fun SongItem(
                         Icon(
                             imageVector = Icons.Default.MusicNote,
                             contentDescription = null,
-                            tint = TextSecondary,
+                            tint = colors.textSecondary,
                             modifier = Modifier.size(if (viewMode == LibraryViewMode.GRID_4_COL) 20.dp else 32.dp)
                         )
                     }
