@@ -258,18 +258,15 @@ fun NowPlayingScreen(
                         }
                     },
                     title = {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Text(
-                                text = "PLAYING FROM LIBRARY",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = OrbitTheme.colors.primary,
-                                letterSpacing = 1.5.sp
-                            )
-                            Text(
-                                text = song?.album ?: "Unknown Album",
-                                fontSize = 13.sp,
-                                color = OrbitTheme.colors.textSecondary,
+                                text = song?.album?.takeIf { it.isNotBlank() && it != "Unknown Album" } ?: "未知专辑",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = OrbitTheme.colors.textPrimary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -2076,6 +2073,33 @@ fun NowPlayingScreen(
                         Spacer(modifier = Modifier.width(14.dp))
                         Text(
                             text = stringResource(R.string.add_to_playlist),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = OrbitTheme.colors.textPrimary
+                        )
+                    }
+
+                    // 3.5 查看专辑
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                showMoreOptionsMenu = false
+                                viewModel.openAlbum(targetSong)
+                            }
+                            .padding(vertical = 12.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Album,
+                            contentDescription = null,
+                            tint = OrbitTheme.colors.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = stringResource(R.string.menu_view_album),
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
                             color = OrbitTheme.colors.textPrimary

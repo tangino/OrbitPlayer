@@ -269,8 +269,8 @@ class MusicPlayerManager private constructor(private val context: Context) {
                 if (index in currentList.indices) {
                     val song = currentList[index]
                     val isSameSong = _playbackState.value.currentSong?.id == song.id
-                    // 如果是冷启动或队列扩充触发的同曲目过渡，保留已有进度；只有切换不同曲目时才归零
-                    val targetPos = if (isSameSong) {
+                    // 仅当冷启动挂载/扩展播放队列且曲目相同时，保留已恢复的暂停进度；一旦切歌或自然推进，进度彻底清除重置为 0L
+                    val targetPos = if (isSameSong && reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
                         player.currentPosition.coerceAtLeast(_playbackState.value.currentPositionMs)
                     } else {
                         0L
@@ -291,7 +291,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
                             progress = (targetPos.toFloat() / dur).coerceIn(0f, 1f)
                         )
                     }
-                    saveLastPlayedSong(song, targetPos)
+                    saveLastPlayedSong(song, targetPos, syncImmediately = true)
                 }
             }
         })
@@ -337,7 +337,10 @@ class MusicPlayerManager private constructor(private val context: Context) {
             it.copy(
                 currentPlaylist = updatedSongs,
                 currentIndex = safeIndex,
-                currentSong = updatedSong
+                currentSong = updatedSong,
+                currentPositionMs = 0L,
+                durationMs = updatedSong.durationMs,
+                progress = 0f
             )
         }
 
@@ -347,13 +350,13 @@ class MusicPlayerManager private constructor(private val context: Context) {
         player.prepare()
         player.play()
         com.orbit.music.service.MusicPlaybackService.start(context)
-        saveLastPlayedSong(updatedSong, 0L)
+        saveLastPlayedSong(updatedSong, 0L, syncImmediately = true)
     }
 
     fun togglePlayPause() {
         if (player.isPlaying) {
             player.pause()
-            saveLastPlayedSong(_playbackState.value.currentSong, player.currentPosition)
+            saveLastPlayedSong(_playbackState.value.currentSong, player.currentPosition, syncImmediately = true)
         } else {
             if (player.playbackState == Player.STATE_IDLE) {
                 val currentSong = _playbackState.value.currentSong
@@ -466,7 +469,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
             }
             player.play()
             com.orbit.music.service.MusicPlaybackService.start(context)
-            saveLastPlayedSong(updatedSong, 0L)
+            saveLastPlayedSong(updatedSong, 0L, syncImmediately = true)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to seek to track at index $safeIndex, recovering...", e)
             try {
@@ -474,6 +477,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
                 player.setMediaItems(mediaItems, safeIndex, 0L)
                 player.prepare()
                 player.play()
+                saveLastPlayedSong(updatedSong, 0L, syncImmediately = true)
             } catch (_: Exception) {}
         }
     }
@@ -521,6 +525,13 @@ class MusicPlayerManager private constructor(private val context: Context) {
 
         if (player.currentPosition > 3000L) {
             player.seekTo(0L)
+            _playbackState.update {
+                it.copy(
+                    currentPositionMs = 0L,
+                    progress = 0f
+                )
+            }
+            saveLastPlayedSong(_playbackState.value.currentSong, 0L, syncImmediately = true)
             if (!player.isPlaying) player.play()
             return
         }
@@ -555,7 +566,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
                 progress = (positionMs.toFloat() / dur).coerceIn(0f, 1f)
             )
         }
-        saveLastPlayedSong(_playbackState.value.currentSong, positionMs)
+        saveLastPlayedSong(_playbackState.value.currentSong, positionMs, syncImmediately = true)
     }
 
     fun toggleShuffle(): Int {
@@ -614,10 +625,13 @@ class MusicPlayerManager private constructor(private val context: Context) {
                     }
                     state.copy(
                         currentPlaylist = updatedList,
-                        currentSong = updatedSong
+                        currentSong = updatedSong,
+                        currentPositionMs = 0L,
+                        progress = 0f
                     )
                 }
                 recordPlayImmediately(song)
+                saveLastPlayedSong(song, 0L, syncImmediately = true)
             }
             player.seekTo(0L)
             player.play()
@@ -763,11 +777,29 @@ class MusicPlayerManager private constructor(private val context: Context) {
     }
 
     fun removeSongFromPlayback(song: Song) {
+        removeSongsFromPlayback(listOf(song))
+    }
+
+    fun removeSongsFromPlayback(songs: List<Song>) {
+        if (songs.isEmpty()) return
         scope.launch(Dispatchers.Main) {
             val current = _playbackState.value
-            val isCurrentPlaying = current.currentSong?.id == song.id || current.currentSong?.path == song.path
-            val newPlaylist = current.currentPlaylist.filter { it.id != song.id && it.path != song.path }
+            val removeSongIds = songs.map { it.id }.toSet()
+            val removeSongPaths = songs.map { it.path }.toSet()
 
+            val toRemoveIndices = current.currentPlaylist.indices.filter { idx ->
+                val s = current.currentPlaylist[idx]
+                s.id in removeSongIds || s.path in removeSongPaths
+            }
+
+            // 如果被删除的歌曲都不在当前的播放队列中，无需更改播放器
+            if (toRemoveIndices.isEmpty()) {
+                return@launch
+            }
+
+            val newPlaylist = current.currentPlaylist.filter { it.id !in removeSongIds && it.path !in removeSongPaths }
+
+            // 1. 如果播放队列全部被清空
             if (newPlaylist.isEmpty()) {
                 stopProgressTracker()
                 stopVisualizerWatchdog()
@@ -789,22 +821,15 @@ class MusicPlayerManager private constructor(private val context: Context) {
                 return@launch
             }
 
-            if (isCurrentPlaying) {
+            val isCurrentPlayingRemoved = current.currentSong != null &&
+                    (current.currentSong.id in removeSongIds || current.currentSong.path in removeSongPaths)
+
+            if (isCurrentPlayingRemoved) {
+                // 当前正在播放的歌曲被删除了，需要切换到下一首
                 val oldIndex = current.currentIndex
                 val nextIndex = if (oldIndex in newPlaylist.indices) oldIndex else 0
                 val nextSong = newPlaylist[nextIndex]
-                
-                try {
-                    val mediaItems = newPlaylist.map { createMediaItem(it) }
-                    player.setMediaItems(mediaItems, nextIndex, 0L)
-                    player.prepare()
-                    if (current.isPlaying) {
-                        player.play()
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error switching track on song remove", e)
-                }
-                
+
                 _playbackState.update {
                     it.copy(
                         currentPlaylist = newPlaylist,
@@ -815,31 +840,70 @@ class MusicPlayerManager private constructor(private val context: Context) {
                         progress = 0f
                     )
                 }
-                saveLastPlayedSong(nextSong, 0L, syncImmediately = true)
-            } else {
-                val newCurrentIndex = newPlaylist.indexOfFirst { it.id == current.currentSong?.id }.let {
-                    if (it >= 0) it else 0
-                }
-                
+
                 try {
-                    val currentPos = player.currentPosition
-                    val isPlaying = player.isPlaying
                     val mediaItems = newPlaylist.map { createMediaItem(it) }
-                    player.setMediaItems(mediaItems, newCurrentIndex, currentPos)
+                    player.setMediaItems(mediaItems, nextIndex, 0L)
                     player.prepare()
-                    if (isPlaying) {
+                    if (current.isPlaying) {
                         player.play()
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error updating queue on song remove", e)
+                    Log.e(TAG, "Error switching track on song remove", e)
                 }
-                
+                saveLastPlayedSong(nextSong, 0L, syncImmediately = true)
+            } else {
+                // 当前正在播放的歌曲未被删除：无缝从队列移除，绝不中断正在播放的音频流
+                val newCurrentIndex = newPlaylist.indexOfFirst { it.id == current.currentSong?.id }.let {
+                    if (it >= 0) it else 0
+                }
+
+                // 提前原子化更新 _playbackState，保证当前曲目和封面信息不受影响
                 _playbackState.update {
                     it.copy(
                         currentPlaylist = newPlaylist,
                         currentIndex = newCurrentIndex
                     )
                 }
+
+                // 从后往前逐项从 ExoPlayer 中移除，避免索引偏移
+                try {
+                    toRemoveIndices.sortedDescending().forEach { index ->
+                        if (index in 0 until player.mediaItemCount) {
+                            player.removeMediaItem(index)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error removing media items from player queue", e)
+                }
+            }
+        }
+    }
+
+    fun addSongsToQueueNext(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        scope.launch(Dispatchers.Main) {
+            val current = _playbackState.value
+            if (current.currentPlaylist.isEmpty() || current.currentSong == null) {
+                // 当前队列为空时，直接播放此批歌曲
+                playSongList(songs, 0)
+                return@launch
+            }
+
+            val insertIndex = (current.currentIndex + 1).coerceAtMost(current.currentPlaylist.size)
+            val newPlaylist = current.currentPlaylist.toMutableList().apply {
+                addAll(insertIndex, songs)
+            }
+
+            _playbackState.update {
+                it.copy(currentPlaylist = newPlaylist)
+            }
+
+            try {
+                val newMediaItems = songs.map { createMediaItem(it) }
+                player.addMediaItems(insertIndex, newMediaItems)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error inserting songs next in queue", e)
             }
         }
     }

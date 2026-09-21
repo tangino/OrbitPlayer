@@ -8,11 +8,14 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,7 +43,7 @@ import com.orbit.music.ui.viewmodel.LibraryViewMode
  * 歌曲卡片组件：
  * 1. 列表正常滚动时：零多余开销，120 FPS 满帧无拖影
  * 2. 当前播放歌曲：采用高品质动态音频律动频谱指示器 (PlayingEqualizerIndicator)，彻底取代死板的静态图标
- * 3. 支持短按播放、长按弹出操作面板 (onLongClick)
+ * 3. 支持短按播放、长按弹出操作面板 (onLongClick)、多选批量模式 (isSelectionMode)
  * 4. Pinch 缩放切换视图时：触发尺寸位移形变与全 6 档自适应适配
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -53,6 +56,9 @@ fun SongItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     coverVersion: Long = 0L,
+    isSelectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onSelectToggle: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     onFavoriteClick: (() -> Unit)? = null,
     trailingContent: (@Composable () -> Unit)? = null
@@ -65,7 +71,9 @@ fun SongItem(
     val isNoArt = viewMode == LibraryViewMode.LIST_NO_ART
     val colors = OrbitTheme.colors
 
-    val itemBg = if (isCurrent) {
+    val itemBg = if (isSelected) {
+        colors.primary.copy(alpha = 0.22f)
+    } else if (isCurrent) {
         colors.primary.copy(alpha = 0.16f)
     } else if (viewMode == LibraryViewMode.LIST_LARGE_ART || isGrid) {
         colors.surfaceCard
@@ -91,8 +99,14 @@ fun SongItem(
             .clip(itemShape)
             .background(itemBg)
             .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
+                onClick = {
+                    if (isSelectionMode) {
+                        onSelectToggle?.invoke()
+                    } else {
+                        onClick()
+                    }
+                },
+                onLongClick = if (isSelectionMode) null else onLongClick
             )
             .padding(itemPadding)
     ) {
@@ -223,6 +237,35 @@ fun SongItem(
                             }
                         }
                     }
+
+                    // 网格多选模式下的勾选标记
+                    if (isSelectionMode) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(6.dp)
+                                .size(20.dp)
+                                .clip(CircleShape)
+                                .background(if (isSelected) colors.primary else Color.Black.copy(alpha = 0.55f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Selected",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                            } else {
+                                androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                                    drawCircle(
+                                        color = Color.White.copy(alpha = 0.85f),
+                                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx())
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
@@ -260,6 +303,34 @@ fun SongItem(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // 列表多选模式下的左侧勾选标记
+                if (isSelectionMode) {
+                    Box(
+                        modifier = Modifier
+                            .padding(end = 10.dp)
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .background(if (isSelected) colors.primary else colors.surfaceCard),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (isSelected) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Selected",
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        } else {
+                            androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                                drawCircle(
+                                    color = colors.textSecondary.copy(alpha = 0.5f),
+                                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx())
+                                )
+                            }
+                        }
+                    }
+                }
+
                 if (!isNoArt) {
                     val coverSize = if (viewMode == LibraryViewMode.LIST_LARGE_ART) 64.dp else 46.dp
 

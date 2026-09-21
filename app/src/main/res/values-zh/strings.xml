@@ -417,5 +417,24 @@
     <string name="label_file_path">文件路径：</string>
     <string name="change_cover">修改封面</string>
     <string name="copied_path_toast">文件路径已复制到剪贴板</string>
+
+    <!-- 歌曲多选与专辑跳转 -->
+    <string name="menu_view_album">查看专辑</string>
+    <string name="menu_multi_select">多选操作</string>
+    <string name="select_all">全选</string>
+    <string name="deselect_all">取消全选</string>
+    <string name="selected_count">已选择 %1$d 首</string>
+    <string name="exit_selection_mode">退出</string>
+    <string name="batch_play">播放</string>
+    <string name="batch_play_next">下一首</string>
+    <string name="batch_add_to_playlist">加歌单</string>
+    <string name="batch_delete">删除</string>
+    <string name="batch_favorite">收藏</string>
+    <string name="batch_unfavorite">已收藏</string>
+    <string name="batch_delete_dialog_title">批量删除歌曲</string>
+    <string name="batch_add_to_playlist_dialog_title">添加到歌单</string>
+    <string name="batch_delete_confirm_message">确定要删除选中的 %1$d 首歌曲吗？</string>
+    <string name="batch_delete_success">成功删除 %1$d 首歌曲</string>
+    <string name="batch_add_to_playlist_success">已将 %1$d 首歌曲加入歌单</string>
 </resources>
 

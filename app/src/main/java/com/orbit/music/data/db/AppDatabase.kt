@@ -591,6 +591,63 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
         helper.writableDatabase.insertWithOnConflict("playlist_songs", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
+    fun insertSongsToPlaylist(playlistId: Long, songIds: Collection<Long>) {
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            for (songId in songIds) {
+                val cv = ContentValues().apply {
+                    put("playlistId", playlistId)
+                    put("songId", songId)
+                    put("orderIndex", 0)
+                }
+                db.insertWithOnConflict("playlist_songs", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun deleteSongs(songs: List<Song>) {
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            for (song in songs) {
+                if (song.id > 0L) {
+                    db.delete("songs", "id = ?", arrayOf(song.id.toString()))
+                    db.delete("playlist_songs", "songId = ?", arrayOf(song.id.toString()))
+                }
+                if (song.path.isNotBlank()) {
+                    db.delete("songs", "path = ?", arrayOf(song.path))
+                    db.delete("song_stats", "path = ?", arrayOf(song.path))
+                    db.delete("song_tags", "path = ?", arrayOf(song.path))
+                }
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun setFavoriteBatch(paths: List<String>, isFavorite: Boolean) {
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            for (path in paths) {
+                val cv = ContentValues().apply {
+                    put("path", path)
+                    put("isFavorite", if (isFavorite) 1 else 0)
+                    put("lastPlayedTime", 0L)
+                }
+                db.insertWithOnConflict("song_stats", null, cv, SQLiteDatabase.CONFLICT_REPLACE)
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     fun removeSongFromPlaylist(playlistId: Long, songId: Long): Int {
         return helper.writableDatabase.delete("playlist_songs", "playlistId = ? AND songId = ?", arrayOf(playlistId.toString(), songId.toString()))
     }

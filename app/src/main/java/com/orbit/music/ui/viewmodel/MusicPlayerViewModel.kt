@@ -266,6 +266,31 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _libraryUiState.update { it.copy(selectedAlbum = album) }
     }
 
+    fun openAlbum(song: Song) {
+        val albumTitle = song.album.trim().ifEmpty { "Unknown Album" }
+        val allAlbumsList = albums.value
+        val targetAlbum = allAlbumsList.find { it.title.equals(albumTitle, ignoreCase = true) }
+            ?: AlbumItem(
+                id = song.albumId,
+                title = albumTitle,
+                artist = song.artist,
+                songCount = 1,
+                albumArtUri = song.albumArtUri
+            )
+        _libraryUiState.update {
+            it.copy(
+                currentTab = LibraryTab.ALBUMS,
+                selectedFolder = null,
+                selectedAlbum = targetAlbum,
+                selectedArtist = null,
+                selectedPlaylist = null,
+                searchQuery = "",
+                isSearching = false,
+                isNowPlayingExpanded = false
+            )
+        }
+    }
+
     fun selectArtist(artist: ArtistItem?) {
         _libraryUiState.update { it.copy(selectedArtist = artist) }
     }
@@ -276,6 +301,38 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun setNowPlayingExpanded(expanded: Boolean) {
         _libraryUiState.update { it.copy(isNowPlayingExpanded = expanded) }
+    }
+
+    fun addSongsToQueueNext(songs: List<Song>) {
+        playerManager.addSongsToQueueNext(songs)
+    }
+
+    fun addSongsToPlaylist(
+        playlistId: Long,
+        songIds: Collection<Long>,
+        onComplete: (() -> Unit)? = null
+    ) {
+        viewModelScope.launch {
+            repository.addSongsToPlaylist(playlistId, songIds)
+            onComplete?.invoke()
+        }
+    }
+
+    fun setFavoriteBatch(songs: List<Song>, isFavorite: Boolean) {
+        viewModelScope.launch {
+            repository.setFavoriteBatch(songs, isFavorite)
+        }
+    }
+
+    fun deleteSongs(
+        songs: List<Song>,
+        deleteLocalFiles: Boolean,
+        onComplete: ((Boolean) -> Unit)? = null
+    ) {
+        viewModelScope.launch {
+            val success = repository.deleteSongs(songs, deleteLocalFiles)
+            onComplete?.invoke(success)
+        }
     }
 
     fun scanMedia() {

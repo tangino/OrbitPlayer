@@ -297,6 +297,23 @@ class MusicRepository private constructor(private val context: Context) {
         refreshPlaylists()
     }
 
+    suspend fun addSongsToPlaylist(playlistId: Long, songIds: Collection<Long>) = withContext(Dispatchers.IO) {
+        if (songIds.isEmpty()) return@withContext
+        db.songDao.insertSongsToPlaylist(playlistId, songIds)
+        refreshPlaylists()
+    }
+
+    suspend fun setFavoriteBatch(songs: List<Song>, isFavorite: Boolean) = withContext(Dispatchers.IO) {
+        if (songs.isEmpty()) return@withContext
+        val paths = songs.map { it.path }
+        db.songDao.setFavoriteBatch(paths, isFavorite)
+        val pathSet = paths.toSet()
+        val updatedList = _allSongs.value.map {
+            if (it.path in pathSet) it.copy(isFavorite = isFavorite, isDisliked = if (isFavorite) false else it.isDisliked) else it
+        }
+        updateCollections(updatedList)
+    }
+
     suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long) = withContext(Dispatchers.IO) {
         db.songDao.removeSongFromPlaylist(playlistId, songId)
         refreshPlaylists()
@@ -318,62 +335,69 @@ class MusicRepository private constructor(private val context: Context) {
         _allSongs.value.filter { it.artist == artistName }
     }
 
-    suspend fun deleteSong(song: Song, deleteLocalFile: Boolean): Boolean = withContext(Dispatchers.IO) {
-        var fileDeleteSuccess = true
-        if (deleteLocalFile) {
-            val file = File(song.path)
-            try {
-                if (file.exists()) {
-                    file.delete()
+    suspend fun deleteSongs(songs: List<Song>, deleteLocalFiles: Boolean): Boolean = withContext(Dispatchers.IO) {
+        if (songs.isEmpty()) return@withContext true
+        var allSuccess = true
+        if (deleteLocalFiles) {
+            for (song in songs) {
+                val file = File(song.path)
+                try {
+                    if (file.exists()) {
+                        file.delete()
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("MusicRepository", "Direct file deletion error for ${song.path}", e)
                 }
-            } catch (e: Exception) {
-                android.util.Log.w("MusicRepository", "Direct file deletion error for ${song.path}", e)
-            }
 
-            // 1. 通过 ContentResolver 从系统 MediaStore 按 DATA 路径删除文件和索引
-            try {
-                val uri = android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-                context.contentResolver.delete(
-                    uri,
-                    "${android.provider.MediaStore.Audio.Media.DATA} = ?",
-                    arrayOf(song.path)
-                )
-            } catch (e: Exception) {
-                android.util.Log.w("MusicRepository", "MediaStore deletion error by DATA for ${song.path}", e)
-            }
-
-            // 2. 如果 song.id > 0，再按 _ID 尝试删除
-            try {
-                if (song.id > 0) {
+                try {
                     val uri = android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
                     context.contentResolver.delete(
                         uri,
-                        "${android.provider.MediaStore.Audio.Media._ID} = ?",
-                        arrayOf(song.id.toString())
+                        "${android.provider.MediaStore.Audio.Media.DATA} = ?",
+                        arrayOf(song.path)
                     )
+                } catch (e: Exception) {
+                    android.util.Log.w("MusicRepository", "MediaStore deletion error by DATA for ${song.path}", e)
                 }
-            } catch (_: Exception) {}
 
-            // 3. 通知 MediaScannerConnection 刷新系统媒体库，确保系统媒体库注销并彻底同步
-            try {
-                android.media.MediaScannerConnection.scanFile(
-                    context,
-                    arrayOf(song.path),
-                    null
-                ) { _, _ -> }
-            } catch (_: Exception) {}
+                try {
+                    if (song.id > 0) {
+                        val uri = android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+                        context.contentResolver.delete(
+                            uri,
+                            "${android.provider.MediaStore.Audio.Media._ID} = ?",
+                            arrayOf(song.id.toString())
+                        )
+                    }
+                } catch (_: Exception) {}
 
-            // 4. 最终确认物理文件是否已成功被移除
-            fileDeleteSuccess = !file.exists()
+                try {
+                    android.media.MediaScannerConnection.scanFile(
+                        context,
+                        arrayOf(song.path),
+                        null
+                    ) { _, _ -> }
+                } catch (_: Exception) {}
+
+                if (file.exists()) {
+                    allSuccess = false
+                }
+            }
         }
 
-        db.songDao.deleteSong(song.id, song.path)
-        val updatedList = _allSongs.value.filter { it.id != song.id && it.path != song.path }
+        db.songDao.deleteSongs(songs)
+        val removedIds = songs.map { it.id }.toSet()
+        val removedPaths = songs.map { it.path }.toSet()
+        val updatedList = _allSongs.value.filter { it.id !in removedIds && it.path !in removedPaths }
         updateCollections(updatedList)
-        MusicPlayerManager.getInstance(context).removeSongFromPlayback(song)
+        MusicPlayerManager.getInstance(context).removeSongsFromPlayback(songs)
         refreshPlaylists()
 
-        fileDeleteSuccess
+        allSuccess
+    }
+
+    suspend fun deleteSong(song: Song, deleteLocalFile: Boolean): Boolean = withContext(Dispatchers.IO) {
+        deleteSongs(listOf(song), deleteLocalFile)
     }
 
     companion object {

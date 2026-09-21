@@ -425,4 +425,23 @@
     <string name="label_file_path">File Path:</string>
     <string name="change_cover">Change Cover</string>
     <string name="copied_path_toast">File path copied to clipboard</string>
+
+    <!-- Multi-select & Album Navigation -->
+    <string name="menu_view_album">View Album</string>
+    <string name="menu_multi_select">Select Songs</string>
+    <string name="select_all">Select All</string>
+    <string name="deselect_all">Deselect All</string>
+    <string name="selected_count">Selected %1$d</string>
+    <string name="exit_selection_mode">Exit</string>
+    <string name="batch_play">Play</string>
+    <string name="batch_play_next">Next</string>
+    <string name="batch_add_to_playlist">Playlist</string>
+    <string name="batch_delete">Delete</string>
+    <string name="batch_favorite">Favorite</string>
+    <string name="batch_unfavorite">Favorited</string>
+    <string name="batch_delete_dialog_title">Delete Songs</string>
+    <string name="batch_add_to_playlist_dialog_title">Add to Playlist</string>
+    <string name="batch_delete_confirm_message">Are you sure you want to delete %1$d selected songs?</string>
+    <string name="batch_delete_success">Successfully deleted %1$d songs</string>
+    <string name="batch_add_to_playlist_success">Added %1$d songs to playlist</string>
 </resources>
