@@ -42,3 +42,9 @@ target_link_libraries(
     ${android-lib}
     m
 )
+
+target_link_options(
+    native_dsp
+    PRIVATE
+    "-Wl,-z,max-page-size=16384"
+)

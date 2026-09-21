@@ -11,8 +11,8 @@ android {
         applicationId = "com.orbit.music"
         minSdk = 21
         targetSdk = 34
-        versionCode = 8
-        versionName = "0.1.7"
+        versionCode = 9
+        versionName = "0.1.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -26,7 +26,10 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags("-std=c++17 -O3 -Wall")
-                arguments("-DANDROID_STL=c++_shared")
+                arguments(
+                    "-DANDROID_STL=c++_static",
+                    "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
+                )
             }
         }
     }

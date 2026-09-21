@@ -38,9 +38,18 @@ enum class LibraryViewMode {
     COVER_FLOW        // 7. Mac OS X 经典 3D 封面流与联动列表
 }
 
+val LibraryTab.pageKey: String
+    get() = when (this) {
+        LibraryTab.SONGS -> "tab_songs"
+        LibraryTab.FOLDERS -> "tab_folders"
+        LibraryTab.ALBUMS -> "tab_albums"
+        LibraryTab.ARTISTS -> "tab_artists"
+        LibraryTab.PLAYLISTS -> "tab_playlists"
+    }
+
 data class LibraryUiState(
     val currentTab: LibraryTab = LibraryTab.SONGS,
-    val viewMode: LibraryViewMode = LibraryViewMode.LIST_SMALL_ART,
+    val pageViewModes: Map<String, LibraryViewMode> = defaultPageViewModes(),
     val isCoverFlowInertiaEnabled: Boolean = true,
     val searchQuery: String = "",
     val isSearching: Boolean = false,
@@ -49,7 +58,42 @@ data class LibraryUiState(
     val selectedArtist: ArtistItem? = null,
     val selectedPlaylist: Playlist? = null,
     val isNowPlayingExpanded: Boolean = false
-)
+) {
+    val viewMode: LibraryViewMode
+        get() {
+            val key = when {
+                selectedFolder != null -> "detail_folder"
+                selectedAlbum != null -> "detail_album"
+                selectedArtist != null -> "detail_artist"
+                selectedPlaylist != null -> "detail_playlist"
+                else -> currentTab.pageKey
+            }
+            return pageViewModes[key] ?: defaultModeFor(key)
+        }
+
+    fun getViewModeFor(pageKey: String): LibraryViewMode {
+        return pageViewModes[pageKey] ?: defaultModeFor(pageKey)
+    }
+
+    companion object {
+        fun defaultPageViewModes(): Map<String, LibraryViewMode> = mapOf(
+            "tab_songs" to LibraryViewMode.LIST_SMALL_ART,
+            "tab_folders" to LibraryViewMode.LIST_SMALL_ART,
+            "tab_albums" to LibraryViewMode.GRID_3_COL,
+            "tab_artists" to LibraryViewMode.LIST_SMALL_ART,
+            "tab_playlists" to LibraryViewMode.LIST_SMALL_ART,
+            "detail_folder" to LibraryViewMode.LIST_SMALL_ART,
+            "detail_album" to LibraryViewMode.LIST_SMALL_ART,
+            "detail_artist" to LibraryViewMode.LIST_SMALL_ART,
+            "detail_playlist" to LibraryViewMode.LIST_SMALL_ART
+        )
+
+        fun defaultModeFor(pageKey: String): LibraryViewMode = when (pageKey) {
+            "tab_albums" -> LibraryViewMode.GRID_3_COL
+            else -> LibraryViewMode.LIST_SMALL_ART
+        }
+    }
+}
 
 class MusicPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -173,7 +217,6 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun restoreLibraryUiState() {
         val tabName = prefs.getString(KEY_TAB, LibraryTab.SONGS.name) ?: LibraryTab.SONGS.name
-        val viewModeName = prefs.getString(KEY_VIEW_MODE, LibraryViewMode.LIST_SMALL_ART.name) ?: LibraryViewMode.LIST_SMALL_ART.name
         val inertiaEnabled = prefs.getBoolean(KEY_COVER_FLOW_INERTIA, true)
 
         val restoredTab = try {
@@ -182,16 +225,28 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             LibraryTab.SONGS
         }
 
-        val restoredViewMode = try {
-            LibraryViewMode.valueOf(viewModeName)
-        } catch (e: Exception) {
-            LibraryViewMode.LIST_SMALL_ART
+        val map = LibraryUiState.defaultPageViewModes().toMutableMap()
+        for (key in map.keys) {
+            val savedName = prefs.getString(KEY_VIEW_MODE_PREFIX + key, null)
+            if (savedName != null) {
+                try {
+                    map[key] = LibraryViewMode.valueOf(savedName)
+                } catch (e: Exception) {
+                    // ignore
+                }
+            } else if (key == "tab_songs" && prefs.contains(KEY_VIEW_MODE)) {
+                try {
+                    map[key] = LibraryViewMode.valueOf(prefs.getString(KEY_VIEW_MODE, "") ?: "")
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
         }
 
         _libraryUiState.update {
             it.copy(
                 currentTab = restoredTab,
-                viewMode = restoredViewMode,
+                pageViewModes = map,
                 isCoverFlowInertiaEnabled = inertiaEnabled
             )
         }
@@ -199,11 +254,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun saveLibraryUiState() {
         val s = _libraryUiState.value
-        prefs.edit()
+        val editor = prefs.edit()
             .putString(KEY_TAB, s.currentTab.name)
-            .putString(KEY_VIEW_MODE, s.viewMode.name)
             .putBoolean(KEY_COVER_FLOW_INERTIA, s.isCoverFlowInertiaEnabled)
-            .apply()
+        for ((k, v) in s.pageViewModes) {
+            editor.putString(KEY_VIEW_MODE_PREFIX + k, v.name)
+        }
+        editor.apply()
     }
 
     fun setCoverFlowInertiaEnabled(enabled: Boolean) {
@@ -226,13 +283,38 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         saveLibraryUiState()
     }
 
-    fun setViewMode(viewMode: LibraryViewMode) {
-        _libraryUiState.update { it.copy(viewMode = viewMode) }
-        saveLibraryUiState()
+    fun setViewMode(viewMode: LibraryViewMode, pageKey: String? = null) {
+        val targetKey = pageKey ?: run {
+            val s = _libraryUiState.value
+            when {
+                s.selectedFolder != null -> "detail_folder"
+                s.selectedAlbum != null -> "detail_album"
+                s.selectedArtist != null -> "detail_artist"
+                s.selectedPlaylist != null -> "detail_playlist"
+                else -> s.currentTab.pageKey
+            }
+        }
+        _libraryUiState.update { current ->
+            val updated = current.pageViewModes.toMutableMap()
+            updated[targetKey] = viewMode
+            current.copy(pageViewModes = updated)
+        }
+        prefs.edit().putString(KEY_VIEW_MODE_PREFIX + targetKey, viewMode.name).apply()
     }
 
-    fun cycleViewMode() {
-        val next = when (_libraryUiState.value.viewMode) {
+    fun cycleViewMode(pageKey: String? = null) {
+        val targetKey = pageKey ?: run {
+            val s = _libraryUiState.value
+            when {
+                s.selectedFolder != null -> "detail_folder"
+                s.selectedAlbum != null -> "detail_album"
+                s.selectedArtist != null -> "detail_artist"
+                s.selectedPlaylist != null -> "detail_playlist"
+                else -> s.currentTab.pageKey
+            }
+        }
+        val currentMode = _libraryUiState.value.getViewModeFor(targetKey)
+        val next = when (currentMode) {
             LibraryViewMode.LIST_NO_ART -> LibraryViewMode.LIST_SMALL_ART
             LibraryViewMode.LIST_SMALL_ART -> LibraryViewMode.LIST_LARGE_ART
             LibraryViewMode.LIST_LARGE_ART -> LibraryViewMode.GRID_2_COL
@@ -241,7 +323,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             LibraryViewMode.GRID_4_COL -> LibraryViewMode.COVER_FLOW
             LibraryViewMode.COVER_FLOW -> LibraryViewMode.LIST_NO_ART
         }
-        setViewMode(next)
+        setViewMode(next, targetKey)
     }
 
     fun setSearchQuery(query: String) {
@@ -479,6 +561,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         private const val PREFS_NAME = "music_library_ui_prefs"
         private const val KEY_TAB = "key_library_tab"
         private const val KEY_VIEW_MODE = "key_library_view_mode"
+        private const val KEY_VIEW_MODE_PREFIX = "key_view_mode_"
         const val KEY_COVER_FLOW_INERTIA = "key_cover_flow_inertia"
     }
 }

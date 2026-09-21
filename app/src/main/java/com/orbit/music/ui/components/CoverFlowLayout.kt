@@ -77,9 +77,12 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import coil.size.Size
 import com.orbit.music.R
+import com.orbit.music.data.model.AlbumItem
 import com.orbit.music.data.model.Song
 import com.orbit.music.data.provider.AudioCoverProvider
 import com.orbit.music.ui.theme.OrbitTheme
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.ChevronRight
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 import kotlin.math.floor
@@ -748,7 +751,7 @@ fun CoverFlowLayout(
                                 text = currentSelectedSong.title,
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = OrbitTheme.colors.textPrimary,
+                                color = Color.White,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 textAlign = TextAlign.Center
@@ -757,7 +760,7 @@ fun CoverFlowLayout(
                             Text(
                                 text = "${currentSelectedSong.artist} • ${currentSelectedSong.album}",
                                 fontSize = 11.sp,
-                                color = OrbitTheme.colors.textSecondary,
+                                color = Color.White.copy(alpha = 0.75f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 textAlign = TextAlign.Center
@@ -1054,4 +1057,568 @@ private fun Modifier.coverFlowPageTransform(
     scaleY = scale
     cameraDistance = cameraDistancePx
     alpha = edgeAlpha
+}
+
+/**
+ * 经典 Mac OS X 风格的专辑 3D Cover Flow 视图与联动列表
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun AlbumCoverFlowLayout(
+    albums: List<AlbumItem>,
+    currentPlayingAlbumTitle: String?,
+    coverVersion: Long,
+    onAlbumClick: (AlbumItem) -> Unit,
+    modifier: Modifier = Modifier,
+    bottomPadding: Dp = 98.dp,
+    isInertiaEnabled: Boolean? = null,
+    onToggleInertia: ((Boolean) -> Unit)? = null
+) {
+    if (albums.isEmpty()) {
+        Box(
+            modifier = modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = stringResource(R.string.no_albums_found),
+                color = OrbitTheme.colors.textSecondary,
+                fontSize = 14.sp
+            )
+        }
+        return
+    }
+
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
+            configuration.screenWidthDp > configuration.screenHeightDp
+
+    val initialIndex = remember(albums, currentPlayingAlbumTitle) {
+        val found = albums.indexOfFirst { it.title == currentPlayingAlbumTitle }
+        if (found >= 0) found else 0
+    }
+
+    val pagerState = rememberPagerState(
+        initialPage = initialIndex.coerceIn(0, albums.size - 1),
+        pageCount = { albums.size }
+    )
+
+    val listState = rememberLazyListState()
+    var isUserDraggingList by remember { mutableStateOf(false) }
+
+    val prefs = remember(context) {
+        context.getSharedPreferences("music_library_ui_prefs", Context.MODE_PRIVATE)
+    }
+    var localInertiaEnabled by rememberSaveable {
+        mutableStateOf(prefs.getBoolean("key_cover_flow_inertia", true))
+    }
+    val effectiveInertia = isInertiaEnabled ?: localInertiaEnabled
+
+    val smoothDecay = exponentialDecay<Float>(
+        frictionMultiplier = 0.32f,
+        absVelocityThreshold = 0.08f
+    )
+    val smoothSnap = spring<Float>(
+        dampingRatio = 0.88f,
+        stiffness = 320f
+    )
+    val defaultDecay = rememberSplineBasedDecay<Float>()
+    val defaultSnap = spring<Float>(
+        dampingRatio = 0.86f,
+        stiffness = Spring.StiffnessMediumLow
+    )
+
+    val flingBehavior = if (effectiveInertia) {
+        PagerDefaults.flingBehavior(
+            pagerState,
+            PagerSnapDistance.atMost(40),
+            smoothSnap,
+            smoothDecay,
+            smoothSnap
+        )
+    } else {
+        PagerDefaults.flingBehavior(
+            pagerState,
+            PagerSnapDistance.atMost(1),
+            defaultSnap,
+            defaultDecay,
+            defaultSnap
+        )
+    }
+
+    LaunchedEffect(pagerState.settledPage) {
+        if (!isUserDraggingList && !pagerState.isScrollInProgress && !listState.isScrollInProgress) {
+            val targetScroll = (pagerState.settledPage - 1).coerceAtLeast(0)
+            listState.animateScrollToItem(targetScroll)
+        }
+    }
+
+    LaunchedEffect(albums) {
+        if (albums.isNotEmpty()) {
+            val maxPage = albums.size - 1
+            if (pagerState.currentPage > maxPage) {
+                val playingIndex = albums.indexOfFirst { it.title == currentPlayingAlbumTitle }
+                val targetPage = if (playingIndex in 0..maxPage) playingIndex else 0
+                pagerState.scrollToPage(targetPage)
+            }
+        }
+    }
+
+    val currentSelectedAlbum = albums.getOrNull(pagerState.currentPage)
+    var isListVisible by rememberSaveable { mutableStateOf(true) }
+
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxSize()
+            .background(OrbitTheme.colors.background)
+    ) {
+        val totalHeight = maxHeight
+        val totalWidth = maxWidth
+        val baseStageHeight = if (isLandscape) 316.dp else 350.dp
+        val listHeight = (totalHeight - baseStageHeight).coerceAtLeast(0.dp)
+
+        val stageHeight: Dp by animateDpAsState(
+            targetValue = if (isListVisible) baseStageHeight else totalHeight,
+            animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+            label = "AlbumStageHeight"
+        )
+
+        val cardSize: Dp by animateDpAsState(
+            targetValue = when {
+                !isListVisible -> if (isLandscape) 235.dp else 210.dp
+                isLandscape -> 170.dp
+                else -> 155.dp
+            },
+            animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+            label = "AlbumCardSize"
+        )
+        val reflectionHeight = cardSize * (2f / 3f)
+
+        val stageTopPadding: Dp by animateDpAsState(
+            targetValue = if (isListVisible) {
+                if (isLandscape) 16.dp else 24.dp
+            } else {
+                if (isLandscape) 36.dp else 28.dp
+            },
+            animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+            label = "AlbumStageTopPadding"
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(stageHeight)
+                .background(
+                    Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0.00f to Color.Black.copy(alpha = 0.45f),
+                            0.35f to Color.Transparent,
+                            0.50f to Color.Black.copy(alpha = 0.40f),
+                            0.75f to Color.Black.copy(alpha = 0.75f),
+                            1.00f to Color.Black.copy(alpha = 0.92f)
+                        )
+                    )
+                )
+                .pointerInput(Unit) {
+                    var totalDragY = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { totalDragY = 0f },
+                        onVerticalDrag = { _, dragAmount ->
+                            totalDragY += dragAmount
+                            if (totalDragY < -35f && !isListVisible) {
+                                isListVisible = true
+                                totalDragY = 0f
+                            } else if (totalDragY > 35f && isListVisible) {
+                                isListVisible = false
+                                totalDragY = 0f
+                            }
+                        }
+                    )
+                },
+            contentAlignment = Alignment.TopCenter
+        ) {
+            val containerWidth = totalWidth
+            val density = LocalDensity.current
+            val cardWidthPx = with(density) { cardSize.roundToPx().toFloat() }
+            val containerWidthPx = with(density) { containerWidth.roundToPx().toFloat() }
+            val extraViewportWidth = 2800.dp
+            val extraViewportWidthPx = with(density) { extraViewportWidth.roundToPx().toFloat() }
+            val expandedWidthPx = containerWidthPx + extraViewportWidthPx
+            val horizontalContentPadding = with(density) {
+                (((expandedWidthPx - cardWidthPx) / 2f).toInt()).toDp().coerceAtLeast(0.dp)
+            }
+            val cameraDistancePx = 20f * density.density
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = stageTopPadding),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(cardSize + reflectionHeight + 6.dp)
+                        .clipToBounds(),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    HorizontalPager(
+                        state = pagerState,
+                        pageSize = PageSize.Fixed(cardSize),
+                        beyondBoundsPageCount = 9,
+                        contentPadding = PaddingValues(horizontal = horizontalContentPadding),
+                        pageSpacing = 0.dp,
+                        flingBehavior = flingBehavior,
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .layout { measurable, constraints ->
+                                val looseConstraints = constraints.copy(
+                                    minWidth = expandedWidthPx.toInt(),
+                                    maxWidth = expandedWidthPx.toInt()
+                                )
+                                val placeable = measurable.measure(looseConstraints)
+                                layout(constraints.maxWidth, placeable.height) {
+                                    val offsetX = -((expandedWidthPx - constraints.maxWidth) / 2f).toInt()
+                                    placeable.place(offsetX, 0)
+                                }
+                            }
+                    ) { page ->
+                        val album = albums.getOrNull(page)
+                        if (album != null) {
+                            val isCurrentPage = pagerState.currentPage == page
+                            val isPlayingThis = currentPlayingAlbumTitle == album.title && isCurrentPage
+
+                            val baseZIndex = when {
+                                page < pagerState.currentPage -> 500f + (page - pagerState.currentPage)
+                                page > pagerState.currentPage -> 500f - (page - pagerState.currentPage)
+                                else -> 1000f
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .size(width = cardSize, height = cardSize + reflectionHeight)
+                                    .zIndex(baseZIndex)
+                                    .coverFlowPageTransform(
+                                        page = page,
+                                        pagerState = pagerState,
+                                        cardWidthPx = cardWidthPx,
+                                        isLandscape = isLandscape,
+                                        cameraDistancePx = cameraDistancePx
+                                    )
+                                    .combinedClickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                        onClick = {
+                                            if (pagerState.currentPage == page) {
+                                                onAlbumClick(album)
+                                            } else {
+                                                coroutineScope.launch {
+                                                    pagerState.animateScrollToPage(
+                                                        page = page,
+                                                        animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    )
+                            ) {
+                                Column(modifier = Modifier.fillMaxSize()) {
+                                    // 1. 主体封面
+                                    Surface(
+                                        shape = RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomStart = 1.dp, bottomEnd = 1.dp),
+                                        shadowElevation = 0.dp,
+                                        border = BorderStroke(
+                                            width = if (isPlayingThis) 1.5.dp else 0.5.dp,
+                                            color = if (isPlayingThis) OrbitTheme.colors.primary else Color.White.copy(alpha = 0.25f)
+                                        ),
+                                        modifier = Modifier.size(cardSize)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(OrbitTheme.colors.surfaceCard),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            if (!album.albumArtUri.isNullOrBlank()) {
+                                                SubcomposeAsyncImage(
+                                                    model = ImageRequest.Builder(context)
+                                                        .data(album.albumArtUri)
+                                                        .memoryCacheKey("${album.albumArtUri}_$coverVersion")
+                                                        .diskCacheKey("${album.albumArtUri}_$coverVersion")
+                                                        .crossfade(180)
+                                                        .build(),
+                                                    contentDescription = album.title,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    error = {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Album,
+                                                            contentDescription = null,
+                                                            tint = OrbitTheme.colors.primary.copy(alpha = 0.6f),
+                                                            modifier = Modifier.size(cardSize * 0.45f)
+                                                        )
+                                                    }
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Default.Album,
+                                                    contentDescription = null,
+                                                    tint = OrbitTheme.colors.primary.copy(alpha = 0.6f),
+                                                    modifier = Modifier.size(cardSize * 0.45f)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // 2. 真实倒影
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(reflectionHeight)
+                                            .clip(RoundedCornerShape(bottomStart = 6.dp, bottomEnd = 6.dp))
+                                            .graphicsLayer {
+                                                scaleY = -1f
+                                                compositingStrategy = CompositingStrategy.Offscreen
+                                            }
+                                            .drawWithContent {
+                                                drawContent()
+                                                drawRect(
+                                                    brush = Brush.verticalGradient(
+                                                        colorStops = arrayOf(
+                                                            0.00f to Color.Black.copy(alpha = 0.00f),
+                                                            0.10f to Color.Black.copy(alpha = 0.35f),
+                                                            0.40f to Color.Black.copy(alpha = 0.75f),
+                                                            0.75f to Color.Black.copy(alpha = 0.95f),
+                                                            1.00f to Color.Black.copy(alpha = 1.00f)
+                                                        )
+                                                    ),
+                                                    blendMode = BlendMode.DstIn
+                                                )
+                                            }
+                                    ) {
+                                        if (!album.albumArtUri.isNullOrBlank()) {
+                                            SubcomposeAsyncImage(
+                                                model = ImageRequest.Builder(context)
+                                                    .data(album.albumArtUri)
+                                                    .memoryCacheKey("${album.albumArtUri}_$coverVersion")
+                                                    .diskCacheKey("${album.albumArtUri}_$coverVersion")
+                                                    .build(),
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .background(OrbitTheme.colors.surfaceCard),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Album,
+                                                    contentDescription = null,
+                                                    tint = OrbitTheme.colors.primary.copy(alpha = 0.35f),
+                                                    modifier = Modifier.size(cardSize * 0.45f)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                if (currentSelectedAlbum != null) {
+                    Text(
+                        text = currentSelectedAlbum.title,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "${currentSelectedAlbum.artist} • ${currentSelectedAlbum.songCount} 首歌曲",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.75f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+
+                    if (albums.size > 1) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        val progress = pagerState.currentPage.toFloat() / (albums.size - 1).toFloat()
+                        Box(
+                            modifier = Modifier
+                                .width(130.dp)
+                                .height(16.dp)
+                                .pointerInput(albums.size) {
+                                    detectTapGestures { offset ->
+                                        val frac = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                        val targetPage = (frac * (albums.size - 1)).toInt()
+                                        coroutineScope.launch {
+                                            pagerState.animateScrollToPage(targetPage)
+                                        }
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(3.dp)
+                                    .clip(CircleShape)
+                                    .background(OrbitTheme.colors.primary.copy(alpha = 0.2f))
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterStart)
+                                    .offset(x = with(density) { ((130.dp.toPx() - 20.dp.toPx()) * progress).toDp() })
+                                    .size(width = 20.dp, height = 4.dp)
+                                    .clip(CircleShape)
+                                    .background(OrbitTheme.colors.primary)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 联动列表
+        AnimatedVisibility(
+            visible = isListVisible,
+            enter = fadeIn(tween(220)) + expandVertically(tween(280)),
+            exit = fadeOut(tween(180)) + shrinkVertically(tween(240)),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(listHeight)
+        ) {
+            LazyColumn(
+                state = listState,
+                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 6.dp, bottom = bottomPadding),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectVerticalDragGestures(
+                            onDragStart = { isUserDraggingList = true },
+                            onDragEnd = { isUserDraggingList = false },
+                            onDragCancel = { isUserDraggingList = false },
+                            onVerticalDrag = { _, _ -> }
+                        )
+                    }
+            ) {
+                itemsIndexed(albums, key = { index, item -> "${item.id}_${item.title}_$index" }) { index, album ->
+                    val isSelected = pagerState.currentPage == index
+                    val isPlayingThis = currentPlayingAlbumTitle == album.title
+
+                    val itemBg = when {
+                        isPlayingThis -> OrbitTheme.colors.primary.copy(alpha = 0.12f)
+                        isSelected -> OrbitTheme.colors.surfaceCard.copy(alpha = 0.95f)
+                        else -> OrbitTheme.colors.surfaceCard.copy(alpha = 0.5f)
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(itemBg)
+                            .border(
+                                width = if (isSelected) 1.dp else 0.dp,
+                                color = if (isSelected) OrbitTheme.colors.primary.copy(alpha = 0.45f) else Color.Transparent,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .clickable {
+                                if (pagerState.currentPage != index) {
+                                    coroutineScope.launch {
+                                        pagerState.animateScrollToPage(index)
+                                    }
+                                } else {
+                                    onAlbumClick(album)
+                                }
+                            }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.size(44.dp),
+                            color = OrbitTheme.colors.surfaceCard
+                        ) {
+                            if (!album.albumArtUri.isNullOrBlank()) {
+                                SubcomposeAsyncImage(
+                                    model = ImageRequest.Builder(context)
+                                        .data(album.albumArtUri)
+                                        .memoryCacheKey("${album.albumArtUri}_$coverVersion")
+                                        .diskCacheKey("${album.albumArtUri}_$coverVersion")
+                                        .crossfade(180)
+                                        .build(),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                    error = {
+                                        Icon(
+                                            imageVector = Icons.Default.Album,
+                                            contentDescription = null,
+                                            tint = OrbitTheme.colors.primary.copy(alpha = 0.6f),
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Album,
+                                        contentDescription = null,
+                                        tint = OrbitTheme.colors.primary.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = album.title,
+                                fontWeight = if (isSelected || isPlayingThis) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isPlayingThis) OrbitTheme.colors.primary else OrbitTheme.colors.textPrimary,
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${album.artist} • ${album.songCount} 首歌曲",
+                                fontSize = 11.sp,
+                                color = OrbitTheme.colors.textSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = OrbitTheme.colors.textSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
 }

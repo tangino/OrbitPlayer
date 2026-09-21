@@ -54,6 +54,7 @@ import coil.request.ImageRequest
 import coil.size.Size
 import com.orbit.music.data.model.AlbumItem
 import com.orbit.music.data.model.ArtistItem
+import com.orbit.music.ui.components.AlbumCoverFlowLayout
 import com.orbit.music.ui.components.AlbumItem
 import com.orbit.music.ui.components.CoverFlowLayout
 import com.orbit.music.ui.components.MiniPlayerBar
@@ -237,6 +238,7 @@ fun MusicLibraryScreen(
     val albumSongsGridHolder = rememberSynchronizedGridStateHolder()
     val artistSongsGridHolder = rememberSynchronizedGridStateHolder()
     val albumsGridHolder = rememberSynchronizedGridStateHolder()
+    val playlistSongsGridHolder = rememberSynchronizedGridStateHolder()
 
     val foldersListState = rememberLazyListState()
     val artistsListState = rememberLazyListState()
@@ -276,6 +278,16 @@ fun MusicLibraryScreen(
     // Cover Flow 定位触发信号
     var coverFlowLocateTrigger by remember { mutableStateOf(0L) }
 
+    // 计算当前活跃页面的 Key 与对应的独立视图模式
+    val currentPageKey = when {
+        openedFolderPath != null -> "detail_folder"
+        openedAlbum != null -> "detail_album"
+        openedArtist != null -> "detail_artist"
+        openedPlaylist != null -> "detail_playlist"
+        else -> libraryState.currentTab.pageKey
+    }
+    val currentActiveViewMode = libraryState.getViewModeFor(currentPageKey)
+
     // 🎯 一键平滑滚动定位到当前播放歌曲
     fun locateCurrentPlayingSong() {
         val currentSongId = playbackState.currentSong?.id ?: return
@@ -289,7 +301,7 @@ fun MusicLibraryScreen(
             openedArtist = null
             coverFlowLocateTrigger = System.currentTimeMillis()
             coroutineScope.launch {
-                songsGridHolder.animateScrollToItem(targetIndex, libraryState.viewMode)
+                songsGridHolder.animateScrollToItem(targetIndex, libraryState.getViewModeFor("tab_songs"))
             }
         }
     }
@@ -304,12 +316,12 @@ fun MusicLibraryScreen(
         }
     }
 
-    // 全 Tab 通用 Pinch 手势控制器与修饰符
+    // 全 Tab 通用 Pinch 手势控制器与修饰符（绑定当前页面的独立视图模式）
     val pinchTransitionState = rememberPinchTransitionState()
     val pinchGestureModifier = Modifier.pinchToZoomViewMode(
-        currentViewMode = libraryState.viewMode,
+        currentViewMode = currentActiveViewMode,
         pinchState = pinchTransitionState,
-        onViewModeChange = { viewModel.setViewMode(it) }
+        onViewModeChange = { viewModel.setViewMode(it, currentPageKey) }
     )
 
     // 定位正在播放歌曲的悬浮按钮
@@ -655,6 +667,60 @@ fun MusicLibraryScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
+
+                    // 下钻模式右侧操作图标群 (紧凑 32dp 圆形点击区域)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 1. 搜索开关
+                        IconButton(
+                            onClick = { viewModel.toggleSearch() },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (libraryState.isSearching) Icons.Default.Close else Icons.Default.Search,
+                                contentDescription = "Search",
+                                tint = if (libraryState.isSearching) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        // 2. 多选模式开关
+                        IconButton(
+                            onClick = { isSelectionMode = true },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Checklist,
+                                contentDescription = stringResource(R.string.menu_multi_select),
+                                tint = OrbitTheme.colors.textSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        // 3. 视图模式切换
+                        IconButton(
+                            onClick = { viewModel.cycleViewMode(currentPageKey) },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            val icon = when (currentActiveViewMode) {
+                                LibraryViewMode.LIST_NO_ART -> Icons.AutoMirrored.Filled.FormatListBulleted
+                                LibraryViewMode.LIST_SMALL_ART -> Icons.AutoMirrored.Filled.ViewList
+                                LibraryViewMode.LIST_LARGE_ART -> Icons.Default.ViewAgenda
+                                LibraryViewMode.GRID_2_COL -> Icons.Default.GridView
+                                LibraryViewMode.GRID_3_COL -> Icons.Default.GridOn
+                                LibraryViewMode.GRID_4_COL -> Icons.Default.Apps
+                                LibraryViewMode.COVER_FLOW -> Icons.Default.Flip
+                            }
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = "View Mode",
+                                tint = OrbitTheme.colors.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
                 } else {
                     Spacer(modifier = Modifier.weight(1f))
 
@@ -693,10 +759,10 @@ fun MusicLibraryScreen(
 
                         // 3. 视图模式切换
                         IconButton(
-                            onClick = { viewModel.cycleViewMode() },
+                            onClick = { viewModel.cycleViewMode(currentPageKey) },
                             modifier = Modifier.size(32.dp)
                         ) {
-                            val icon = when (libraryState.viewMode) {
+                            val icon = when (currentActiveViewMode) {
                                 LibraryViewMode.LIST_NO_ART -> Icons.AutoMirrored.Filled.FormatListBulleted
                                 LibraryViewMode.LIST_SMALL_ART -> Icons.AutoMirrored.Filled.ViewList
                                 LibraryViewMode.LIST_LARGE_ART -> Icons.Default.ViewAgenda
@@ -742,8 +808,10 @@ fun MusicLibraryScreen(
                 }
             }
 
+            val isDrillDown = openedFolderPath != null || openedAlbum != null || openedArtist != null || openedPlaylist != null
+
             // 2. 现代 Segmented Pill 胶囊标签栏 (下钻时隐藏)
-            if (openedFolderPath == null && openedAlbum == null && openedArtist == null && openedPlaylist == null) {
+            if (!isDrillDown) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -797,9 +865,9 @@ fun MusicLibraryScreen(
                 }
             }
 
-            // 3. 搜索栏 (紧凑胶囊搜索栏)
+            // 3. 搜索栏 (紧凑胶囊搜索栏，仅在未下钻主库页面显示；下钻详情页使用其卡片下方的专属搜索栏)
             AnimatedVisibility(
-                visible = libraryState.isSearching,
+                visible = libraryState.isSearching && !isDrillDown,
                 enter = expandVertically() + fadeIn(),
                 exit = shrinkVertically() + fadeOut()
             ) {
@@ -868,7 +936,8 @@ fun MusicLibraryScreen(
     @Composable
     fun LibraryMainContent(bottomPadding: androidx.compose.ui.unit.Dp = 98.dp) {
             PowerampViewModeTransitionContainer(
-                viewMode = libraryState.viewMode,
+                pageKey = currentPageKey,
+                viewMode = currentActiveViewMode,
                 pinchState = pinchTransitionState,
                 modifier = Modifier
                     .fillMaxSize()
@@ -942,6 +1011,7 @@ fun MusicLibraryScreen(
                 val artistSongsGridState = artistSongsGridHolder.getOrCreate(currentViewMode)
                 val songsGridState = songsGridHolder.getOrCreate(currentViewMode)
                 val albumsGridState = albumsGridHolder.getOrCreate(currentViewMode)
+                val playlistSongsGridState = playlistSongsGridHolder.getOrCreate(currentViewMode)
 
                 // ========== 如果处于文件夹下钻内部，展示该文件夹的歌曲 ==========
                 if (openedFolderPath != null) {
@@ -1550,7 +1620,7 @@ fun MusicLibraryScreen(
                         }
 
                         LibraryTab.ALBUMS -> {
-                            // 3. 专辑库 (支持全 6 档自适应 Pinch 手势与点击下钻)
+                            // 3. 专辑库 (支持全 7 档自适应 Pinch 手势、Cover Flow 与点击下钻)
                             if (albums.isEmpty()) {
                                 EmptyStateView(
                                     title = if (libraryState.searchQuery.isNotBlank()) {
@@ -1565,6 +1635,19 @@ fun MusicLibraryScreen(
                                     } else {
                                         stringResource(R.string.empty_albums_desc)
                                     }
+                                )
+                            } else if (currentViewMode == LibraryViewMode.COVER_FLOW) {
+                                AlbumCoverFlowLayout(
+                                    albums = albums,
+                                    currentPlayingAlbumTitle = playbackState.currentSong?.album,
+                                    coverVersion = coverVer,
+                                    onAlbumClick = { album ->
+                                        viewModel.setSearchQuery("")
+                                        openedAlbum = album
+                                    },
+                                    bottomPadding = 98.dp,
+                                    isInertiaEnabled = libraryState.isCoverFlowInertiaEnabled,
+                                    onToggleInertia = { viewModel.setCoverFlowInertiaEnabled(it) }
                                 )
                             } else {
                                 LazyVerticalGrid(
@@ -2028,12 +2111,28 @@ fun MusicLibraryScreen(
                                             }
                                         }
                                     }
+                                } else if (currentViewMode == LibraryViewMode.COVER_FLOW) {
+                                    CoverFlowLayout(
+                                        songs = filteredPlaylistSongs,
+                                        currentPlayingSongId = playbackState.currentSong?.id,
+                                        isPlaying = playbackState.isPlaying,
+                                        coverVersion = coverVer,
+                                        onSongClick = { song, index -> handleSongItemClick(filteredPlaylistSongs, index) },
+                                        onFavoriteClick = { viewModel.cycleSongAttitude(it) },
+                                        onLongClick = { activeSongForLongClickMenu = it },
+                                        bottomPadding = 98.dp,
+                                        isInertiaEnabled = libraryState.isCoverFlowInertiaEnabled,
+                                        onToggleInertia = { viewModel.setCoverFlowInertiaEnabled(it) },
+                                        locateTrigger = coverFlowLocateTrigger
+                                    )
                                 } else {
-                                    LazyColumn(
-                                        state = playlistSongsListState,
-                                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                                        contentPadding = PaddingValues(bottom = 98.dp),
-                                        modifier = Modifier.weight(1f)
+                                    LazyVerticalGrid(
+                                        state = playlistSongsGridState,
+                                        columns = GridCells.Fixed(columnsCount),
+                                        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 98.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(hSpacing),
+                                        verticalArrangement = Arrangement.spacedBy(vSpacing),
+                                        modifier = Modifier.fillMaxSize().weight(1f)
                                     ) {
                                         itemsIndexed(
                                             items = filteredPlaylistSongs,
@@ -2043,7 +2142,7 @@ fun MusicLibraryScreen(
                                                 song = song,
                                                 isPlaying = playbackState.isPlaying,
                                                 isCurrent = playbackState.currentSong?.id == song.id,
-                                                viewMode = libraryState.viewMode,
+                                                viewMode = currentViewMode,
                                                 coverVersion = coverVer,
                                                 isSelectionMode = isSelectionMode,
                                                 isSelected = song.id in selectedSongIds,
@@ -2485,6 +2584,8 @@ fun MusicLibraryScreen(
                             searchQuery = libraryState.searchQuery,
                             onToggleSearch = { viewModel.toggleSearch() },
                             onSearchQueryChange = { viewModel.setSearchQuery(it) },
+                            viewMode = currentActiveViewMode,
+                            onCycleViewMode = { viewModel.cycleViewMode(currentPageKey) },
                             onBack = {
                                 openedFolderPath = null
                                 openedAlbum = null
@@ -2601,7 +2702,7 @@ fun MusicLibraryScreen(
 
                             // 2. 浮动视图切换按钮（支持在「列表」、「高密度Grid」与「3D Cover Flow」之间切换）
                             Surface(
-                                onClick = { viewModel.cycleViewMode() },
+                                onClick = { viewModel.cycleViewMode(currentPageKey) },
                                 shape = CircleShape,
                                 color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.94f),
                                 border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f)),
@@ -2609,7 +2710,7 @@ fun MusicLibraryScreen(
                                 modifier = Modifier.size(46.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    val icon = when (libraryState.viewMode) {
+                                    val icon = when (currentActiveViewMode) {
                                         LibraryViewMode.COVER_FLOW -> Icons.Default.Flip
                                         LibraryViewMode.GRID_2_COL,
                                         LibraryViewMode.GRID_3_COL,
@@ -4108,6 +4209,8 @@ private fun TabletDrillDownTopBar(
     searchQuery: String,
     onToggleSearch: () -> Unit,
     onSearchQueryChange: (String) -> Unit,
+    viewMode: LibraryViewMode,
+    onCycleViewMode: () -> Unit,
     onBack: () -> Unit
 ) {
     Surface(
@@ -4197,13 +4300,30 @@ private fun TabletDrillDownTopBar(
                 )
             }
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(6.dp))
 
             IconButton(onClick = onToggleSearch) {
                 Icon(
                     imageVector = if (isSearching) Icons.Default.Close else Icons.Default.Search,
                     contentDescription = "Search",
                     tint = if (isSearching) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary
+                )
+            }
+
+            IconButton(onClick = onCycleViewMode) {
+                val icon = when (viewMode) {
+                    LibraryViewMode.LIST_NO_ART -> Icons.AutoMirrored.Filled.FormatListBulleted
+                    LibraryViewMode.LIST_SMALL_ART -> Icons.AutoMirrored.Filled.ViewList
+                    LibraryViewMode.LIST_LARGE_ART -> Icons.Default.ViewAgenda
+                    LibraryViewMode.GRID_2_COL -> Icons.Default.GridView
+                    LibraryViewMode.GRID_3_COL -> Icons.Default.GridOn
+                    LibraryViewMode.GRID_4_COL -> Icons.Default.Apps
+                    LibraryViewMode.COVER_FLOW -> Icons.Default.Flip
+                }
+                Icon(
+                    imageVector = icon,
+                    contentDescription = "View Mode",
+                    tint = OrbitTheme.colors.primary
                 )
             }
         }
