@@ -146,60 +146,74 @@ class SoundCityGLRenderer : GLSurfaceView.Renderer {
             uniform vec3 uColor1;
             uniform vec3 uColor2;
 
+            // 基础高频哈希
             float hash(float n) { 
-                return fract(sin(n) * 13.5453123); 
+                return fract(sin(n) * 43758.5453123); 
+            }
+            float hash2(vec2 p) {
+                return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
             }
 
             float maxcomp(vec3 v) { 
                 return max(max(v.x, v.y), v.z); 
             }
 
-            // 精确带符号圆角立方体距离场 (Inigo Quilez)，内外距离严格连续，彻底杜绝穿透卡死
+            // 2D 连续值噪声，用于逼真的木纹和年轮形变
+            float noise2d(vec2 p) {
+                vec2 i = floor(p);
+                vec2 f = fract(p);
+                f = f * f * (3.0 - 2.0 * f);
+                float a = hash2(i);
+                float b = hash2(i + vec2(1.0, 0.0));
+                float c = hash2(i + vec2(0.0, 1.0));
+                float d = hash2(i + vec2(1.0, 1.0));
+                return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+            }
+
+            // 3D 噪声，用于木质纤维与微小凹凸
+            float noise3d(vec3 p) {
+                vec3 i = floor(p);
+                vec3 f = fract(p);
+                f = f * f * (3.0 - 2.0 * f);
+                float n = i.x + i.y * 57.0 + i.z * 113.0;
+                float a = hash(n);
+                float b = hash(n + 1.0);
+                float c = hash(n + 57.0);
+                float d = hash(n + 58.0);
+                float e = hash(n + 113.0);
+                float g = hash(n + 114.0);
+                float h = hash(n + 170.0);
+                float k = hash(n + 171.0);
+                return mix(mix(mix(a, b, f.x), mix(c, d, f.x), f.y),
+                           mix(mix(e, g, f.x), mix(h, k, f.x), f.y), f.z);
+            }
+
+            // 精确带符号圆角立方体距离场 (Inigo Quilez)
+            // b 为半宽 (除去圆角半径 r 后的核心半宽)
             float sdRoundBox(vec3 p, vec3 b, float r) {
                 vec3 q = abs(p) - b;
                 return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0) - r;
             }
 
-            // 现代摩天楼夜景窗户与天台封顶材质贴图
-            vec3 getBuildingTexture(vec3 p, vec3 n, float isRoof) {
-                if (isRoof > 0.5) {
-                    // 屋顶天台专属封顶纹理：沥青平铺天台、机房微光与停机坪环线
-                    vec2 rUv = p.xz * 3.5;
-                    float dCenter = length(fract(rUv) - 0.5);
-                    float ring = smoothstep(0.35, 0.32, dCenter) * smoothstep(0.28, 0.31, dCenter);
-                    float helipad = smoothstep(0.12, 0.09, dCenter);
-                    return vec3(0.25 + 0.55 * ring + 0.35 * helipad);
-                }
-                
-                // 侧面墙体：现代摩天大厦璀璨矩阵格子窗户
-                vec3 a = abs(n);
-                vec2 uv = (a.x > 0.5) ? p.zy : p.xy;
-                vec2 grid = fract(uv * vec2(8.0, 14.0));
-                float windowBorder = step(0.16, grid.x) * step(0.20, grid.y);
-                float noise = fract(sin(dot(floor(uv * vec2(8.0, 14.0)), vec2(12.9898, 78.233))) * 43758.5453);
-                float lit = (noise > 0.38) ? 1.0 : 0.22;
-                return vec3(windowBorder * lit * 0.95 + 0.12);
-            }
-
-            // 4 频段音频驱动大厦高度映射
+            // 4 频段音频驱动木柱高度映射
             vec3 mapH(vec2 pos) {
                 vec2 ipos = floor(pos);
-                float id = hash(ipos.x + ipos.y * 57.0);
+                float id = hash2(ipos);
                 
                 float f = 0.0;
-                f += uFreqs.x * clamp(1.0 - abs(id - 0.20) / 0.30, 0.0, 1.0);
-                f += uFreqs.y * clamp(1.0 - abs(id - 0.40) / 0.30, 0.0, 1.0);
-                f += uFreqs.z * clamp(1.0 - abs(id - 0.60) / 0.30, 0.0, 1.0);
-                f += uFreqs.w * clamp(1.0 - abs(id - 0.80) / 0.30, 0.0, 1.0);
+                f += uFreqs.x * clamp(1.0 - abs(id - 0.20) / 0.25, 0.0, 1.0);
+                f += uFreqs.y * clamp(1.0 - abs(id - 0.45) / 0.25, 0.0, 1.0);
+                f += uFreqs.z * clamp(1.0 - abs(id - 0.70) / 0.25, 0.0, 1.0);
+                f += uFreqs.w * clamp(1.0 - abs(id - 0.90) / 0.25, 0.0, 1.0);
 
-                f = pow(clamp(f * 1.4, 0.0, 1.4), 1.7);
-                // 基础高度 + 频段驱动峰值高度 (大楼最高约 4.8，全在顶包围盒 6.2 内部)
-                float h = 2.4 * f + 0.35;
+                f = pow(clamp(f * 1.5, 0.0, 1.5), 1.6);
+                // 基础柱子高度 + 音乐律动提升高度
+                float h = 2.6 * f + 0.35 + 0.3 * hash(ipos.x * 3.1 + ipos.y * 7.7);
 
                 return vec3(h, id, f);
             }
 
-            // 局部精确法线求解（直接在格子局部坐标内求导，彻底消除跨网格阶跃导致的边缘破面撕裂）
+            // 局部精确法线求解
             vec3 calcLocalNormal(vec3 p, vec3 b, float r) {
                 vec2 e = vec2(1.0, -1.0) * 0.002;
                 return normalize(e.xyy * sdRoundBox(p + e.xyy, b, r) + 
@@ -208,9 +222,9 @@ class SoundCityGLRenderer : GLSurfaceView.Renderer {
                                  e.xxx * sdRoundBox(p + e.xxx, b, r));
             }
 
-            // 场景高度包围盒：顶面提升至 6.2，确保光线从上方射下时光线不会被提前截断削顶
+            // 场景高度包围盒：顶面提升至 6.2，确保光线从上方射下时光线不会被提前截断
             vec2 boundingVolume(vec2 tminmax, vec3 ro, vec3 rd) {
-                float bp = 6.2; // 必须充足高于摩天楼最大高度（约 4.8），彻底解决削顶空心问题
+                float bp = 6.2;
                 float tp = (bp - ro.y) / rd.y;
                 if (tp > 0.0) {
                     if (ro.y > bp) tminmax.x = max(tminmax.x, tp);
@@ -224,9 +238,9 @@ class SoundCityGLRenderer : GLSurfaceView.Renderer {
                 return tminmax;
             }
 
-            // 高精度体素网格穿透步进 (2D Grid Traversal)
-            // 返回 vec4: (t, id, f, isRoof)
-            vec4 trace(vec3 ro, vec3 rd, float tmin, float tmax, out vec3 outNormal, out vec3 outHitP) {
+            // 体素网格穿透步进 (2D Grid Traversal)
+            // 返回 vec4: (t, id, f, isTop)
+            vec4 trace(vec3 ro, vec3 rd, float tmin, float tmax, out vec3 outNormal, out vec3 outHitP, out vec3 outLocalP) {
                 ro += tmin * rd;
                 vec2 pos = floor(ro.xz);
                 vec3 rdi = 1.0 / rd;
@@ -236,39 +250,44 @@ class SoundCityGLRenderer : GLSurfaceView.Renderer {
                 
                 vec4 res = vec4(-1.0);
                 
-                for (int i = 0; i < 28; i++) {
+                // 木柱尺寸参数：饱满圆润的倒角与紧密排列 (半宽 0.385 + 圆角半径 0.085 = 0.47，格子宽 1.0)
+                const float roundR = 0.085;
+                const float halfW = 0.385;
+                
+                for (int i = 0; i < 30; i++) {
                     vec3 cub = mapH(pos);
+                    float h = cub.x;
 
                     vec2 pr = pos + 0.5 - ro.xz;
                     vec2 mini = (pr - 0.5 * rds) * rdi.xz;
                     float s = max(mini.x, mini.y);
                     if ((tmin + s) > tmax) break;
                     
-                    vec3 ce = vec3(pos.x + 0.5, 0.5 * cub.x, pos.y + 0.5);
-                    vec3 rb = vec3(0.32, cub.x * 0.5, 0.32);
-                    vec3 ra = rb + 0.10;
+                    float halfH = max(0.02, h * 0.5 - roundR);
+                    vec3 ce = vec3(pos.x + 0.5, h * 0.5, pos.y + 0.5);
+                    vec3 rb = vec3(halfW, halfH, halfW);
+                    vec3 ra = rb + roundR + 0.02;
                     vec3 rc = ro - ce;
                     float tN = maxcomp(-rdi * rc - rda * ra);
                     float tF = maxcomp(-rdi * rc + rda * ra);
                     
                     if (tN < tF) {
-                        // 核心防破面修复 1：起点截断到 max(0.0, tN)，杜绝负起点倒退穿面
                         float st = max(0.0, tN);
-                        float h = 1.0;
+                        float d = 1.0;
                         
-                        // 核心防破面修复 2：增强步数至 24 步，高精度快速收敛
-                        for (int j = 0; j < 24; j++) {
-                            h = sdRoundBox(rc + st * rd, rb, 0.04);
-                            st += h;
-                            if (st > tF || h < 0.0015) break;
+                        for (int j = 0; j < 26; j++) {
+                            d = sdRoundBox(rc + st * rd, rb, roundR);
+                            st += d;
+                            if (st > tF || d < 0.001) break;
                         }
 
-                        if (h < 0.004 * (1.0 + 0.06 * st)) {
+                        if (d < 0.0035 * (1.0 + 0.05 * st)) {
                             vec3 hitLocal = rc + st * rd;
-                            outNormal = calcLocalNormal(hitLocal, rb, 0.04);
+                            outNormal = calcLocalNormal(hitLocal, rb, roundR);
                             outHitP = ro + st * rd;
-                            float isRoof = step(0.65, outNormal.y);
-                            res = vec4(st, cub.y, cub.z, isRoof);
+                            outLocalP = hitLocal;
+                            float isTop = step(0.6, outNormal.y);
+                            res = vec4(st, cub.y, cub.z, isTop);
                             break;
                         }
                     }
@@ -282,57 +301,162 @@ class SoundCityGLRenderer : GLSurfaceView.Renderer {
                 return res;
             }
 
-            float usmoothstep(float x) {
-                x = clamp(x, 0.0, 1.0);
-                return x * x * (3.0 - 2.0 * x);
+            // 投射阴影计算 (Raymarched Hard/Soft Shadows)
+            // 从表面击中点朝向光源步进，检测被其他木柱遮挡产生的高级投影
+            float calcShadow(vec3 ro, vec3 rd, float k) {
+                float res = 1.0;
+                float t = 0.08;
+                for (int i = 0; i < 16; i++) {
+                    vec3 hp = ro + t * rd;
+                    if (hp.y > 5.5 || t > 18.0) break;
+                    
+                    vec2 gpos = floor(hp.xz);
+                    vec3 cub = mapH(gpos);
+                    float h = cub.x;
+                    
+                    // 木柱包围盒内部高度判断
+                    vec2 localXZ = abs(fract(hp.xz) - 0.5);
+                    if (localXZ.x < 0.47 && localXZ.y < 0.47 && hp.y < h) {
+                        return 0.0; // 完全处于阴影中
+                    }
+                    
+                    // 软阴影估计
+                    float dH = hp.y - h;
+                    if (localXZ.x < 0.52 && localXZ.y < 0.52 && dH > 0.0) {
+                        res = min(res, k * dH / t);
+                    }
+                    
+                    t += 0.35;
+                }
+                return clamp(res, 0.0, 1.0);
             }
 
-            const vec3 light1 = vec3(0.70, 0.52, -0.45);
-            const vec3 light2 = vec3(-0.71, 0.0, 0.71);
-            const vec3 lpos = vec3(0.0) + 6.5 * light1;
-
-            // 经典物理光照与高光着色
-            vec3 doLighting(vec3 col, float ks, vec3 pos, vec3 nor, vec3 rd, float isRoof) {
-                vec3 ldif = lpos - pos;
-                float llen = length(ldif);
-                ldif /= llen;
-                float con = dot(light1, ldif);
-                float occ = mix(clamp(pos.y / 4.0, 0.0, 1.0), 1.0, 0.25 * max(0.0, nor.y));
+            // 高级程序化原木木纹材质 (根据第一张参考图设计)
+            // 包括年轮横截面、纵向木质纤维与温润漆面微凹凸
+            vec3 getWoodMaterial(vec3 worldP, vec3 localP, vec3 nor, float woodId, out float outRoughness) {
+                // 1. 根据木柱 ID 分配 5 种高级木料种类色彩
+                // ① 温暖金柚木 (Golden Teak)
+                vec3 cTeak = vec3(0.85, 0.52, 0.28);
+                // ② 经典红木/酸枝木 (Rich Mahogany / Rosewood)
+                vec3 cMahogany = vec3(0.52, 0.18, 0.12);
+                // ③ 深邃黑胡桃 (Dark Walnut)
+                vec3 cWalnut = vec3(0.25, 0.15, 0.11);
+                // ④ 浅色白枫木 (Light Maple)
+                vec3 cMaple = vec3(0.92, 0.72, 0.48);
+                // ⑤ 琥珀黄雪松 (Amber Cedar)
+                vec3 cCedar = vec3(0.76, 0.42, 0.22);
                 
-                float bb = smoothstep(0.5, 0.8, con);
-                float lkey = clamp(dot(nor, ldif), 0.0, 1.0);
-                vec3 lkat = vec3(1.0);
-                lkat *= vec3(bb * bb * 0.6 + 0.4 * bb, bb * 0.5 + 0.5 * bb * bb, bb).zyx;
-                lkat /= (1.0 + 0.22 * llen * llen);
-                lkat *= 28.0;
-                
-                float lbac = clamp(0.5 + 0.5 * dot(light2, nor), 0.0, 1.0);
-                lbac *= smoothstep(0.0, 0.8, con);
-                lbac /= (1.0 + 0.18 * llen * llen);
-                lbac *= 6.5;
-                
-                float lamb = 1.0 - 0.4 * nor.y;
-                lamb *= 1.0 - smoothstep(12.0, 26.0, length(pos.xz));
-                lamb *= 0.25 + 0.75 * smoothstep(0.0, 0.8, con);
-                lamb *= 0.25;
+                vec3 baseWood;
+                float typeSelect = fract(woodId * 5.73);
+                if (typeSelect < 0.22) {
+                    baseWood = cTeak;
+                } else if (typeSelect < 0.44) {
+                    baseWood = cMahogany;
+                } else if (typeSelect < 0.65) {
+                    baseWood = cWalnut;
+                } else if (typeSelect < 0.85) {
+                    baseWood = cMaple;
+                } else {
+                    baseWood = cCedar;
+                }
 
-                vec3 lin = vec3(1.60, 0.70, 0.30) * lkey * lkat * (0.5 + 0.5 * occ);
-                lin += vec3(0.20, 0.05, 0.02) * lamb * occ * occ;
-                lin += vec3(0.70, 0.20, 0.08) * lbac * occ * occ;
-                lin *= vec3(1.3, 1.1, 1.0);
+                // 2. 融入当前播放音乐主题色调 (微妙融合，保持原木高贵质感的同时响应专辑色彩)
+                vec3 albumTint = mix(uColor1, uColor2, fract(woodId * 2.31));
+                baseWood = mix(baseWood, baseWood * albumTint * 1.5, 0.18);
+
+                // 3. 程序化木纹 (Wood Grain & Tree Rings)
+                // 顶面年轮与侧面纵向纤维
+                vec2 centerOffset = vec2(hash(woodId * 11.3) - 0.5, hash(woodId * 23.7) - 0.5) * 0.8;
+                vec2 woodUV = localP.xz - centerOffset;
                 
-                col = col * lin;
+                // 年轮变形噪声
+                float ringDist = length(woodUV * vec2(1.2, 0.85)) * 16.0;
+                float ringNoise = noise2d(woodUV * 8.0 + worldP.y * 0.15) * 3.5;
+                float ring = sin(ringDist + ringNoise);
+                
+                // 纵向木质纤维 (沿 Y 轴)
+                float fiber = noise3d(vec3(localP.x * 28.0, localP.y * 2.0, localP.z * 28.0)) * 0.35;
+                float fineGrain = sin((localP.x + localP.z) * 55.0 + sin(localP.y * 4.0) * 2.0) * 0.08;
+                
+                // 综合木纹调制因子
+                float grainFactor = 0.85 + 0.18 * ring + fiber + fineGrain;
+                
+                // 顶部稍显深色年轮心，边缘微暗 (模拟打磨木块圆角边缘的自然磨损暗化)
+                float edgeDarken = 1.0 - 0.15 * pow(max(abs(localP.x), abs(localP.z)) / 0.46, 3.0);
+                
+                vec3 finalWood = baseWood * grainFactor * edgeDarken;
+                outRoughness = 0.35 + 0.15 * ring; // 漆面平滑度
+                return finalWood;
+            }
 
-                vec3 hal = normalize(ldif - rd);
-                vec3 spe = lkey * lkat * (0.5 + 0.5 * occ) * 3.5 *
-                           pow(clamp(dot(hal, nor), 0.0, 1.0), 6.0 + 6.0 * ks) * 
-                           (0.04 + 0.96 * pow(clamp(1.0 - dot(hal, ldif), 0.0, 1.0), 5.0));
+            // 主太阳光源方向 (温暖斜射阳光，产生第一张图标志性的长投影与明暗交界)
+            const vec3 sunDir = normalize(vec3(0.72, 0.92, -0.65));
+            const vec3 sunCol = vec3(1.65, 1.35, 1.05);   // 明亮温暖日光
+            const vec3 skyCol = vec3(0.18, 0.12, 0.09);   // 温暖暗部环境光
+            const vec3 bounceCol = vec3(0.12, 0.08, 0.05);// 地面反弹漫射光
 
-                col += (0.35 + 0.65 * ks) * spe * vec3(0.8, 0.9, 1.0);
-                col = 1.35 * col / (1.0 + col);
+            // 物理渲染着色
+            vec3 render(vec3 ro, vec3 rd) {
+                // 极简纯黑虚空背景 (第一张参考图标志性风格)
+                vec3 col = vec3(0.0);
+                vec2 tminmax = vec2(0.0, 36.0);
+                tminmax = boundingVolume(tminmax, ro, rd);
+
+                vec3 nor = vec3(0.0);
+                vec3 hitP = vec3(0.0);
+                vec3 localP = vec3(0.0);
+                vec4 res = trace(ro, rd, tminmax.x, tminmax.y, nor, hitP, localP);
+                
+                if (res.y > -0.5) {
+                    float t = res.x;
+                    vec3 pos = hitP;
+                    float woodId = res.y;
+
+                    // 获取高级木质材质色彩与粗糙度
+                    float roughness = 0.4;
+                    vec3 albedo = getWoodMaterial(pos, localP, nor, woodId, roughness);
+
+                    // 计算来自其他柱子的真实投射阴影
+                    float shadow = calcShadow(pos + nor * 0.015, sunDir, 3.0);
+
+                    // 环境光遮蔽 (越靠近底部缝隙越暗)
+                    float occ = clamp(pos.y / 2.2, 0.18, 1.0);
+                    // 局部微观凹凸遮蔽
+                    occ *= (0.65 + 0.35 * max(0.0, nor.y));
+
+                    // 1. 直射日光漫反射 (Lambert)
+                    float nDotL = clamp(dot(nor, sunDir), 0.0, 1.0);
+                    vec3 directLight = sunCol * (nDotL * shadow);
+
+                    // 2. 天光与环境光漫反射
+                    float skyDiff = clamp(0.5 + 0.5 * nor.y, 0.0, 1.0);
+                    vec3 ambientLight = skyCol * (skyDiff * occ);
+
+                    // 3. 地面微弱反弹光
+                    float bounceDiff = clamp(-nor.y, 0.0, 1.0);
+                    vec3 bounceLight = bounceCol * (bounceDiff * occ);
+
+                    // 4. 漆面细腻高光 (Blinn-Phong Specular with Fresnel)
+                    vec3 hal = normalize(sunDir - rd);
+                    float nDotH = clamp(dot(nor, hal), 0.0, 1.0);
+                    float specPower = mix(32.0, 12.0, roughness);
+                    float specIntensity = pow(nDotH, specPower);
+                    // 菲涅尔效应 (边缘更强的高光光泽)
+                    float fresnel = pow(clamp(1.0 - dot(-rd, nor), 0.0, 1.0), 4.0);
+                    vec3 specular = sunCol * specIntensity * (0.35 + 0.65 * fresnel) * shadow * 0.6;
+
+                    // 综合光照方程
+                    vec3 lighting = directLight + ambientLight + bounceLight;
+                    col = albedo * lighting + specular;
+
+                    // 距离黑色虚空淡出衰减
+                    col *= 1.0 - smoothstep(18.0, 34.0, t);
+                }
+
                 return col;
             }
 
+            // 摄像机视线矩阵构建
             mat3 setLookAt(vec3 ro, vec3 ta, float cr) {
                 vec3 cw = normalize(ta - ro);
                 vec3 cp = vec3(sin(cr), cos(cr), 0.0);
@@ -341,75 +465,31 @@ class SoundCityGLRenderer : GLSurfaceView.Renderer {
                 return mat3(cu, cv, cw);
             }
 
-            vec3 render(vec3 ro, vec3 rd) {
-                vec3 col = vec3(0.015, 0.025, 0.055); // 深邃夜空基底
-                vec2 tminmax = vec2(0.0, 36.0);
-                tminmax = boundingVolume(tminmax, ro, rd);
-
-                vec3 nor = vec3(0.0);
-                vec3 hitP = vec3(0.0);
-                vec4 res = trace(ro, rd, tminmax.x, tminmax.y, nor, hitP);
-                
-                if (res.y > -0.5) {
-                    float t = res.x;
-                    vec3 pos = hitP;
-                    float isRoof = res.w;
-
-                    // 建筑色彩：融合当前播放主题色与频段 ID
-                    vec3 baseColor = 0.5 + 0.5 * cos(6.2831 * res.y + vec3(0.0, 0.4, 0.8));
-                    vec3 themeBlend = mix(uColor1, uColor2, fract(res.y * 3.0));
-                    col = mix(baseColor, themeBlend, 0.45);
-
-                    // 区分屋顶封顶面与侧面高楼矩阵夜景
-                    vec3 tex = getBuildingTexture(0.21 * vec3(pos.x, 4.0 * res.z - pos.y, pos.z), nor, isRoof);
-                    tex = pow(tex, vec3(1.3)) * 1.1;
-                    
-                    if (isRoof > 0.5) {
-                        // 屋顶天台：沉稳现代工业感封顶，带有微弱天线信标红光
-                        col = mix(vec3(0.18, 0.22, 0.28), themeBlend * 0.7, 0.3) * tex.x;
-                        float beacon = smoothstep(0.1, 0.0, length(fract(pos.xz) - 0.5)) * (sin(uTime * 4.0) * 0.5 + 0.5);
-                        col += vec3(1.0, 0.1, 0.1) * beacon * 2.0;
-                    } else {
-                        col *= tex.x;
-                    }
-
-                    // 物理光照
-                    col = doLighting(col, tex.x * tex.x * 2.0, pos, nor, rd, isRoof);
-                    col *= 1.0 - smoothstep(20.0, 36.0, t);
-                } else if (rd.y < 0.0) {
-                    // 地面微光夜景（避免大楼悬空在虚无中）
-                    float tp = -ro.y / rd.y;
-                    if (tp > 0.0 && tp < 36.0) {
-                        vec2 gUv = (ro + tp * rd).xz;
-                        float grid = smoothstep(0.04, 0.01, abs(fract(gUv.x) - 0.5)) + smoothstep(0.04, 0.01, abs(fract(gUv.y) - 0.5));
-                        col += vec3(0.02, 0.05, 0.08) + vec3(0.1, 0.3, 0.4) * grid * 0.25;
-                        col *= 1.0 - smoothstep(12.0, 36.0, tp);
-                    }
-                }
-                return col;
-            }
-
             void main() {
                 vec2 p = (-uResolution.xy + 2.0 * gl_FragCoord.xy) / uResolution.y;
-                float time = 5.0 + 0.22 * uTime;
+                float time = 4.0 + 0.18 * uTime;
 
-                // 3D 摄像机全景环绕穿梭轨迹 (Inigo Quilez)
-                vec3 ro = vec3(8.5 * cos(0.2 + 0.33 * time), 5.0 + 2.0 * cos(0.1 * time), 8.5 * sin(0.1 + 0.37 * time));
-                vec3 ta = vec3(-2.5 + 3.0 * cos(1.2 + 0.41 * time), 0.2, 2.0 + 3.0 * sin(2.0 + 0.38 * time));
-                float roll = 0.2 * sin(0.1 * time);
+                // 3D 摄像机全景环绕漫游轨迹 (俯视倾斜角透视，完美对齐第一张参考图)
+                vec3 ro = vec3(9.2 * cos(0.25 * time), 5.6 + 1.2 * sin(0.12 * time), 9.2 * sin(0.25 * time));
+                vec3 ta = vec3(0.0, 1.2, 0.0);
+                float roll = 0.08 * sin(0.15 * time);
 
                 mat3 ca = setLookAt(ro, ta, roll);
-                vec3 rd = normalize(ca * vec3(p, 1.75));
+                vec3 rd = normalize(ca * vec3(p, 1.65));
 
                 vec3 col = render(ro, rd);
                 
-                // 经典电影胶片伽马与色彩平衡调整
-                col = pow(col, vec3(0.4545));
-                col = pow(col, vec3(0.85, 0.94, 1.0));
+                // 电影胶片色调映射与伽马校正 (Tone Mapping & Gamma)
+                // 暖调高对比原木质感
+                col = col / (1.0 + col * 0.6);
+                col = pow(col, vec3(0.4545)); // Gamma 2.2
 
-                // 边缘晕影 (Vignette)
+                // 色彩微调：微调饱和度与温润暖色氛围
+                col = pow(col, vec3(0.92, 0.96, 1.02));
+
+                // 边缘自然晕影 (Vignette)
                 vec2 q = gl_FragCoord.xy / uResolution.xy;
-                col *= 0.25 + 0.75 * pow(16.0 * q.x * q.y * (1.0 - q.x) * (1.0 - q.y), 0.12);
+                col *= 0.35 + 0.65 * pow(16.0 * q.x * q.y * (1.0 - q.x) * (1.0 - q.y), 0.15);
 
                 gl_FragColor = vec4(col, 1.0);
             }
