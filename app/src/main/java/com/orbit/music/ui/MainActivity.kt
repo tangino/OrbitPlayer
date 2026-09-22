@@ -295,6 +295,7 @@ class MainActivity : ComponentActivity() {
                             NowPlayingScreen(
                                 viewModel = musicPlayerViewModel,
                                 equalizerUiState = uiState,
+                                isTabletMode = uiState.isTabletLandscapeModeEnabled,
                                 onBack = {
                                     musicPlayerViewModel.setNowPlayingExpanded(false)
                                     openedFromNowPlaying = false

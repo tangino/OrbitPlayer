@@ -299,6 +299,7 @@ fun MusicLibraryScreen(
             openedFolderPath = null
             openedAlbum = null
             openedArtist = null
+            openedPlaylist = null
             coverFlowLocateTrigger = System.currentTimeMillis()
             coroutineScope.launch {
                 songsGridHolder.animateScrollToItem(targetIndex, libraryState.getViewModeFor("tab_songs"))
@@ -848,6 +849,7 @@ fun MusicLibraryScreen(
                                     openedFolderPath = null
                                     openedAlbum = null
                                     openedArtist = null
+                                    openedPlaylist = null
                                     viewModel.setTab(tab)
                                 }
                                 .padding(horizontal = 14.dp),
@@ -1145,10 +1147,10 @@ fun MusicLibraryScreen(
                                     .padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // 左侧：专辑封面大图 (100.dp x 100.dp)
+                                // 左侧：专辑封面大图 (80.dp x 80.dp)
                                 Box(
                                     modifier = Modifier
-                                        .size(100.dp)
+                                        .size(80.dp)
                                         .clip(RoundedCornerShape(12.dp))
                                         .background(
                                             Brush.linearGradient(
@@ -1176,7 +1178,7 @@ fun MusicLibraryScreen(
                                             imageVector = Icons.Default.Album,
                                             contentDescription = null,
                                             tint = OrbitTheme.colors.primary.copy(alpha = 0.6f),
-                                            modifier = Modifier.size(44.dp)
+                                            modifier = Modifier.size(38.dp)
                                         )
                                     }
 
@@ -1184,8 +1186,8 @@ fun MusicLibraryScreen(
                                     Box(
                                         modifier = Modifier
                                             .align(Alignment.BottomEnd)
-                                            .padding(4.dp)
-                                            .size(24.dp)
+                                            .padding(3.dp)
+                                            .size(20.dp)
                                             .clip(CircleShape)
                                             .background(OrbitTheme.colors.primary),
                                         contentAlignment = Alignment.Center
@@ -1194,34 +1196,24 @@ fun MusicLibraryScreen(
                                             imageVector = Icons.Default.Album,
                                             contentDescription = null,
                                             tint = if (OrbitTheme.colors.isDark) DarkBackground else Color.White,
-                                            modifier = Modifier.size(14.dp)
+                                            modifier = Modifier.size(11.dp)
                                         )
                                     }
                                 }
 
                                 Spacer(modifier = Modifier.width(14.dp))
 
-                                // 右侧：专辑信息与主要操作
+                                // 右侧：艺术家信息与主要操作 (顶栏已有专辑标题，此处专注于艺术家与统计操作)
                                 Column(
                                     modifier = Modifier.weight(1f),
                                     verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    // 专辑名称
-                                    Text(
-                                        text = currentAlbum.title,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 17.sp,
-                                        color = OrbitTheme.colors.textPrimary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-
                                     // 艺术家名称
                                     Text(
                                         text = currentAlbum.artist.ifBlank { "未知艺术家" },
-                                        fontSize = 13.sp,
+                                        fontSize = 14.sp,
                                         color = OrbitTheme.colors.primary,
-                                        fontWeight = FontWeight.Medium,
+                                        fontWeight = FontWeight.SemiBold,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -1239,7 +1231,7 @@ fun MusicLibraryScreen(
                                         overflow = TextOverflow.Ellipsis
                                     )
 
-                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Spacer(modifier = Modifier.height(2.dp))
 
                                     // 底部操作行
                                     Row(
@@ -1281,19 +1273,6 @@ fun MusicLibraryScreen(
                                                 fontSize = 11.sp,
                                                 color = OrbitTheme.colors.primary,
                                                 fontWeight = FontWeight.SemiBold
-                                            )
-                                        }
-
-                                        // 专辑内快捷搜索按钮
-                                        IconButton(
-                                            onClick = { viewModel.toggleSearch() },
-                                            modifier = Modifier.size(32.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = if (libraryState.isSearching) Icons.Default.Close else Icons.Default.Search,
-                                                contentDescription = "Search In Album",
-                                                tint = if (libraryState.isSearching) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                                                modifier = Modifier.size(18.dp)
                                             )
                                         }
                                     }
@@ -1802,10 +1781,10 @@ fun MusicLibraryScreen(
                                             .padding(12.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        // 左侧：随机封面大图 (100.dp x 100.dp)
+                                        // 左侧：随机封面大图 (80.dp x 80.dp)
                                         Box(
                                             modifier = Modifier
-                                                .size(100.dp)
+                                                .size(80.dp)
                                                 .clip(RoundedCornerShape(12.dp))
                                                 .background(
                                                     Brush.linearGradient(
@@ -1841,7 +1820,7 @@ fun MusicLibraryScreen(
                                                         DISLIKED_PLAYLIST_ID -> Color(0xFFE57373).copy(alpha = 0.7f)
                                                         else -> OrbitTheme.colors.primary.copy(alpha = 0.6f)
                                                     },
-                                                    modifier = Modifier.size(44.dp)
+                                                    modifier = Modifier.size(38.dp)
                                                 )
                                             }
 
@@ -1850,8 +1829,8 @@ fun MusicLibraryScreen(
                                                 Box(
                                                     modifier = Modifier
                                                         .align(Alignment.BottomEnd)
-                                                        .padding(4.dp)
-                                                        .size(24.dp)
+                                                        .padding(3.dp)
+                                                        .size(20.dp)
                                                         .clip(CircleShape)
                                                         .background(Color(0xFFFF3366)),
                                                     contentAlignment = Alignment.Center
@@ -1860,15 +1839,15 @@ fun MusicLibraryScreen(
                                                         imageVector = Icons.Default.Favorite,
                                                         contentDescription = null,
                                                         tint = Color.White,
-                                                        modifier = Modifier.size(13.dp)
+                                                        modifier = Modifier.size(11.dp)
                                                     )
                                                 }
                                             } else if (currentPlaylist.id == DISLIKED_PLAYLIST_ID) {
                                                 Box(
                                                     modifier = Modifier
                                                         .align(Alignment.BottomEnd)
-                                                        .padding(4.dp)
-                                                        .size(24.dp)
+                                                        .padding(3.dp)
+                                                        .size(20.dp)
                                                         .clip(CircleShape)
                                                         .background(Color(0xFFE57373)),
                                                     contentAlignment = Alignment.Center
@@ -1877,7 +1856,7 @@ fun MusicLibraryScreen(
                                                         imageVector = Icons.Default.ThumbDown,
                                                         contentDescription = null,
                                                         tint = Color.White,
-                                                        modifier = Modifier.size(13.dp)
+                                                        modifier = Modifier.size(11.dp)
                                                     )
                                                 }
                                             }
@@ -1885,21 +1864,11 @@ fun MusicLibraryScreen(
 
                                         Spacer(modifier = Modifier.width(14.dp))
 
-                                        // 右侧：歌单信息与主要操作
+                                        // 右侧：歌单统计与主要操作 (顶栏已有标题，此处专注于数据与操作)
                                         Column(
                                             modifier = Modifier.weight(1f),
-                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
-                                            // 歌单标题
-                                            Text(
-                                                text = currentPlaylist.name,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 17.sp,
-                                                color = OrbitTheme.colors.textPrimary,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-
                                             // 统计信息：歌曲数 · 总时长
                                             Text(
                                                 text = if (playlistSongs.isNotEmpty()) {
@@ -1907,13 +1876,12 @@ fun MusicLibraryScreen(
                                                 } else {
                                                     stringResource(R.string.tracks_count, 0)
                                                 },
-                                                fontSize = 12.sp,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Medium,
                                                 color = OrbitTheme.colors.textSecondary,
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
-
-                                            Spacer(modifier = Modifier.height(4.dp))
 
                                             // 底部操作按钮行
                                             Row(
@@ -1926,7 +1894,7 @@ fun MusicLibraryScreen(
                                                         onClick = { viewModel.playSong(filteredPlaylistSongs, 0) },
                                                         colors = ButtonDefaults.buttonColors(
                                                             containerColor = OrbitTheme.colors.primary,
-                                                            contentColor = Color.White
+                                                            contentColor = if (OrbitTheme.colors.isDark) DarkBackground else Color.White
                                                         ),
                                                         shape = RoundedCornerShape(20.dp),
                                                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
@@ -1977,25 +1945,13 @@ fun MusicLibraryScreen(
 
                                                 Spacer(modifier = Modifier.weight(1f))
 
-                                                // 搜索状态统计 / 快捷搜索按钮
+                                                // 搜索状态统计
                                                 if (libraryState.searchQuery.isNotBlank()) {
                                                     Text(
                                                         text = "${filteredPlaylistSongs.size}/${playlistSongs.size}",
                                                         fontSize = 11.sp,
                                                         color = OrbitTheme.colors.primary,
                                                         fontWeight = FontWeight.SemiBold
-                                                    )
-                                                }
-
-                                                IconButton(
-                                                    onClick = { viewModel.toggleSearch() },
-                                                    modifier = Modifier.size(32.dp)
-                                                ) {
-                                                    Icon(
-                                                        imageVector = if (libraryState.isSearching) Icons.Default.Close else Icons.Default.Search,
-                                                        contentDescription = "Search In Playlist",
-                                                        tint = if (libraryState.isSearching) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                                                        modifier = Modifier.size(18.dp)
                                                     )
                                                 }
                                             }
@@ -2537,6 +2493,7 @@ fun MusicLibraryScreen(
                     openedFolderPath = null
                     openedAlbum = null
                     openedArtist = null
+                    openedPlaylist = null
                     viewModel.setTab(tab)
                 },
                 songCount = filteredSongs.size,

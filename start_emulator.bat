@@ -109,40 +109,41 @@ echo.
 echo [1/3] 正在准备启动虚拟机: !SELECTED_AVD! ...
 
 :: 5. 检查是否已有运行中的模拟器
-set "RUNNING_EMULATOR="
+set "RUNNING_EMU_COUNT=0"
 for /f "tokens=1,2" %%A in ('"%ADB_BIN%" devices 2^>nul') do (
     if "%%B"=="device" (
         echo %%A | findstr /R "^emulator-" >nul 2>&1
         if not errorlevel 1 (
-            set "RUNNING_EMULATOR=%%A"
+            set /a RUNNING_EMU_COUNT+=1
+            set "RUNNING_EMU_!RUNNING_EMU_COUNT!=%%A"
         )
     )
 )
 
-if defined RUNNING_EMULATOR (
-    echo [提示] 当前已有正在运行的模拟器: %RUNNING_EMULATOR%
-    "%ADB_BIN%" devices
-    echo 如需连接该设备，可直接运行 .\install_and_debug.bat
-    exit /b 0
+if %RUNNING_EMU_COUNT% gtr 0 (
+    echo [INFO] Currently running emulators: %RUNNING_EMU_COUNT%
+    for /l %%i in (1,1,%RUNNING_EMU_COUNT%) do (
+        echo   - !RUNNING_EMU_%%i!
+    )
+    echo Starting additional emulator [!SELECTED_AVD!] ...
 )
 
 :: 6. 后台启动虚拟机
-echo [2/3] 正在启动 !SELECTED_AVD! ...
+echo [2/3] Launching emulator: !SELECTED_AVD! ...
 start "Android Emulator - !SELECTED_AVD!" "%EMULATOR_BIN%" -avd "!SELECTED_AVD!" -netdelay none -netspeed full
 
-:: 7. 等待连接就绪
-echo [3/3] 正在等待 ADB 连接设备就绪...
-"%ADB_BIN%" wait-for-device
-
-for /f "usebackq tokens=*" %%A in (`"%ADB_BIN%" shell getprop ro.product.model 2^>nul`) do set "DEVICE_MODEL=%%A"
-for /f "usebackq tokens=*" %%A in (`"%ADB_BIN%" shell getprop ro.build.version.release 2^>nul`) do set "ANDROID_VER=%%A"
+:: 7. 等待启动
+echo [3/3] Emulator process launched in background.
+echo Loading emulator system, please wait...
 
 echo.
 echo ======================================================
-echo [成功] 虚拟机已成功启动并就绪！
-echo   - 虚拟机名称: !SELECTED_AVD!
-if defined DEVICE_MODEL echo   - 设备型号:   !DEVICE_MODEL!
-if defined ANDROID_VER echo   - 系统版本:   Android !ANDROID_VER!
+echo [SUCCESS] Launched emulator: !SELECTED_AVD!
+echo Hint: Ready to use once emulator finishes booting.
 echo ======================================================
+echo Connected devices:
 "%ADB_BIN%" devices
+echo.
+echo Hint: Run .\install_and_debug.bat to install and debug.
+echo Hint: Run .\install_release.bat to install release APK.
 

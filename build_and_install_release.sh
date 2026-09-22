@@ -198,36 +198,82 @@ if [ -z "$DEVICES" ]; then
 fi
 
 # 获取设备信息
-DEVICE_COUNT=$(echo "$DEVICES" | wc -l | awk '{print $1}')
-FIRST_DEVICE=$(echo "$DEVICES" | head -n 1)
-DEVICE_MODEL=$(adb -s "$FIRST_DEVICE" shell getprop ro.product.model 2>/dev/null || echo "Android 设备")
-ANDROID_VER=$(adb -s "$FIRST_DEVICE" shell getprop ro.build.version.release 2>/dev/null || echo "未知")
+DEVICE_ARRAY=($DEVICES)
+DEVICE_COUNT=${#DEVICE_ARRAY[@]}
+TARGET_DEVICES=()
 
-echo -e "  ${GREEN}✓${NC} 成功识别目标设备 (${DEVICE_COUNT} 台): ${BOLD}${DEVICE_MODEL}${NC} (Android ${ANDROID_VER}, ID: ${FIRST_DEVICE})"
+if [ "$DEVICE_COUNT" -eq 1 ]; then
+    FIRST_DEVICE="${DEVICE_ARRAY[0]}"
+    DEVICE_MODEL=$(adb -s "$FIRST_DEVICE" shell getprop ro.product.model 2>/dev/null || echo "Android 设备")
+    ANDROID_VER=$(adb -s "$FIRST_DEVICE" shell getprop ro.build.version.release 2>/dev/null || echo "未知")
+    echo -e "  ${GREEN}✓${NC} 成功识别目标设备: ${BOLD}${DEVICE_MODEL}${NC} (Android ${ANDROID_VER}, ID: ${FIRST_DEVICE})"
+    TARGET_DEVICES=("$FIRST_DEVICE")
+else
+    echo -e "\n${CYAN}检测到 ${DEVICE_COUNT} 台已连接并授权的 Android 设备:${NC}"
+    echo -e "${CYAN}----------------------------------------------------------------${NC}"
+    for i in "${!DEVICE_ARRAY[@]}"; do
+        DEV_ID="${DEVICE_ARRAY[$i]}"
+        DEV_MODEL=$(adb -s "$DEV_ID" shell getprop ro.product.model 2>/dev/null || echo "Android 设备")
+        DEV_VER=$(adb -s "$DEV_ID" shell getprop ro.build.version.release 2>/dev/null || echo "未知")
+        echo -e "  [$(($i + 1))] ${BOLD}${DEV_ID}${NC} (${DEV_MODEL}, Android ${DEV_VER})"
+    done
+    echo -e "  [A] 同时安装到所有设备 (All Devices)"
+    echo -e "  [Q] 退出安装 (Quit)"
+    echo -e "${CYAN}----------------------------------------------------------------${NC}"
+
+    while true; do
+        read -rp "请选择安装目标 [1-${DEVICE_COUNT} / A / Q] (默认 A): " USER_CHOICE
+        USER_CHOICE="${USER_CHOICE:-A}"
+
+        if [[ "$USER_CHOICE" =~ ^[Qq]$ ]]; then
+            echo -e "${YELLOW}[提示] 用户取消安装。${NC}"
+            exit 0
+        elif [[ "$USER_CHOICE" =~ ^[Aa]$ ]]; then
+            TARGET_DEVICES=("${DEVICE_ARRAY[@]}")
+            break
+        elif [[ "$USER_CHOICE" =~ ^[0-9]+$ ]] && [ "$USER_CHOICE" -ge 1 ] && [ "$USER_CHOICE" -le "$DEVICE_COUNT" ]; then
+            TARGET_DEVICES=("${DEVICE_ARRAY[$(($USER_CHOICE - 1))]}")
+            break
+        else
+            echo -e "${YELLOW}[提示] 无效的选择，请重新输入。${NC}"
+        fi
+    done
+fi
 
 # ==============================================================================
 # 4. 安装并自动启动应用
 # ==============================================================================
 echo -e "\n${YELLOW}[4/4] 正在安装 Release 发布版 APK 并启动...${NC}"
-echo -e "  目标设备: ${FIRST_DEVICE}"
-echo -e "  正在传输与安装 ${RELEASE_APK} ..."
+PACKAGE_NAME="com.orbit.music"
+ACTIVITY_NAME=".ui.MainActivity"
+SUCCESS_COUNT=0
+FAIL_COUNT=0
 
-if adb -s "$FIRST_DEVICE" install -r -d -t "$RELEASE_APK"; then
-    echo -e "  ${GREEN}✓ 安装成功！${NC}"
-    
-    PACKAGE_NAME="com.orbit.music"
-    ACTIVITY_NAME=".ui.MainActivity"
-    
-    echo -e "  正在启动 Orbit Player 发布版本..."
-    adb -s "$FIRST_DEVICE" shell am start -n "${PACKAGE_NAME}/${ACTIVITY_NAME}" > /dev/null 2>&1 || true
-    
-    echo -e "\n${GREEN}================================================================${NC}"
-    echo -e "${GREEN}${BOLD}🎉 Orbit Player 发布版本已成功安装并启动！${NC}"
-    echo -e "${GREEN}================================================================${NC}\n"
-else
-    echo -e "\n${RED}[错误] 安装失败！可能原因：${NC}"
-    echo -e "  1. 手机屏幕弹出「是否允许通过 USB 安装应用」确认框，未及时点击「允许」；"
-    echo -e "  2. 手机开启了纯净模式/安装验证，需在手机上手动授权。"
-    echo -e "  安装包位置: ${BOLD}${PROJECT_ROOT}/${RELEASE_APK}${NC}\n"
-    exit 1
-fi
+for TARGET_DEV in "${TARGET_DEVICES[@]}"; do
+    echo -e "\n----------------------------------------------------------------"
+    echo -e "  正在传输与安装 ${RELEASE_APK} 到设备: ${BOLD}${TARGET_DEV}${NC} ..."
+    if adb -s "$TARGET_DEV" install -r -d -t "$RELEASE_APK"; then
+        echo -e "  ${GREEN}✓ 设备 ${TARGET_DEV} 安装成功！${NC}"
+        echo -e "  正在启动 Orbit Player 发布版本..."
+        adb -s "$TARGET_DEV" shell am start -n "${PACKAGE_NAME}/${ACTIVITY_NAME}" > /dev/null 2>&1 || true
+        SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+    else
+        echo -e "  ${RED}✗ 设备 ${TARGET_DEV} 直接安装失败，尝试 fallback 推送安装...${NC}"
+        adb -s "$TARGET_DEV" push "$RELEASE_APK" /data/local/tmp/OrbitPlayer.apk > /dev/null 2>&1 || true
+        if adb -s "$TARGET_DEV" shell pm install -r -d /data/local/tmp/OrbitPlayer.apk; then
+            adb -s "$TARGET_DEV" shell rm /data/local/tmp/OrbitPlayer.apk > /dev/null 2>&1 || true
+            echo -e "  ${GREEN}✓ 设备 ${TARGET_DEV} 安装成功！${NC}"
+            echo -e "  正在启动 Orbit Player 发布版本..."
+            adb -s "$TARGET_DEV" shell am start -n "${PACKAGE_NAME}/${ACTIVITY_NAME}" > /dev/null 2>&1 || true
+            SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+        else
+            adb -s "$TARGET_DEV" shell rm /data/local/tmp/OrbitPlayer.apk > /dev/null 2>&1 || true
+            echo -e "  ${RED}[错误] 设备 ${TARGET_DEV} 安装失败！${NC}"
+            FAIL_COUNT=$((FAIL_COUNT + 1))
+        fi
+    fi
+done
+
+echo -e "\n${GREEN}================================================================${NC}"
+echo -e "${GREEN}${BOLD}🎉 安装完成！成功: ${SUCCESS_COUNT} 台, 失败: ${FAIL_COUNT} 台${NC}"
+echo -e "${GREEN}================================================================${NC}\n"

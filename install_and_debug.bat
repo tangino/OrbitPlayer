@@ -23,14 +23,15 @@ if %ERRORLEVEL% neq 0 (
 :: 2. Check connected devices
 echo.
 echo [1/4] Checking connected Android devices...
-set "DEVICE_FOUND="
+set "DEVICE_COUNT=0"
 for /f "tokens=1,2" %%A in ('adb devices') do (
     if "%%B"=="device" (
-        set "DEVICE_FOUND=%%A"
+        set /a DEVICE_COUNT+=1
+        set "DEV_!DEVICE_COUNT!=%%A"
     )
 )
 
-if not defined DEVICE_FOUND (
+if !DEVICE_COUNT! equ 0 (
     echo [ERROR] No authorized Android device or emulator detected.
     echo Please check:
     echo   1. Device connected via USB with USB debugging enabled.
@@ -38,7 +39,70 @@ if not defined DEVICE_FOUND (
     exit /b 1
 )
 
-echo [SUCCESS] Target device identified: %DEVICE_FOUND%
+set "TARGET_DEVICES="
+set "PRIMARY_LOG_DEV="
+if !DEVICE_COUNT! equ 1 (
+    set "TARGET_DEVICES=!DEV_1!"
+    set "PRIMARY_LOG_DEV=!DEV_1!"
+    set "DEV_MODEL="
+    set "DEV_VER="
+    for /f "delims=" %%M in ('adb -s !DEV_1! shell getprop ro.product.model 2^>nul') do set "DEV_MODEL=%%M"
+    for /f "delims=" %%V in ('adb -s !DEV_1! shell getprop ro.build.version.release 2^>nul') do set "DEV_VER=%%V"
+    if not defined DEV_MODEL set "DEV_MODEL=Android Device"
+    if not defined DEV_VER set "DEV_VER=Unknown"
+    echo [SUCCESS] Target device identified: !DEV_1! [!DEV_MODEL!, Android !DEV_VER!]
+) else (
+    echo.
+    echo Detected !DEVICE_COUNT! connected Android devices:
+    echo ------------------------------------------------------
+    for /l %%i in (1,1,!DEVICE_COUNT!) do (
+        set "CUR_DEV=!DEV_%%i!"
+        set "CUR_MODEL="
+        set "CUR_VER="
+        for /f "delims=" %%M in ('adb -s !CUR_DEV! shell getprop ro.product.model 2^>nul') do set "CUR_MODEL=%%M"
+        for /f "delims=" %%V in ('adb -s !CUR_DEV! shell getprop ro.build.version.release 2^>nul') do set "CUR_VER=%%V"
+        if not defined CUR_MODEL set "CUR_MODEL=Android Device"
+        if not defined CUR_VER set "CUR_VER=Unknown"
+        echo   [%%i] !CUR_DEV! [!CUR_MODEL!, Android !CUR_VER!]
+    )
+    echo   [A] Install to ALL devices
+    echo   [Q] Quit
+    echo ------------------------------------------------------
+    
+    :CHOOSE_DEBUG_DEVICE
+    set "USER_CHOICE="
+    set /p "USER_CHOICE=Please select target [1-!DEVICE_COUNT! / A / Q] (Default: A): "
+    if not defined USER_CHOICE set "USER_CHOICE=A"
+    
+    if /i "!USER_CHOICE!"=="Q" (
+        echo [INFO] Installation aborted by user.
+        exit /b 0
+    )
+    
+    if /i "!USER_CHOICE!"=="A" (
+        set "PRIMARY_LOG_DEV=!DEV_1!"
+        for /l %%i in (1,1,!DEVICE_COUNT!) do (
+            if not defined TARGET_DEVICES (
+                set "TARGET_DEVICES=!DEV_%%i!"
+            ) else (
+                set "TARGET_DEVICES=!TARGET_DEVICES! !DEV_%%i!"
+            )
+        )
+    ) else (
+        set "VALID_NUM=0"
+        for /l %%i in (1,1,!DEVICE_COUNT!) do (
+            if "!USER_CHOICE!"=="%%i" (
+                set "VALID_NUM=1"
+                set "TARGET_DEVICES=!DEV_%%i!"
+                set "PRIMARY_LOG_DEV=!DEV_%%i!"
+            )
+        )
+        if !VALID_NUM! equ 0 (
+            echo [WARNING] Invalid selection. Please choose again.
+            goto CHOOSE_DEBUG_DEVICE
+        )
+    )
+)
 
 :: 3. Check or build APK
 set "APK_PATH=%~dp0app\build\outputs\apk\debug\app-debug.apk"
@@ -58,33 +122,43 @@ if not exist "%APK_PATH%" (
 
 :: 4. Install APK
 echo.
-echo [3/4] Installing APK via ADB...
-adb -s %DEVICE_FOUND% install -r -d -t "%APK_PATH%"
-if !ERRORLEVEL! neq 0 (
-    echo [INFO] Direct install failed, attempting push and pm install fallback...
-    adb -s %DEVICE_FOUND% push "%APK_PATH%" /data/local/tmp/orbit_debug.apk
-    adb -s %DEVICE_FOUND% shell pm install -r -d -t /data/local/tmp/orbit_debug.apk
-    adb -s %DEVICE_FOUND% shell rm /data/local/tmp/orbit_debug.apk
-    if !ERRORLEVEL! neq 0 (
-        echo [ERROR] Installation failed.
-        exit /b !ERRORLEVEL!
-    )
-)
-echo [SUCCESS] App installed successfully!
-
-:: 5. Launch App and start logcat
-echo.
-echo [4/4] Launching application and streaming DSP logs...
+echo [3/4] Installing debug APK to target device(s)...
 set "PACKAGE_NAME=com.orbit.music"
 set "ACTIVITY_NAME=.ui.MainActivity"
+set "SUCCESS_COUNT=0"
+set "FAIL_COUNT=0"
 
-adb -s %DEVICE_FOUND% shell am start -n "%PACKAGE_NAME%/%ACTIVITY_NAME%"
+for %%D in (!TARGET_DEVICES!) do (
+    echo.
+    echo ------------------------------------------------------
+    echo [*] Installing to: %%D ...
+    adb -s %%D install -r -d -t "%APK_PATH%"
+    if !ERRORLEVEL! neq 0 (
+        echo [INFO] Direct install failed, attempting push and pm install fallback...
+        adb -s %%D push "%APK_PATH%" /data/local/tmp/orbit_debug.apk >nul 2>&1
+        adb -s %%D shell pm install -r -d -t /data/local/tmp/orbit_debug.apk
+        adb -s %%D shell rm /data/local/tmp/orbit_debug.apk >nul 2>&1
+    )
+    if !ERRORLEVEL! equ 0 (
+        echo [SUCCESS] %%D: Installation succeeded.
+        echo Launching application on %%D...
+        adb -s %%D shell am start -n "%PACKAGE_NAME%/%ACTIVITY_NAME%" >nul 2>&1
+        set /a SUCCESS_COUNT+=1
+    ) else (
+        echo [ERROR] %%D: Installation failed.
+        set /a FAIL_COUNT+=1
+    )
+)
 
 echo.
 echo ======================================================
-echo Application started!
-echo Streaming NativeDSP and EqualizerService logs (Press Ctrl+C to stop)...
+echo [RESULT] Installation Finished - Success: !SUCCESS_COUNT!, Failed: !FAIL_COUNT!
+echo ======================================================
+
+:: 5. Start logcat on primary device
+echo.
+echo [4/4] Streaming DSP logs from !PRIMARY_LOG_DEV! (Press Ctrl+C to stop)...
 echo ======================================================
 echo.
 
-adb -s %DEVICE_FOUND% logcat -v color -s NativeDSP EqualizerService AudioEffectManager AudioSessionManager DeviceManager AndroidRuntime:E
+adb -s !PRIMARY_LOG_DEV! logcat -v color -s NativeDSP EqualizerService AudioEffectManager AudioSessionManager DeviceManager AndroidRuntime:E
