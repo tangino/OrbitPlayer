@@ -1694,7 +1694,15 @@ fun SettingsScreen(
                     HorizontalDivider(color = OrbitTheme.colors.gridLine)
                     SettingsInfoItem(icon = Icons.Default.Speed, title = stringResource(R.string.dsp_latency_title), value = stringResource(R.string.dsp_latency_value))
                     HorizontalDivider(color = OrbitTheme.colors.gridLine)
-                    SettingsInfoItem(icon = Icons.Default.Info, title = stringResource(R.string.version_title), value = stringResource(R.string.version_value))
+                    val appVersionName = remember {
+                        try {
+                            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+                            pInfo.versionName ?: "0.1.9"
+                        } catch (_: Exception) {
+                            "0.1.9"
+                        }
+                    }
+                    SettingsInfoItem(icon = Icons.Default.Info, title = stringResource(R.string.version_title), value = appVersionName)
                 }
                 Spacer(modifier = Modifier.height(96.dp))
             }
