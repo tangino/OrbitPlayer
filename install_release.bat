@@ -1,8 +1,23 @@
 @echo off
 setlocal enabledelayedexpansion
 
+set "VERSION_NAME="
+if exist "%~dp0app\build.gradle.kts" (
+    for /f "tokens=2 delims==" %%a in ('findstr /i "versionName" "%~dp0app\build.gradle.kts"') do (
+        set "RAW_VER=%%a"
+        set "RAW_VER=!RAW_VER: =!"
+        set "RAW_VER=!RAW_VER:"=!"
+        set "RAW_VER=!RAW_VER:,=!"
+        if not defined VERSION_NAME set "VERSION_NAME=!RAW_VER!"
+    )
+)
+
 echo ======================================================
-echo    Orbit Player - Windows Install Release (v0.1.8)
+if defined VERSION_NAME (
+    echo    Orbit Player - Windows Install Release [v!VERSION_NAME!]
+) else (
+    echo    Orbit Player - Windows Install Release
+)
 echo ======================================================
 
 if not defined ANDROID_HOME if exist "E:\softwares\Android\sdk" set "ANDROID_HOME=E:\softwares\Android\sdk"
@@ -38,8 +53,19 @@ if not defined DEVICE_FOUND (
 
 echo [SUCCESS] Target device identified: %DEVICE_FOUND%
 
-set "APK_PATH=%~dp0app\build\outputs\apk\release\OrbitPlayer.apk"
-if not exist "%APK_PATH%" set "APK_PATH=%~dp0OrbitPlayer.apk"
+set "APK_FILENAME=OrbitPlayer.apk"
+if defined VERSION_NAME (
+    set "APK_FILENAME=OrbitPlayer-v!VERSION_NAME!.apk"
+)
+
+set "APK_PATH=%~dp0app\build\outputs\apk\release\%APK_FILENAME%"
+if not exist "%APK_PATH%" set "APK_PATH=%~dp0%APK_FILENAME%"
+if not exist "%APK_PATH%" (
+    for %%F in ("%~dp0app\build\outputs\apk\release\OrbitPlayer*.apk") do set "APK_PATH=%%F"
+)
+if not exist "%APK_PATH%" (
+    for %%F in ("%~dp0OrbitPlayer*.apk") do set "APK_PATH=%%F"
+)
 if not exist "%APK_PATH%" set "APK_PATH=%~dp0app\build\outputs\apk\release\app-release.apk"
 
 echo.
@@ -51,8 +77,14 @@ if not exist "%APK_PATH%" (
         echo [ERROR] Release build failed.
         exit /b !ERRORLEVEL!
     )
-    set "APK_PATH=%~dp0app\build\outputs\apk\release\OrbitPlayer.apk"
-    if not exist "%APK_PATH%" set "APK_PATH=%~dp0OrbitPlayer.apk"
+    set "APK_PATH=%~dp0app\build\outputs\apk\release\%APK_FILENAME%"
+    if not exist "%APK_PATH%" set "APK_PATH=%~dp0%APK_FILENAME%"
+    if not exist "%APK_PATH%" (
+        for %%F in ("%~dp0app\build\outputs\apk\release\OrbitPlayer*.apk") do set "APK_PATH=%%F"
+    )
+    if not exist "%APK_PATH%" (
+        for %%F in ("%~dp0OrbitPlayer*.apk") do set "APK_PATH=%%F"
+    )
 ) else (
     echo Found release APK: %APK_PATH%
 )

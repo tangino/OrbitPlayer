@@ -49,7 +49,8 @@ android {
         if (buildType.name == "release") {
             outputs.all {
                 val outputImpl = this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl
-                outputImpl?.outputFileName = "OrbitPlayer.apk"
+                val vName = versionName ?: "release"
+                outputImpl?.outputFileName = "OrbitPlayer-v${vName}.apk"
             }
         }
     }

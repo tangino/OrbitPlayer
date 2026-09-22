@@ -111,13 +111,23 @@ chmod +x ./gradlew
 # ==============================================================================
 # 2. 编译发布版本 (Release APK)
 # ==============================================================================
-RELEASE_APK="app/build/outputs/apk/release/OrbitPlayer.apk"
+VERSION_NAME=$(grep -oE 'versionName\s*=\s*"[^"]+"' app/build.gradle.kts | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+if [ -n "$VERSION_NAME" ]; then
+    RELEASE_APK="app/build/outputs/apk/release/OrbitPlayer-v${VERSION_NAME}.apk"
+else
+    RELEASE_APK="app/build/outputs/apk/release/OrbitPlayer.apk"
+fi
 
 if [ "$INSTALL_ONLY" = true ]; then
     echo -e "\n${YELLOW}[2/4] 跳过编译阶段 (--install-only)...${NC}"
     if [ ! -f "$RELEASE_APK" ]; then
-        echo -e "${RED}[错误] 未找到已有发布版 APK: ${RELEASE_APK}，无法执行安装！请先去掉 --install-only 执行编译。${NC}"
-        exit 1
+        FALLBACK_APK=$(ls app/build/outputs/apk/release/OrbitPlayer*.apk 2>/dev/null | head -n 1 || true)
+        if [ -n "$FALLBACK_APK" ] && [ -f "$FALLBACK_APK" ]; then
+            RELEASE_APK="$FALLBACK_APK"
+        else
+            echo -e "${RED}[错误] 未找到已有发布版 APK: ${RELEASE_APK}，无法执行安装！请先去掉 --install-only 执行编译。${NC}"
+            exit 1
+        fi
     fi
 else
     echo -e "\n${YELLOW}[2/4] 开始执行 Release 发布版本构建...${NC}"
@@ -134,6 +144,13 @@ else
 
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))
+
+    if [ ! -f "$RELEASE_APK" ]; then
+        FALLBACK_APK=$(ls app/build/outputs/apk/release/OrbitPlayer*.apk 2>/dev/null | head -n 1 || true)
+        if [ -n "$FALLBACK_APK" ] && [ -f "$FALLBACK_APK" ]; then
+            RELEASE_APK="$FALLBACK_APK"
+        fi
+    fi
 
     if [ -f "$RELEASE_APK" ]; then
         APK_SIZE=$(ls -lh "$RELEASE_APK" | awk '{print $5}')
