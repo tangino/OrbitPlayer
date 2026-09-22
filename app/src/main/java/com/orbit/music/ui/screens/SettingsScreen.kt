@@ -1697,9 +1697,9 @@ fun SettingsScreen(
                     val appVersionName = remember {
                         try {
                             val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-                            pInfo.versionName ?: "0.1.9"
+                            pInfo.versionName ?: "0.2.0"
                         } catch (_: Exception) {
-                            "0.1.9"
+                            "0.2.0"
                         }
                     }
                     SettingsInfoItem(icon = Icons.Default.Info, title = stringResource(R.string.version_title), value = appVersionName)

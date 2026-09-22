@@ -89,7 +89,7 @@
     <string name="dsp_latency_title">DSP Latency</string>
     <string name="dsp_latency_value">&lt; 2.5 ms</string>
     <string name="version_title">Version</string>
-    <string name="version_value">0.1.9</string>
+    <string name="version_value">0.2.0</string>
 
     <!-- Import / Export Dialogs -->
     <string name="import_dialog_title">Import Preset / AutoEQ</string>
