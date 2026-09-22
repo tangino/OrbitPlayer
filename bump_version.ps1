@@ -1,0 +1,114 @@
+# ==============================================================================
+# Orbit Player - 版本号修改/升级脚本 (PowerShell)
+# ==============================================================================
+
+param (
+    [string]$TypeOrVersion = "",
+    [int]$ExplicitCode = 0
+)
+
+$ErrorActionPreference = "Stop"
+$GradleFile = "app/build.gradle.kts"
+
+if (-not (Test-Path $GradleFile)) {
+    Write-Host "[错误] 未找到 $GradleFile 文件，请在项目根目录下运行。" -ForegroundColor Red
+    exit 1
+}
+
+# 读取并提取当前版本
+$content = Get-Content $GradleFile -Raw
+$codeMatch = [regex]::Match($content, 'versionCode\s*=\s*([0-9]+)')
+$nameMatch = [regex]::Match($content, 'versionName\s*=\s*"([^"]+)"')
+
+if (-not $codeMatch.Success -or -not $nameMatch.Success) {
+    Write-Host "[错误] 无法从 $GradleFile 解析当前版本号！" -ForegroundColor Red
+    exit 1
+}
+
+$CurrentCode = [int]$codeMatch.Groups[1].Value
+$CurrentName = $nameMatch.Groups[1].Value
+
+Write-Host "======================================================" -ForegroundColor Cyan
+Write-Host "            Orbit Player 版本管理脚本                 " -ForegroundColor Cyan
+Write-Host "======================================================" -ForegroundColor Cyan
+Write-Host "当前版本: " -NoNewline
+Write-Host "versionName = `"$CurrentName`"" -ForegroundColor Green -NoNewline
+Write-Host " | " -NoNewline
+Write-Host "versionCode = $CurrentCode" -ForegroundColor Green
+Write-Host ""
+
+# 解析语义化版本号
+$parts = $CurrentName.Split('.')
+$major = if ($parts.Length -ge 1) { [int]$parts[0] } else { 0 }
+$minor = if ($parts.Length -ge 2) { [int]$parts[1] } else { 0 }
+$patch = if ($parts.Length -ge 3) { [int]$parts[2] } else { 0 }
+
+$SuggestPatchName = "$major.$minor.$($patch + 1)"
+$SuggestMinorName = "$major.$($minor + 1).0"
+$SuggestMajorName = "$($major + 1).0.0"
+$SuggestCode = $CurrentCode + 1
+
+$NewName = ""
+$NewCode = 0
+
+if ($TypeOrVersion -ne "") {
+    switch ($TypeOrVersion.ToLower()) {
+        "patch" { $NewName = $SuggestPatchName; $NewCode = $SuggestCode }
+        "p"     { $NewName = $SuggestPatchName; $NewCode = $SuggestCode }
+        "minor" { $NewName = $SuggestMinorName; $NewCode = $SuggestCode }
+        "m"     { $NewName = $SuggestMinorName; $NewCode = $SuggestCode }
+        "major" { $NewName = $SuggestMajorName; $NewCode = $SuggestCode }
+        default {
+            $NewName = $TypeOrVersion
+            $NewCode = if ($ExplicitCode -gt 0) { $ExplicitCode } else { $SuggestCode }
+        }
+    }
+} else {
+    Write-Host "请选择升级类型:"
+    Write-Host "  1) Patch (补丁升级)   : $SuggestPatchName (versionCode: $SuggestCode)" -ForegroundColor Yellow
+    Write-Host "  2) Minor (次版本升级) : $SuggestMinorName (versionCode: $SuggestCode)" -ForegroundColor Yellow
+    Write-Host "  3) Major (主版本升级) : $SuggestMajorName (versionCode: $SuggestCode)" -ForegroundColor Yellow
+    Write-Host "  4) 自定义版本号输入" -ForegroundColor Yellow
+    Write-Host "  5) 退出" -ForegroundColor Yellow
+    Write-Host ""
+    $choice = Read-Host "请输入选项 [1-5] (默认 1)"
+    if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "1" }
+
+    switch ($choice) {
+        "1" { $NewName = $SuggestPatchName; $NewCode = $SuggestCode }
+        "2" { $NewName = $SuggestMinorName; $NewCode = $SuggestCode }
+        "3" { $NewName = $SuggestMajorName; $NewCode = $SuggestCode }
+        "4" {
+            $inputName = Read-Host "请输入新的 versionName (例如 $SuggestPatchName)"
+            if ([string]::IsNullOrWhiteSpace($inputName)) {
+                Write-Host "[错误] versionName 不能为空！" -ForegroundColor Red
+                exit 1
+            }
+            $NewName = $inputName
+            $inputCode = Read-Host "请输入新的 versionCode (回车默认 $SuggestCode)"
+            if ([string]::IsNullOrWhiteSpace($inputCode)) {
+                $NewCode = $SuggestCode
+            } else {
+                $NewCode = [int]$inputCode
+            }
+        }
+        "5" { Write-Host "已取消操作。"; exit 0 }
+        default { Write-Host "[错误] 无效选择！" -ForegroundColor Red; exit 1 }
+    }
+}
+
+Write-Host ""
+Write-Host "------------------------------------------------------" -ForegroundColor Cyan
+Write-Host "准备更新版本:"
+Write-Host "  versionName : $CurrentName -> $NewName" -ForegroundColor Green
+Write-Host "  versionCode : $CurrentCode -> $NewCode" -ForegroundColor Green
+Write-Host "------------------------------------------------------" -ForegroundColor Cyan
+
+# 执行文本替换
+$newContent = [regex]::Replace($content, 'versionCode\s*=\s*[0-9]+', "versionCode = $NewCode")
+$newContent = [regex]::Replace($newContent, 'versionName\s*=\s*"[^"]+"', "versionName = `"$NewName`"")
+
+[System.IO.File]::WriteAllText((Resolve-Path $GradleFile).Path, $newContent, [System.Text.Encoding]::UTF8)
+
+Write-Host "✓ 版本号已成功更新到 $GradleFile ！" -ForegroundColor Green
+Write-Host ""

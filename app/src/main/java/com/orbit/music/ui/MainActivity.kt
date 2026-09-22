@@ -40,9 +40,13 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.orbit.music.data.model.AppScreen
 import com.orbit.music.ui.components.AppBackgroundLayer
+
 import com.orbit.music.ui.components.MiniPlayerBar
 import com.orbit.music.ui.screens.MainEqualizerScreen
 import com.orbit.music.ui.screens.MusicLibraryScreen
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.haze
+
 import com.orbit.music.ui.screens.NowPlayingScreen
 import com.orbit.music.ui.screens.ParametricEqScreen
 import com.orbit.music.ui.screens.SettingsScreen
@@ -209,48 +213,57 @@ class MainActivity : ComponentActivity() {
                     hasCustomBackground = hasCustomBg,
                     customSolidBackgroundColor = uiState.customSolidBackgroundColor
                 ) {
+                    val hazeState = remember { HazeState() }
                     Box(modifier = Modifier.fillMaxSize()) {
-                        AppBackgroundLayer(
-                            customBackgroundPath = uiState.customBackgroundPath,
-                            customSolidBackgroundColor = uiState.customSolidBackgroundColor,
-                            blurRadius = uiState.backgroundBlurRadius,
-                            blurStyle = uiState.backgroundBlurStyle,
-                            dimAlpha = uiState.backgroundDimAlpha
-                        )
+                        // 主体内容与背景层：绑定 Haze 背景源，供浮动层（如 MiniPlayerBar）实时采集并高斯模糊
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .haze(state = hazeState)
+                        ) {
+                            AppBackgroundLayer(
+                                customBackgroundPath = uiState.customBackgroundPath,
+                                customSolidBackgroundColor = uiState.customSolidBackgroundColor,
+                                blurRadius = uiState.backgroundBlurRadius,
+                                blurStyle = uiState.backgroundBlurStyle,
+                                dimAlpha = uiState.backgroundDimAlpha
+                            )
 
-                        when (uiState.currentScreen) {
-                            AppScreen.LIBRARY -> {
-                                MusicLibraryScreen(
-                                    viewModel = musicPlayerViewModel,
-                                    isTabletMode = uiState.isTabletLandscapeModeEnabled,
-                                    onOpenSettings = {
-                                        previousScreenBeforeSettings = AppScreen.LIBRARY
-                                        equalizerViewModel.navigateTo(AppScreen.SETTINGS)
-                                    }
-                                )
-                            }
-                            AppScreen.MAIN -> {
-                                MainEqualizerScreen(
-                                    viewModel = equalizerViewModel,
-                                    onBackToLibrary = handleBackFromMain,
-                                    onOpenSettings = {
-                                        previousScreenBeforeSettings = AppScreen.MAIN
-                                        equalizerViewModel.navigateTo(AppScreen.SETTINGS)
-                                    }
-                                )
-                            }
-                            AppScreen.PARAMETRIC -> {
-                                ParametricEqScreen(
-                                    viewModel = equalizerViewModel,
-                                    onBack = { equalizerViewModel.navigateTo(AppScreen.MAIN) }
-                                )
-                            }
-                            AppScreen.SETTINGS -> {
-                                SettingsScreen(
-                                    viewModel = equalizerViewModel,
-                                    musicViewModel = musicPlayerViewModel,
-                                    onBack = handleBackFromSettings
-                                )
+                            when (uiState.currentScreen) {
+
+                                AppScreen.LIBRARY -> {
+                                    MusicLibraryScreen(
+                                        viewModel = musicPlayerViewModel,
+                                        isTabletMode = uiState.isTabletLandscapeModeEnabled,
+                                        onOpenSettings = {
+                                            previousScreenBeforeSettings = AppScreen.LIBRARY
+                                            equalizerViewModel.navigateTo(AppScreen.SETTINGS)
+                                        }
+                                    )
+                                }
+                                AppScreen.MAIN -> {
+                                    MainEqualizerScreen(
+                                        viewModel = equalizerViewModel,
+                                        onBackToLibrary = handleBackFromMain,
+                                        onOpenSettings = {
+                                            previousScreenBeforeSettings = AppScreen.MAIN
+                                            equalizerViewModel.navigateTo(AppScreen.SETTINGS)
+                                        }
+                                    )
+                                }
+                                AppScreen.PARAMETRIC -> {
+                                    ParametricEqScreen(
+                                        viewModel = equalizerViewModel,
+                                        onBack = { equalizerViewModel.navigateTo(AppScreen.MAIN) }
+                                    )
+                                }
+                                AppScreen.SETTINGS -> {
+                                    SettingsScreen(
+                                        viewModel = equalizerViewModel,
+                                        musicViewModel = musicPlayerViewModel,
+                                        onBack = handleBackFromSettings
+                                    )
+                                }
                             }
                         }
 
@@ -281,9 +294,11 @@ class MainActivity : ComponentActivity() {
                                 onTogglePlay = { musicPlayerViewModel.togglePlayPause() },
                                 onPlayNext = { musicPlayerViewModel.playNext() },
                                 onPlayPrevious = { musicPlayerViewModel.playPrevious() },
-                                onClick = { musicPlayerViewModel.setNowPlayingExpanded(true) }
+                                onClick = { musicPlayerViewModel.setNowPlayingExpanded(true) },
+                                hazeState = hazeState
                             )
                         }
+
 
                         // 全屏正在播放页面展开过渡
                         AnimatedVisibility(

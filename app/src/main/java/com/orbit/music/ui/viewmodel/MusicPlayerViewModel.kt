@@ -12,6 +12,7 @@ import com.orbit.music.data.model.AlbumItem
 import com.orbit.music.data.model.ArtistItem
 import com.orbit.music.data.model.FolderItem
 import com.orbit.music.data.model.Playlist
+import com.orbit.music.data.model.PlaybackOrigin
 import com.orbit.music.data.model.Song
 import com.orbit.music.data.model.SongAttitude
 import com.orbit.music.data.repository.MusicRepository
@@ -429,7 +430,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun playSong(songs: List<Song>, index: Int) {
+    private val _playbackOrigin = MutableStateFlow<PlaybackOrigin>(PlaybackOrigin.AllSongs)
+    val playbackOrigin: StateFlow<PlaybackOrigin> = _playbackOrigin.asStateFlow()
+
+    fun setPlaybackOrigin(origin: PlaybackOrigin) {
+        _playbackOrigin.value = origin
+    }
+
+    fun playSong(songs: List<Song>, index: Int, origin: PlaybackOrigin? = null) {
+        if (origin != null) {
+            _playbackOrigin.value = origin
+        }
         playerManager.playSongList(songs, index)
     }
 

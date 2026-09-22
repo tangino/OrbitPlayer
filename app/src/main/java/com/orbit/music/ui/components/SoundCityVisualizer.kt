@@ -170,14 +170,15 @@ fun SoundCityVisualizer(
                     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
                         super.onSizeChanged(w, h, oldw, oldh)
                         if (w > 0 && h > 0) {
-                            // 提升 3D 音乐都市渲染分辨率至高清 (短边 720px，兼具满帧 60FPS 与细腻几何边缘)
-                            val maxShortEdge = 720f
+                            // 3D 音乐都市体素光线步进优化：短边定为 600px，既兼顾移动端 GPU 满帧 60~120 FPS，又提供极高精细度与无锯齿阴影
+                            val maxShortEdge = 600f
                             val shortEdge = kotlin.math.min(w, h).toFloat()
                             val scale = if (shortEdge > maxShortEdge) maxShortEdge / shortEdge else 1.0f
                             val targetW = kotlin.math.max(1, (w * scale).toInt())
                             val targetH = kotlin.math.max(1, (h * scale).toInt())
                             holder.setFixedSize(targetW, targetH)
                         }
+
                     }
                 }.apply {
                     setEGLContextClientVersion(2)

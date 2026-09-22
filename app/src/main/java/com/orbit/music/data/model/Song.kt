@@ -78,3 +78,15 @@ data class Playlist(
     val songCount: Int,
     val createdAt: Long
 )
+
+/**
+ * 歌曲播放来源上下文（用于一键精准定位回播放时的原始页面）
+ */
+sealed interface PlaybackOrigin {
+    object AllSongs : PlaybackOrigin
+    data class Folder(val folderPath: String) : PlaybackOrigin
+    data class Album(val albumItem: AlbumItem) : PlaybackOrigin
+    data class Artist(val artistItem: ArtistItem) : PlaybackOrigin
+    data class PlaylistOrigin(val playlist: Playlist) : PlaybackOrigin
+}
+

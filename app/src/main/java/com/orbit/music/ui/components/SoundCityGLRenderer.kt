@@ -87,15 +87,23 @@ class SoundCityGLRenderer : GLSurfaceView.Renderer {
         if (programId == 0) return
 
         val now = SystemClock.uptimeMillis()
-        val dt = if (lastFrameTime == 0L) 0.016f else ((now - lastFrameTime) / 1000.0f).coerceIn(0.001f, 0.1f)
+        val dt = if (lastFrameTime == 0L) 0.016f else ((now - lastFrameTime) / 1000.0f).coerceIn(0.001f, 0.08f)
         lastFrameTime = now
 
-        // 4 频段音频能量物理阻尼平滑 (Attack 迅捷，Decay 平滑)
-        val attack = 0.40f
-        freq0 += (freq0Target - freq0) * attack
-        freq1 += (freq1Target - freq1) * attack
-        freq2 += (freq2Target - freq2) * attack
-        freq3 += (freq3Target - freq3) * attack
+        // 4 频段音频能量非线性连续物理阻尼平滑 (Attack 迅捷有力，Decay 柔和缓降，彻底消除跳动抽搐)
+        val attackRate = 18.0f // 上冲响应速率 (响应节奏鼓点，零顿挫)
+        val decayRate = 7.2f   // 下落衰减速率 (平滑物理缓降，防瞬间塌陷抽搐)
+
+        fun smoothFreq(current: Float, target: Float): Float {
+            val rate = if (target > current) attackRate else decayRate
+            val factor = (1.0f - kotlin.math.exp(-rate * dt)).coerceIn(0.01f, 1.0f)
+            return current + (target - current) * factor
+        }
+
+        freq0 = smoothFreq(freq0, freq0Target)
+        freq1 = smoothFreq(freq1, freq1Target)
+        freq2 = smoothFreq(freq2, freq2Target)
+        freq3 = smoothFreq(freq3, freq3Target)
 
         // 播放状态下以标准时间推进，暂停状态下以微速漫游
         val speedMultiplier = if (isPlaying) 1.0f else 0.18f
@@ -170,24 +178,6 @@ class SoundCityGLRenderer : GLSurfaceView.Renderer {
                 return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
             }
 
-            // 3D 噪声，用于木质纤维与微小凹凸
-            float noise3d(vec3 p) {
-                vec3 i = floor(p);
-                vec3 f = fract(p);
-                f = f * f * (3.0 - 2.0 * f);
-                float n = i.x + i.y * 57.0 + i.z * 113.0;
-                float a = hash(n);
-                float b = hash(n + 1.0);
-                float c = hash(n + 57.0);
-                float d = hash(n + 58.0);
-                float e = hash(n + 113.0);
-                float g = hash(n + 114.0);
-                float h = hash(n + 170.0);
-                float k = hash(n + 171.0);
-                return mix(mix(mix(a, b, f.x), mix(c, d, f.x), f.y),
-                           mix(mix(e, g, f.x), mix(h, k, f.x), f.y), f.z);
-            }
-
             // 精确带符号圆角立方体距离场 (Inigo Quilez)
             // b 为半宽 (除去圆角半径 r 后的核心半宽)
             float sdRoundBox(vec3 p, vec3 b, float r) {
@@ -201,10 +191,10 @@ class SoundCityGLRenderer : GLSurfaceView.Renderer {
                 float id = hash2(ipos);
                 
                 float f = 0.0;
-                f += uFreqs.x * clamp(1.0 - abs(id - 0.20) / 0.25, 0.0, 1.0);
-                f += uFreqs.y * clamp(1.0 - abs(id - 0.45) / 0.25, 0.0, 1.0);
-                f += uFreqs.z * clamp(1.0 - abs(id - 0.70) / 0.25, 0.0, 1.0);
-                f += uFreqs.w * clamp(1.0 - abs(id - 0.90) / 0.25, 0.0, 1.0);
+                f += uFreqs.x * clamp(1.0 - abs(id - 0.20) * 4.0, 0.0, 1.0);
+                f += uFreqs.y * clamp(1.0 - abs(id - 0.45) * 4.0, 0.0, 1.0);
+                f += uFreqs.z * clamp(1.0 - abs(id - 0.70) * 4.0, 0.0, 1.0);
+                f += uFreqs.w * clamp(1.0 - abs(id - 0.90) * 4.0, 0.0, 1.0);
 
                 f = pow(clamp(f * 1.5, 0.0, 1.5), 1.6);
                 // 基础柱子高度 + 音乐律动提升高度
@@ -215,7 +205,7 @@ class SoundCityGLRenderer : GLSurfaceView.Renderer {
 
             // 局部精确法线求解
             vec3 calcLocalNormal(vec3 p, vec3 b, float r) {
-                vec2 e = vec2(1.0, -1.0) * 0.002;
+                vec2 e = vec2(1.0, -1.0) * 0.003;
                 return normalize(e.xyy * sdRoundBox(p + e.xyy, b, r) + 
                                  e.yyx * sdRoundBox(p + e.yyx, b, r) + 
                                  e.yxy * sdRoundBox(p + e.yxy, b, r) + 
@@ -238,8 +228,7 @@ class SoundCityGLRenderer : GLSurfaceView.Renderer {
                 return tminmax;
             }
 
-            // 体素网格穿透步进 (2D Grid Traversal)
-            // 返回 vec4: (t, id, f, isTop)
+            // 体素网格穿透步进 (2D Grid Traversal) - 高性能极致优化
             vec4 trace(vec3 ro, vec3 rd, float tmin, float tmax, out vec3 outNormal, out vec3 outHitP, out vec3 outLocalP) {
                 ro += tmin * rd;
                 vec2 pos = floor(ro.xz);
@@ -254,7 +243,7 @@ class SoundCityGLRenderer : GLSurfaceView.Renderer {
                 const float roundR = 0.085;
                 const float halfW = 0.385;
                 
-                for (int i = 0; i < 30; i++) {
+                for (int i = 0; i < 22; i++) {
                     vec3 cub = mapH(pos);
                     float h = cub.x;
 
@@ -275,13 +264,13 @@ class SoundCityGLRenderer : GLSurfaceView.Renderer {
                         float st = max(0.0, tN);
                         float d = 1.0;
                         
-                        for (int j = 0; j < 26; j++) {
+                        for (int j = 0; j < 14; j++) {
                             d = sdRoundBox(rc + st * rd, rb, roundR);
                             st += d;
-                            if (st > tF || d < 0.001) break;
+                            if (st > tF || d < 0.002) break;
                         }
 
-                        if (d < 0.0035 * (1.0 + 0.05 * st)) {
+                        if (d < 0.005 * (1.0 + 0.06 * st)) {
                             vec3 hitLocal = rc + st * rd;
                             outNormal = calcLocalNormal(hitLocal, rb, roundR);
                             outHitP = ro + st * rd;
@@ -301,49 +290,53 @@ class SoundCityGLRenderer : GLSurfaceView.Renderer {
                 return res;
             }
 
-            // 投射阴影计算 (Raymarched Hard/Soft Shadows)
-            // 从表面击中点朝向光源步进，检测被其他木柱遮挡产生的高级投影
-            float calcShadow(vec3 ro, vec3 rd, float k) {
+            // 投射高品质连续平滑软阴影 (SDF Raymarched Soft Shadows with Adaptive Marching)
+            float calcShadow(vec3 ro, vec3 rd, float k, vec2 fragCoord) {
                 float res = 1.0;
-                float t = 0.08;
-                for (int i = 0; i < 16; i++) {
+                // 引入微小的亚像素随机抖动，打破规则采样步长条纹
+                float t = 0.08 + 0.04 * hash2(fragCoord);
+                
+                const float roundR = 0.085;
+                const float halfW = 0.385;
+
+                for (int i = 0; i < 14; i++) {
                     vec3 hp = ro + t * rd;
-                    if (hp.y > 5.5 || t > 18.0) break;
+                    if (hp.y > 6.0 || t > 18.0) break;
                     
                     vec2 gpos = floor(hp.xz);
                     vec3 cub = mapH(gpos);
                     float h = cub.x;
                     
-                    // 木柱包围盒内部高度判断
-                    vec2 localXZ = abs(fract(hp.xz) - 0.5);
-                    if (localXZ.x < 0.47 && localXZ.y < 0.47 && hp.y < h) {
-                        return 0.0; // 完全处于阴影中
+                    float halfH = max(0.02, h * 0.5 - roundR);
+                    vec3 center = vec3(gpos.x + 0.5, h * 0.5, gpos.y + 0.5);
+                    vec3 localP = hp - center;
+                    vec3 rb = vec3(halfW, halfH, halfW);
+                    
+                    float d = sdRoundBox(localP, rb, roundR);
+                    
+                    // 击中实体内部，完全处于实影本影区 (Umbra)
+                    if (d < 0.001) {
+                        return 0.0;
                     }
                     
-                    // 软阴影估计
-                    float dH = hp.y - h;
-                    if (localXZ.x < 0.52 && localXZ.y < 0.52 && dH > 0.0) {
-                        res = min(res, k * dH / t);
-                    }
+                    // 基于 Inigo Quilez 改进型半影 (Penumbra) 连续衰减曲线
+                    res = min(res, k * d / t);
                     
-                    t += 0.35;
+                    // 自适应步长：在靠近物体时高精度逼近，在空旷处加速推进
+                    t += clamp(d, 0.08, 0.5);
                 }
-                return clamp(res, 0.0, 1.0);
+                
+                // 柔和 Hermite 曲线平滑过度，消除一切生硬阶梯边缘
+                res = clamp(res, 0.0, 1.0);
+                return res * res * (3.0 - 2.0 * res);
             }
 
-            // 高级程序化原木木纹材质 (根据第一张参考图设计)
-            // 包括年轮横截面、纵向木质纤维与温润漆面微凹凸
+            // 高级程序化原木木纹材质
             vec3 getWoodMaterial(vec3 worldP, vec3 localP, vec3 nor, float woodId, out float outRoughness) {
-                // 1. 根据木柱 ID 分配 5 种高级木料种类色彩
-                // ① 温暖金柚木 (Golden Teak)
                 vec3 cTeak = vec3(0.85, 0.52, 0.28);
-                // ② 经典红木/酸枝木 (Rich Mahogany / Rosewood)
                 vec3 cMahogany = vec3(0.52, 0.18, 0.12);
-                // ③ 深邃黑胡桃 (Dark Walnut)
                 vec3 cWalnut = vec3(0.25, 0.15, 0.11);
-                // ④ 浅色白枫木 (Light Maple)
                 vec3 cMaple = vec3(0.92, 0.72, 0.48);
-                // ⑤ 琥珀黄雪松 (Amber Cedar)
                 vec3 cCedar = vec3(0.76, 0.42, 0.22);
                 
                 vec3 baseWood;
@@ -360,44 +353,36 @@ class SoundCityGLRenderer : GLSurfaceView.Renderer {
                     baseWood = cCedar;
                 }
 
-                // 2. 融入当前播放音乐主题色调 (微妙融合，保持原木高贵质感的同时响应专辑色彩)
+                // 融入当前主题色调
                 vec3 albumTint = mix(uColor1, uColor2, fract(woodId * 2.31));
                 baseWood = mix(baseWood, baseWood * albumTint * 1.5, 0.18);
 
-                // 3. 程序化木纹 (Wood Grain & Tree Rings)
-                // 顶面年轮与侧面纵向纤维
+                // 程序化木纹年轮
                 vec2 centerOffset = vec2(hash(woodId * 11.3) - 0.5, hash(woodId * 23.7) - 0.5) * 0.8;
                 vec2 woodUV = localP.xz - centerOffset;
                 
-                // 年轮变形噪声
                 float ringDist = length(woodUV * vec2(1.2, 0.85)) * 16.0;
                 float ringNoise = noise2d(woodUV * 8.0 + worldP.y * 0.15) * 3.5;
                 float ring = sin(ringDist + ringNoise);
                 
-                // 纵向木质纤维 (沿 Y 轴)
-                float fiber = noise3d(vec3(localP.x * 28.0, localP.y * 2.0, localP.z * 28.0)) * 0.35;
-                float fineGrain = sin((localP.x + localP.z) * 55.0 + sin(localP.y * 4.0) * 2.0) * 0.08;
+                float fiber = sin((localP.x + localP.z) * 45.0 + sin(localP.y * 4.0) * 2.0) * 0.12;
+                float grainFactor = 0.88 + 0.18 * ring + fiber;
                 
-                // 综合木纹调制因子
-                float grainFactor = 0.85 + 0.18 * ring + fiber + fineGrain;
-                
-                // 顶部稍显深色年轮心，边缘微暗 (模拟打磨木块圆角边缘的自然磨损暗化)
                 float edgeDarken = 1.0 - 0.15 * pow(max(abs(localP.x), abs(localP.z)) / 0.46, 3.0);
                 
                 vec3 finalWood = baseWood * grainFactor * edgeDarken;
-                outRoughness = 0.35 + 0.15 * ring; // 漆面平滑度
+                outRoughness = 0.35 + 0.15 * ring;
                 return finalWood;
             }
 
-            // 主太阳光源方向 (温暖斜射阳光，产生第一张图标志性的长投影与明暗交界)
+            // 主太阳光源方向
             const vec3 sunDir = normalize(vec3(0.72, 0.92, -0.65));
-            const vec3 sunCol = vec3(1.65, 1.35, 1.05);   // 明亮温暖日光
-            const vec3 skyCol = vec3(0.18, 0.12, 0.09);   // 温暖暗部环境光
-            const vec3 bounceCol = vec3(0.12, 0.08, 0.05);// 地面反弹漫射光
+            const vec3 sunCol = vec3(1.65, 1.35, 1.05);
+            const vec3 skyCol = vec3(0.18, 0.12, 0.09);
+            const vec3 bounceCol = vec3(0.12, 0.08, 0.05);
 
             // 物理渲染着色
-            vec3 render(vec3 ro, vec3 rd) {
-                // 极简纯黑虚空背景 (第一张参考图标志性风格)
+            vec3 render(vec3 ro, vec3 rd, vec2 fragCoord) {
                 vec3 col = vec3(0.0);
                 vec2 tminmax = vec2(0.0, 36.0);
                 tminmax = boundingVolume(tminmax, ro, rd);
@@ -412,51 +397,39 @@ class SoundCityGLRenderer : GLSurfaceView.Renderer {
                     vec3 pos = hitP;
                     float woodId = res.y;
 
-                    // 获取高级木质材质色彩与粗糙度
                     float roughness = 0.4;
                     vec3 albedo = getWoodMaterial(pos, localP, nor, woodId, roughness);
 
-                    // 计算来自其他柱子的真实投射阴影
-                    float shadow = calcShadow(pos + nor * 0.015, sunDir, 3.0);
+                    float shadow = calcShadow(pos + nor * 0.025, sunDir, 3.5, fragCoord);
 
-                    // 环境光遮蔽 (越靠近底部缝隙越暗)
                     float occ = clamp(pos.y / 2.2, 0.18, 1.0);
-                    // 局部微观凹凸遮蔽
                     occ *= (0.65 + 0.35 * max(0.0, nor.y));
 
-                    // 1. 直射日光漫反射 (Lambert)
                     float nDotL = clamp(dot(nor, sunDir), 0.0, 1.0);
                     vec3 directLight = sunCol * (nDotL * shadow);
 
-                    // 2. 天光与环境光漫反射
                     float skyDiff = clamp(0.5 + 0.5 * nor.y, 0.0, 1.0);
                     vec3 ambientLight = skyCol * (skyDiff * occ);
 
-                    // 3. 地面微弱反弹光
                     float bounceDiff = clamp(-nor.y, 0.0, 1.0);
                     vec3 bounceLight = bounceCol * (bounceDiff * occ);
 
-                    // 4. 漆面细腻高光 (Blinn-Phong Specular with Fresnel)
                     vec3 hal = normalize(sunDir - rd);
                     float nDotH = clamp(dot(nor, hal), 0.0, 1.0);
                     float specPower = mix(32.0, 12.0, roughness);
                     float specIntensity = pow(nDotH, specPower);
-                    // 菲涅尔效应 (边缘更强的高光光泽)
                     float fresnel = pow(clamp(1.0 - dot(-rd, nor), 0.0, 1.0), 4.0);
                     vec3 specular = sunCol * specIntensity * (0.35 + 0.65 * fresnel) * shadow * 0.6;
 
-                    // 综合光照方程
                     vec3 lighting = directLight + ambientLight + bounceLight;
                     col = albedo * lighting + specular;
 
-                    // 距离黑色虚空淡出衰减
                     col *= 1.0 - smoothstep(18.0, 34.0, t);
                 }
 
                 return col;
             }
 
-            // 摄像机视线矩阵构建
             mat3 setLookAt(vec3 ro, vec3 ta, float cr) {
                 vec3 cw = normalize(ta - ro);
                 vec3 cp = vec3(sin(cr), cos(cr), 0.0);
@@ -469,7 +442,6 @@ class SoundCityGLRenderer : GLSurfaceView.Renderer {
                 vec2 p = (-uResolution.xy + 2.0 * gl_FragCoord.xy) / uResolution.y;
                 float time = 4.0 + 0.18 * uTime;
 
-                // 3D 摄像机全景环绕漫游轨迹 (俯视倾斜角透视，完美对齐第一张参考图)
                 vec3 ro = vec3(9.2 * cos(0.25 * time), 5.6 + 1.2 * sin(0.12 * time), 9.2 * sin(0.25 * time));
                 vec3 ta = vec3(0.0, 1.2, 0.0);
                 float roll = 0.08 * sin(0.15 * time);
@@ -477,23 +449,20 @@ class SoundCityGLRenderer : GLSurfaceView.Renderer {
                 mat3 ca = setLookAt(ro, ta, roll);
                 vec3 rd = normalize(ca * vec3(p, 1.65));
 
-                vec3 col = render(ro, rd);
+                vec3 col = render(ro, rd, gl_FragCoord.xy);
                 
-                // 电影胶片色调映射与伽马校正 (Tone Mapping & Gamma)
-                // 暖调高对比原木质感
                 col = col / (1.0 + col * 0.6);
-                col = pow(col, vec3(0.4545)); // Gamma 2.2
+                col = pow(col, vec3(0.4545));
 
-                // 色彩微调：微调饱和度与温润暖色氛围
                 col = pow(col, vec3(0.92, 0.96, 1.02));
 
-                // 边缘自然晕影 (Vignette)
                 vec2 q = gl_FragCoord.xy / uResolution.xy;
                 col *= 0.35 + 0.65 * pow(16.0 * q.x * q.y * (1.0 - q.x) * (1.0 - q.y), 0.15);
 
                 gl_FragColor = vec4(col, 1.0);
             }
         """.trimIndent()
+
 
         val vertexShader = compileShader(GLES20.GL_VERTEX_SHADER, vertexShaderSource)
         val fragmentShader = compileShader(GLES20.GL_FRAGMENT_SHADER, fragmentShaderSource)

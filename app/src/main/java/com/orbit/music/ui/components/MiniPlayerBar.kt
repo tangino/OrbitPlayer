@@ -1,6 +1,9 @@
 package com.orbit.music.ui.components
 
 import android.content.res.Configuration
+import android.graphics.Bitmap
+import android.graphics.BitmapShader
+import android.graphics.Shader
 import android.graphics.Paint as FrameworkPaint
 import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
@@ -62,6 +65,9 @@ import com.orbit.music.audio.PlaybackState
 import com.orbit.music.data.provider.AudioCoverProvider
 import com.orbit.music.ui.theme.*
 import com.orbit.music.utils.CoverHelper
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.hazeChild
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -91,6 +97,7 @@ fun MiniPlayerBar(
     isCollapsed: Boolean = false,
     onToggleCollapse: (Boolean) -> Unit = {},
     isTabletMode: Boolean = false,
+    hazeState: HazeState? = null,
     modifier: Modifier = Modifier
 ) {
     val song = playbackState.currentSong ?: return
@@ -172,18 +179,6 @@ fun MiniPlayerBar(
         }
     }
 
-    // 悬浮环境微光呼吸动画
-    val infiniteTransition = rememberInfiniteTransition(label = "DockBreathingAnim")
-    val glowIntensity by infiniteTransition.animateFloat(
-        initialValue = 0.25f,
-        targetValue = if (isPlaying) 0.65f else 0.20f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1800, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "glowIntensity"
-    )
-
     BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
@@ -226,82 +221,73 @@ fun MiniPlayerBar(
                         Modifier
                             .masterDropShadow(
                                 color = Color.Black,
-                                alpha = 0.70f,
+                                alpha = 0.50f,
                                 cornerRadius = currentCorner,
-                                shadowBlur = lerp(20.dp, 12.dp, morphProgress),
-                                offsetY = 6.dp
+                                shadowBlur = lerp(26.dp, 14.dp, morphProgress),
+                                offsetY = 8.dp
                             )
                             .masterDropShadow(
-                                color = colors.primary,
-                                alpha = glowIntensity * 0.40f,
+                                color = Color(0xFF000000),
+                                alpha = 0.25f,
                                 cornerRadius = currentCorner,
-                                shadowBlur = lerp(12.dp, 8.dp, morphProgress),
+                                shadowBlur = lerp(12.dp, 6.dp, morphProgress),
                                 offsetY = 2.dp
                             )
                     } else {
                         Modifier
                             .masterDropShadow(
-                                color = Color.Black,
-                                alpha = if (isPlaying) 0.32f else 0.26f,
+                                color = Color(0xFF0F172A),
+                                alpha = 0.16f,
                                 cornerRadius = currentCorner,
-                                shadowBlur = lerp(18.dp, 10.dp, morphProgress),
+                                shadowBlur = lerp(24.dp, 12.dp, morphProgress),
                                 offsetY = 8.dp
                             )
                             .masterDropShadow(
                                 color = Color.Black,
-                                alpha = 0.20f,
+                                alpha = 0.08f,
                                 cornerRadius = currentCorner,
-                                shadowBlur = lerp(7.dp, 5.dp, morphProgress),
+                                shadowBlur = lerp(12.dp, 6.dp, morphProgress),
                                 offsetY = 3.dp
                             )
                     }
                 )
-                // 2. 原生系统 Elevation 辅以增强
-                .shadow(
-                    elevation = if (isPlaying) 12.dp else 8.dp,
-                    shape = dockShape,
-                    spotColor = if (colors.isDark) colors.primary.copy(alpha = glowIntensity * 0.5f) else Color(0x55000000),
-                    ambientColor = if (colors.isDark) Color(0xAA000000) else Color(0x30000000)
-                )
                 .clip(dockShape)
-                // 物理亚克力多层微光渐变背景
-                .background(
-                    brush = if (colors.isDark) {
-                        Brush.verticalGradient(
-                            listOf(
-                                Color(0xFA202636),
-                                Color(0xFC131722),
-                                Color(0xFF0C0F17)
-                            )
-                        )
-                    } else {
-                        Brush.verticalGradient(
-                            listOf(
-                                Color(0xFFFFFFFF),
-                                Color(0xFFFCFDFE),
-                                Color(0xFFF6F8FA)
-                            )
-                        )
-                    }
-                )
+
+                // 2. 真实硬件级实时高斯背景模糊 (Backdrop Blur 实时模糊穿透底层的文字与封面)
                 .then(
-                    if (colors.isDark) {
-                        Modifier.border(
-                            width = 1.3.dp,
-                            brush = Brush.verticalGradient(
-                                listOf(
-                                    colors.primary.copy(alpha = if (isPlaying) 0.75f else 0.45f),
-                                    Color(0x2500E5FF),
-                                    Color(0x15FFFFFF),
-                                    colors.secondary.copy(alpha = if (isPlaying) 0.75f else 0.45f)
-                                )
-                            ),
-                            shape = dockShape
+                    if (hazeState != null) {
+                        Modifier.hazeChild(
+                            state = hazeState,
+                            shape = dockShape,
+                            style = HazeStyle(
+                                tint = if (colors.isDark) Color(0x180F172A) else Color(0x20FFFFFF),
+                                blurRadius = 24.dp,
+                                noiseFactor = 0f
+                            )
                         )
                     } else {
                         Modifier
+                            .background(
+                                color = if (colors.isDark) Color(0xB8161E2C) else Color(0xD8FFFFFF),
+                                shape = dockShape
+                            )
+                            .background(
+                                color = if (colors.isDark) Color(0x1CFFFFFF) else Color(0x35FFFFFF),
+                                shape = dockShape
+                            )
                     }
                 )
+                // 3. 卡片四周 0.8dp 纯白外边框线 (精致晶体包边)
+                .border(
+                    width = 0.8.dp,
+                    color = if (colors.isDark) Color(0x40FFFFFF) else Color(0x60FFFFFF),
+                    shape = dockShape
+                )
+
+
+
+
+
                 // 智能手势监听：上下滑动切歌（即时微动反馈，绝不死锁） + 右滑收起 + 左滑展开
                 .pointerInput(isCollapsed) {
                     if (isCollapsed) {
@@ -512,7 +498,12 @@ fun MiniPlayerBar(
                                 .size(34.dp)
                                 .clip(CircleShape)
                                 .background(
-                                    if (colors.isDark) Color(0x18FFFFFF) else Color(0x0A000000)
+                                    if (colors.isDark) Color(0x20FFFFFF) else Color(0x0F000000)
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = if (colors.isDark) Color(0x1AFFFFFF) else Color(0x25000000),
+                                    shape = CircleShape
                                 )
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
@@ -526,8 +517,8 @@ fun MiniPlayerBar(
                             Icon(
                                 imageVector = Icons.Default.SkipPrevious,
                                 contentDescription = "Previous",
-                                tint = colors.textPrimary.copy(alpha = 0.85f),
-                                modifier = Modifier.size(20.dp)
+                                tint = colors.textPrimary.copy(alpha = 0.90f),
+                                modifier = Modifier.size(19.dp)
                             )
                         }
 
@@ -535,9 +526,30 @@ fun MiniPlayerBar(
                         Box(
                             modifier = Modifier
                                 .size(42.dp)
+                                .shadow(
+                                    elevation = 4.dp,
+                                    shape = CircleShape,
+                                    spotColor = if (colors.isDark) Color(0xFFFF6A3D).copy(alpha = 0.5f) else Color(0x40000000),
+                                    ambientColor = Color.Black.copy(alpha = 0.2f)
+                                )
                                 .clip(CircleShape)
                                 .background(
-                                    if (colors.isDark) Color(0xFFFF6A3D) else Color(0xFFF2541B)
+                                    brush = if (colors.isDark) {
+                                        Brush.verticalGradient(
+                                            listOf(Color(0xFFFF7A4D), Color(0xFFE84D1B))
+                                        )
+                                    } else {
+                                        Brush.verticalGradient(
+                                            listOf(Color(0xFFF75B25), Color(0xFFD83B08))
+                                        )
+                                    }
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    brush = Brush.verticalGradient(
+                                        listOf(Color(0x99FFFFFF), Color(0x20FFFFFF))
+                                    ),
+                                    shape = CircleShape
                                 )
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
@@ -560,7 +572,12 @@ fun MiniPlayerBar(
                                 .size(34.dp)
                                 .clip(CircleShape)
                                 .background(
-                                    if (colors.isDark) Color(0x18FFFFFF) else Color(0x0A000000)
+                                    if (colors.isDark) Color(0x20FFFFFF) else Color(0x0F000000)
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = if (colors.isDark) Color(0x1AFFFFFF) else Color(0x25000000),
+                                    shape = CircleShape
                                 )
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
@@ -574,8 +591,8 @@ fun MiniPlayerBar(
                             Icon(
                                 imageVector = Icons.Default.SkipNext,
                                 contentDescription = "Next",
-                                tint = colors.textPrimary.copy(alpha = 0.85f),
-                                modifier = Modifier.size(20.dp)
+                                tint = colors.textPrimary.copy(alpha = 0.90f),
+                                modifier = Modifier.size(19.dp)
                             )
                         }
                     }
@@ -980,4 +997,10 @@ private fun Modifier.masterDropShadow(
         )
     }
 }
+
+
+
+
+
+
 

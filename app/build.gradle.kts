@@ -11,8 +11,8 @@ android {
         applicationId = "com.orbit.music"
         minSdk = 21
         targetSdk = 34
-        versionCode = 11
-        versionName = "0.2.0"
+        versionCode = 12
+        versionName = "0.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -34,7 +34,19 @@ android {
         }
     }
 
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("debug")
@@ -116,6 +128,11 @@ dependencies {
 
     // OkHttp 网络客户端 (用于 MusicBrainz 与 Cover Art Archive API)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Haze 专为 Jetpack Compose 打造的实时背景高斯模糊 (Backdrop Blur) 库
+    implementation("dev.chrisbanes.haze:haze:0.7.3")
+
+
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")

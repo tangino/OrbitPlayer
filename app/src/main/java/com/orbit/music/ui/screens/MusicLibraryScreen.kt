@@ -66,6 +66,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.res.stringResource
 import com.orbit.music.R
 import com.orbit.music.data.model.Playlist
+import com.orbit.music.data.model.PlaybackOrigin
 import com.orbit.music.data.model.Song
 import com.orbit.music.ui.components.PowerampViewModeTransitionContainer
 import com.orbit.music.ui.theme.*
@@ -288,32 +289,170 @@ fun MusicLibraryScreen(
     }
     val currentActiveViewMode = libraryState.getViewModeFor(currentPageKey)
 
-    // 🎯 一键平滑滚动定位到当前播放歌曲
+    // 🎯 一键精准跳回播放时的原始页面（全部歌曲/文件夹/专辑/艺术家/歌单）并平滑滚动定位到当前播放歌曲
     fun locateCurrentPlayingSong() {
-        val currentSongId = playbackState.currentSong?.id ?: return
-        val targetIndex = filteredSongs.indexOfFirst { it.id == currentSongId }
-        if (targetIndex >= 0) {
-            if (libraryState.currentTab != LibraryTab.SONGS) {
-                viewModel.setTab(LibraryTab.SONGS)
+        val currentSong = playbackState.currentSong ?: return
+        val origin = viewModel.playbackOrigin.value
+
+        // 1. 如果处于搜索过滤状态，清空搜索词以确保完整可见
+        if (libraryState.searchQuery.isNotBlank()) {
+            viewModel.setSearchQuery("")
+        }
+
+        // 2. 根据记录的播放来源上下文（PlaybackOrigin），跳回对应页面并定位
+        when (origin) {
+            is PlaybackOrigin.Folder -> {
+                val targetPath = origin.folderPath.ifBlank { currentSong.folderPath }
+                openedAlbum = null
+                openedArtist = null
+                openedPlaylist = null
+                openedFolderPath = targetPath
+                if (libraryState.currentTab != LibraryTab.FOLDERS) {
+                    viewModel.setTab(LibraryTab.FOLDERS)
+                }
+
+                val folderSongs = allSongs.filter { it.folderPath == targetPath }
+                val targetIndex = folderSongs.indexOfFirst { it.id == currentSong.id }
+                if (targetIndex >= 0) {
+                    val mode = libraryState.getViewModeFor("detail_folder")
+                    folderSongsGridHolder.lastKnownIndex = targetIndex
+                    folderSongsGridHolder.lastKnownOffset = 0
+                    coverFlowLocateTrigger = System.currentTimeMillis()
+                    coroutineScope.launch {
+                        kotlinx.coroutines.delay(60)
+                        folderSongsGridHolder.animateScrollToItem(targetIndex, mode)
+                    }
+                }
             }
-            openedFolderPath = null
-            openedAlbum = null
-            openedArtist = null
-            openedPlaylist = null
-            coverFlowLocateTrigger = System.currentTimeMillis()
-            coroutineScope.launch {
-                songsGridHolder.animateScrollToItem(targetIndex, libraryState.getViewModeFor("tab_songs"))
+
+            is PlaybackOrigin.Album -> {
+                val targetAlbum = origin.albumItem
+                openedFolderPath = null
+                openedArtist = null
+                openedPlaylist = null
+                openedAlbum = targetAlbum
+                if (libraryState.currentTab != LibraryTab.ALBUMS) {
+                    viewModel.setTab(LibraryTab.ALBUMS)
+                }
+
+                val targetTitle = targetAlbum.title.trim()
+                val isUnknown = targetTitle == "未知专辑" || targetTitle.equals("Unknown Album", ignoreCase = true)
+                val albumSongs = allSongs.filter { song ->
+                    val sAlbum = song.album.trim()
+                    sAlbum.equals(targetTitle, ignoreCase = true) ||
+                    (isUnknown && (sAlbum.isBlank() || sAlbum.equals("Unknown Album", ignoreCase = true)))
+                }
+                val targetIndex = albumSongs.indexOfFirst { it.id == currentSong.id }
+                if (targetIndex >= 0) {
+                    val mode = libraryState.getViewModeFor("detail_album")
+                    albumSongsGridHolder.lastKnownIndex = targetIndex
+                    albumSongsGridHolder.lastKnownOffset = 0
+                    coverFlowLocateTrigger = System.currentTimeMillis()
+                    coroutineScope.launch {
+                        kotlinx.coroutines.delay(60)
+                        albumSongsGridHolder.animateScrollToItem(targetIndex, mode)
+                    }
+                }
+            }
+
+            is PlaybackOrigin.Artist -> {
+                val targetArtist = origin.artistItem
+                openedFolderPath = null
+                openedAlbum = null
+                openedPlaylist = null
+                openedArtist = targetArtist
+                if (libraryState.currentTab != LibraryTab.ARTISTS) {
+                    viewModel.setTab(LibraryTab.ARTISTS)
+                }
+
+                val targetName = targetArtist.name.trim()
+                val artistSongs = allSongs.filter { song ->
+                    val sArtist = song.artist.trim()
+                    sArtist.equals(targetName, ignoreCase = true) ||
+                    (targetName == "未知艺术家" && sArtist.isBlank()) ||
+                    sArtist.split('/', ',', '&', '、', ';').any { it.trim().equals(targetName, ignoreCase = true) }
+                }
+                val targetIndex = artistSongs.indexOfFirst { it.id == currentSong.id }
+                if (targetIndex >= 0) {
+                    val mode = libraryState.getViewModeFor("detail_artist")
+                    artistSongsGridHolder.lastKnownIndex = targetIndex
+                    artistSongsGridHolder.lastKnownOffset = 0
+                    coverFlowLocateTrigger = System.currentTimeMillis()
+                    coroutineScope.launch {
+                        kotlinx.coroutines.delay(60)
+                        artistSongsGridHolder.animateScrollToItem(targetIndex, mode)
+                    }
+                }
+            }
+
+            is PlaybackOrigin.PlaylistOrigin -> {
+                val targetPlaylist = origin.playlist
+                openedFolderPath = null
+                openedAlbum = null
+                openedArtist = null
+                openedPlaylist = targetPlaylist
+                if (libraryState.currentTab != LibraryTab.PLAYLISTS) {
+                    viewModel.setTab(LibraryTab.PLAYLISTS)
+                }
+
+                coroutineScope.launch {
+                    val pSongs = if (targetPlaylist.id == FAVORITE_PLAYLIST_ID) {
+                        favoriteSongs
+                    } else if (targetPlaylist.id == DISLIKED_PLAYLIST_ID) {
+                        dislikedSongs
+                    } else {
+                        withContext(Dispatchers.IO) { viewModel.getSongsInPlaylist(targetPlaylist.id) }
+                    }
+                    playlistSongs = pSongs
+                    val targetIndex = pSongs.indexOfFirst { it.id == currentSong.id }
+                    if (targetIndex >= 0) {
+                        val mode = libraryState.getViewModeFor("detail_playlist")
+                        playlistSongsGridHolder.lastKnownIndex = targetIndex
+                        playlistSongsGridHolder.lastKnownOffset = 0
+                        coverFlowLocateTrigger = System.currentTimeMillis()
+                        kotlinx.coroutines.delay(60)
+                        playlistSongsGridHolder.animateScrollToItem(targetIndex, mode)
+                    }
+                }
+            }
+
+            is PlaybackOrigin.AllSongs -> {
+                openedFolderPath = null
+                openedAlbum = null
+                openedArtist = null
+                openedPlaylist = null
+                if (libraryState.currentTab != LibraryTab.SONGS) {
+                    viewModel.setTab(LibraryTab.SONGS)
+                }
+                val targetIndex = allSongs.indexOfFirst { it.id == currentSong.id }
+                if (targetIndex >= 0) {
+                    val mode = libraryState.getViewModeFor("tab_songs")
+                    songsGridHolder.lastKnownIndex = targetIndex
+                    songsGridHolder.lastKnownOffset = 0
+                    coverFlowLocateTrigger = System.currentTimeMillis()
+                    coroutineScope.launch {
+                        kotlinx.coroutines.delay(60)
+                        songsGridHolder.animateScrollToItem(targetIndex, mode)
+                    }
+                }
             }
         }
     }
 
-    // 🎯 优化单曲点击：如果该歌曲已经是当前播放歌曲，则直接打开播放页面，不再重头播放；否则从该歌曲开始播放
-    fun handleSongItemClick(songs: List<Song>, index: Int) {
+    // 🎯 优化单曲点击：如果该歌曲已经是当前播放歌曲，则直接打开播放页面；否则记录当前播放来源页面并播放
+    fun handleSongItemClick(songs: List<Song>, index: Int, origin: PlaybackOrigin? = null) {
         val clickedSong = songs.getOrNull(index) ?: return
         if (playbackState.currentSong?.id == clickedSong.id) {
             viewModel.setNowPlayingExpanded(true)
         } else {
-            viewModel.playSong(songs, index)
+            val resolvedOrigin = origin ?: when {
+                openedFolderPath != null -> PlaybackOrigin.Folder(openedFolderPath!!)
+                openedAlbum != null -> PlaybackOrigin.Album(openedAlbum!!)
+                openedArtist != null -> PlaybackOrigin.Artist(openedArtist!!)
+                openedPlaylist != null -> PlaybackOrigin.PlaylistOrigin(openedPlaylist!!)
+                else -> PlaybackOrigin.AllSongs
+            }
+            viewModel.playSong(songs, index, resolvedOrigin)
         }
     }
 
@@ -1241,7 +1380,7 @@ fun MusicLibraryScreen(
                                         // 播放全部按钮
                                         if (filteredAlbumSongs.isNotEmpty()) {
                                             Button(
-                                                onClick = { viewModel.playSong(filteredAlbumSongs, 0) },
+                                                onClick = { viewModel.playSong(filteredAlbumSongs, 0, PlaybackOrigin.Album(currentAlbum)) },
                                                 colors = ButtonDefaults.buttonColors(
                                                     containerColor = OrbitTheme.colors.primary,
                                                     contentColor = if (OrbitTheme.colors.isDark) DarkBackground else Color.White
@@ -1891,7 +2030,7 @@ fun MusicLibraryScreen(
                                                 // 播放全部按钮
                                                 if (filteredPlaylistSongs.isNotEmpty()) {
                                                     Button(
-                                                        onClick = { viewModel.playSong(filteredPlaylistSongs, 0) },
+                                                        onClick = { viewModel.playSong(filteredPlaylistSongs, 0, PlaybackOrigin.PlaylistOrigin(currentPlaylist)) },
                                                         colors = ButtonDefaults.buttonColors(
                                                             containerColor = OrbitTheme.colors.primary,
                                                             contentColor = if (OrbitTheme.colors.isDark) DarkBackground else Color.White
@@ -2262,7 +2401,20 @@ fun MusicLibraryScreen(
                                                     // 快捷播放全部喜欢的音乐
                                                     if (favoriteSongs.isNotEmpty()) {
                                                         IconButton(
-                                                            onClick = { viewModel.playSong(favoriteSongs, 0) },
+                                                            onClick = {
+                                                                viewModel.playSong(
+                                                                    favoriteSongs,
+                                                                    0,
+                                                                    PlaybackOrigin.PlaylistOrigin(
+                                                                        Playlist(
+                                                                            id = FAVORITE_PLAYLIST_ID,
+                                                                            name = context.getString(R.string.favorite_songs),
+                                                                            songCount = favoriteSongs.size,
+                                                                            createdAt = 0L
+                                                                        )
+                                                                    )
+                                                                )
+                                                            },
                                                             modifier = Modifier.size(32.dp)
                                                         ) {
                                                             Icon(
@@ -2339,7 +2491,20 @@ fun MusicLibraryScreen(
                                                     // 快捷播放全部不喜欢的音乐（方便重新试听确认）
                                                     if (dislikedSongs.isNotEmpty()) {
                                                         IconButton(
-                                                            onClick = { viewModel.playSong(dislikedSongs, 0) },
+                                                            onClick = {
+                                                                viewModel.playSong(
+                                                                    dislikedSongs,
+                                                                    0,
+                                                                    PlaybackOrigin.PlaylistOrigin(
+                                                                        Playlist(
+                                                                            id = DISLIKED_PLAYLIST_ID,
+                                                                            name = dislikedTitle,
+                                                                            songCount = dislikedSongs.size,
+                                                                            createdAt = 0L
+                                                                        )
+                                                                    )
+                                                                )
+                                                            },
                                                             modifier = Modifier.size(32.dp)
                                                         ) {
                                                             Icon(
@@ -2404,7 +2569,7 @@ fun MusicLibraryScreen(
                                                     coroutineScope.launch {
                                                         val songs = viewModel.getSongsInPlaylist(playlist.id)
                                                         if (songs.isNotEmpty()) {
-                                                            viewModel.playSong(songs, 0)
+                                                            viewModel.playSong(songs, 0, PlaybackOrigin.PlaylistOrigin(playlist))
                                                         }
                                                     }
                                                 },
