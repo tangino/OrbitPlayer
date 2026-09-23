@@ -38,10 +38,10 @@ import com.orbit.music.ui.theme.OrbitTheme
 @Composable
 fun ColorPickerDialog(
     initialColor: Long,
-    customColors: List<Long>,
+    customColors: List<Long> = emptyList(),
     title: String? = null,
     onColorConfirmed: (Long) -> Unit,
-    onSaveToCustomColors: (Long) -> Unit,
+    onSaveToCustomColors: ((Long) -> Unit)? = null,
     onRemoveCustomColor: ((Long) -> Unit)? = null,
     onDismissRequest: () -> Unit
 ) {
@@ -150,28 +150,30 @@ fun ColorPickerDialog(
                         )
                     }
 
-                    // 添加到自定义色卡快捷按钮
-                    FilledTonalButton(
-                        onClick = { onSaveToCustomColors(currentColorLong) },
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = OrbitTheme.colors.surface,
-                            contentColor = OrbitTheme.colors.primary
-                        ),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = stringResource(R.string.add_to_custom_colors),
-                            color = OrbitTheme.colors.primary,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                    // 添加到自定义色卡快捷按钮 (仅在提供保存回调时展示)
+                    if (onSaveToCustomColors != null) {
+                        FilledTonalButton(
+                            onClick = { onSaveToCustomColors(currentColorLong) },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = OrbitTheme.colors.surface,
+                                contentColor = OrbitTheme.colors.primary
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = stringResource(R.string.add_to_custom_colors),
+                                color = OrbitTheme.colors.primary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
 

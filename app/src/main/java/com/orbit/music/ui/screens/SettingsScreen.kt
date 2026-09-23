@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import com.orbit.music.R
 import com.orbit.music.audio.ShuffleStrategy
 import com.orbit.music.ui.components.ColorPickerDialog
+import com.orbit.music.ui.components.MeshGradientBackground
 import com.orbit.music.ui.theme.*
 import com.orbit.music.ui.viewmodel.EqualizerViewModel
 import com.orbit.music.ui.viewmodel.MusicPlayerViewModel
@@ -67,6 +68,10 @@ fun SettingsScreen(
     var customSolidHexInput by remember { mutableStateOf("") }
     var showSolidColorPickerDialog by remember { mutableStateOf(false) }
     var solidColorToDelete by remember { mutableStateOf<Long?>(null) }
+
+    var showGradientColorPickerDialog by remember { mutableStateOf(false) }
+    var editingGradientColorIndex by remember { mutableIntStateOf(0) }
+    var isAddingNewGradientColor by remember { mutableStateOf(false) }
 
     val includedFolders by musicViewModel?.includedFolders?.collectAsState() ?: remember { mutableStateOf(emptySet()) }
     val excludedFolders by musicViewModel?.excludedFolders?.collectAsState() ?: remember { mutableStateOf(emptySet()) }
@@ -499,6 +504,326 @@ fun SettingsScreen(
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
                                         text = stringResource(R.string.custom_solid_bg_reset),
+                                        fontSize = 12.sp,
+                                        color = OrbitTheme.colors.textSecondary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 0.1.0.5 多颜色混合渐变背景 (Mesh Gradient Background)
+            item {
+                SettingsSectionHeader(stringResource(R.string.custom_gradient_background_title))
+                SettingsCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        // 1. 顶部标题与总开关
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(OrbitTheme.colors.primary.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Gradient,
+                                    contentDescription = null,
+                                    tint = OrbitTheme.colors.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = stringResource(R.string.custom_gradient_background_title),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium,
+                                    color = OrbitTheme.colors.textPrimary
+                                )
+                                Text(
+                                    text = stringResource(R.string.custom_gradient_background_subtitle),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = OrbitTheme.colors.textSecondary
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Switch(
+                                checked = uiState.isGradientEnabled,
+                                onCheckedChange = { isEnabled ->
+                                    viewModel.setCustomGradientEnabled(isEnabled)
+                                    if (isEnabled) {
+                                        // 开启渐变背景时，自动清理可能产生冲突的纯色背景
+                                        viewModel.clearCustomSolidBackgroundColor()
+                                    }
+                                }
+                            )
+                        }
+
+                        if (uiState.isGradientEnabled) {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(vertical = 4.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                            )
+
+                            // 2. 动态流光呼吸动效开关
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(R.string.custom_gradient_dynamic_title),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        color = OrbitTheme.colors.textPrimary
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.custom_gradient_dynamic_subtitle),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = OrbitTheme.colors.textSecondary
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Switch(
+                                    checked = uiState.isGradientDynamic,
+                                    onCheckedChange = { viewModel.setGradientDynamic(it) }
+                                )
+                            }
+
+                            // 3. 极光流光实时微缩视窗预览
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(100.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .border(1.2.dp, OrbitTheme.colors.primary.copy(alpha = 0.45f), RoundedCornerShape(16.dp))
+                            ) {
+                                MeshGradientBackground(
+                                    colors = uiState.customGradientColors,
+                                    isDynamic = uiState.isGradientDynamic,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(end = 10.dp, bottom = 8.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color.Black.copy(alpha = 0.45f))
+                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                ) {
+                                    Text(
+                                        text = if (uiState.isGradientDynamic) "实时流光预览" else "静态渐变预览",
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+
+                            // 4. 当前渐变颜色列表 (2~4 个颜色点编辑与添加)
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = "${stringResource(R.string.custom_gradient_colors_title)} (${uiState.customGradientColors.size}/4)",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = OrbitTheme.colors.textPrimary
+                                )
+                                Text(
+                                    text = stringResource(R.string.custom_gradient_colors_hint),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = OrbitTheme.colors.textSecondary,
+                                    fontSize = 11.sp
+                                )
+
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    contentPadding = PaddingValues(vertical = 4.dp)
+                                ) {
+                                    // 现有 2~4 个色块
+                                    items(uiState.customGradientColors.size) { index ->
+                                        val colorVal = uiState.customGradientColors[index]
+                                        val hex = remember(colorVal) { String.format("#%06X", (colorVal and 0x00FFFFFFL)) }
+
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            modifier = Modifier.combinedClickable(
+                                                onClick = {
+                                                    editingGradientColorIndex = index
+                                                    isAddingNewGradientColor = false
+                                                    showGradientColorPickerDialog = true
+                                                },
+                                                onLongClick = {
+                                                    if (uiState.customGradientColors.size > 2) {
+                                                        viewModel.removeGradientColor(index)
+                                                        Toast.makeText(context, "已移除该颜色", Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        Toast.makeText(context, "至少需保留 2 种颜色", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            )
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(48.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(colorVal))
+                                                    .border(2.dp, OrbitTheme.colors.primary.copy(alpha = 0.6f), CircleShape),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "${index + 1}",
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = hex,
+                                                fontSize = 9.5.sp,
+                                                color = OrbitTheme.colors.textSecondary
+                                            )
+                                        }
+                                    }
+
+                                    // 添加色块入口（未满 4 个时显示）
+                                    if (uiState.customGradientColors.size < 4) {
+                                        item {
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                modifier = Modifier.clickable {
+                                                    isAddingNewGradientColor = true
+                                                    showGradientColorPickerDialog = true
+                                                }
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(48.dp)
+                                                        .clip(CircleShape)
+                                                        .background(OrbitTheme.colors.surface)
+                                                        .border(
+                                                            width = 1.5.dp,
+                                                            color = OrbitTheme.colors.primary.copy(alpha = 0.5f),
+                                                            shape = CircleShape
+                                                        ),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Add,
+                                                        contentDescription = stringResource(R.string.custom_gradient_add_color),
+                                                        tint = OrbitTheme.colors.primary,
+                                                        modifier = Modifier.size(24.dp)
+                                                    )
+                                                }
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = stringResource(R.string.custom_gradient_add_color),
+                                                    fontSize = 9.5.sp,
+                                                    color = OrbitTheme.colors.primary,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 5. 精选色板预设
+                            val gradientPresets = remember {
+                                listOf(
+                                    "深邃极光" to listOf(0xFF1E284AL, 0xFF423328L, 0xFF382D4AL),
+                                    "赛博霓虹" to listOf(0xFF0D253AL, 0xFF4A154BL, 0xFF003844L, 0xFF3D0814L),
+                                    "暮色森林" to listOf(0xFF15221BL, 0xFF2A3D2AL, 0xFF3B2F2FL),
+                                    "落日余晖" to listOf(0xFF421E22L, 0xFF3E2D18L, 0xFF2E1C38L),
+                                    "深海幽蓝" to listOf(0xFF0F1B29L, 0xFF142C44L, 0xFF1E3A5FL, 0xFF0B131FL)
+                                )
+                            }
+
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = stringResource(R.string.custom_gradient_presets_title),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = OrbitTheme.colors.textPrimary
+                                )
+
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    contentPadding = PaddingValues(vertical = 2.dp)
+                                ) {
+                                    items(gradientPresets) { (name, presetColors) ->
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(OrbitTheme.colors.surface)
+                                                .border(1.dp, OrbitTheme.colors.surfaceBorder, RoundedCornerShape(12.dp))
+                                                .clickable {
+                                                    viewModel.setGradientColors(presetColors)
+                                                    Toast.makeText(context, "已应用「$name」配色", Toast.LENGTH_SHORT).show()
+                                                }
+                                                .padding(8.dp)
+                                        ) {
+                                            Row(
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                presetColors.forEach { c ->
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(16.dp)
+                                                            .clip(CircleShape)
+                                                            .background(Color(c))
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                text = name,
+                                                fontSize = 11.sp,
+                                                color = OrbitTheme.colors.textPrimary,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 6. 恢复默认配色
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        viewModel.resetGradientColors()
+                                        Toast.makeText(context, "已恢复默认渐变配色", Toast.LENGTH_SHORT).show()
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Refresh,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = OrbitTheme.colors.textSecondary
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = stringResource(R.string.custom_gradient_reset),
                                         fontSize = 12.sp,
                                         color = OrbitTheme.colors.textSecondary
                                     )
@@ -1877,6 +2202,35 @@ fun SettingsScreen(
                 viewModel.removeCustomUserSolidColor(colorToRemove)
             },
             onDismissRequest = { showSolidColorPickerDialog = false }
+        )
+    }
+
+    // 自定义渐变色 HSV 调色盘对话框 (2~4色选择与添加，完全独立于纯色色板)
+    if (showGradientColorPickerDialog) {
+        val initialGradientColor = remember(isAddingNewGradientColor, editingGradientColorIndex, uiState.customGradientColors) {
+            if (isAddingNewGradientColor) {
+                0xFF38BDF8L // 默认明亮青蓝
+            } else {
+                uiState.customGradientColors.getOrElse(editingGradientColorIndex) { 0xFF1E284AL }
+            }
+        }
+
+        ColorPickerDialog(
+            initialColor = initialGradientColor,
+            customColors = emptyList(), // 渐变色选择器保持独立，不显示也不污染纯色背景色板
+            title = if (isAddingNewGradientColor) "添加渐变颜色" else "修改渐变色 #${editingGradientColorIndex + 1}",
+            onColorConfirmed = { chosenColor ->
+                if (isAddingNewGradientColor) {
+                    viewModel.addGradientColor(chosenColor)
+                    Toast.makeText(context, "已添加新渐变色", Toast.LENGTH_SHORT).show()
+                } else {
+                    viewModel.updateGradientColor(editingGradientColorIndex, chosenColor)
+                    Toast.makeText(context, "渐变色已更新", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onSaveToCustomColors = null, // 禁用向纯色色板添加按钮，彻底隔绝两者的相互影响
+            onRemoveCustomColor = null,
+            onDismissRequest = { showGradientColorPickerDialog = false }
         )
     }
 

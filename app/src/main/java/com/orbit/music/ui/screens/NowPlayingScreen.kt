@@ -28,6 +28,7 @@ import androidx.compose.foundation.pager.PagerSnapDistance
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -143,6 +144,7 @@ fun NowPlayingScreen(
     onToggleMaximizedCoverPosition: (Boolean) -> Unit = {},
     onToggleMaximizedCoverRotating: (Boolean) -> Unit = {},
     onToggleMaximizedShowControls: (Boolean) -> Unit = {},
+    onToggleMaximizedShowTopBar: (Boolean) -> Unit = {},
     onSetMaximizedCoverAlpha: (Float) -> Unit = {},
     onToggleCoverInQueue: (Boolean) -> Unit = {},
     onToggleFollowCoverColor: (Boolean) -> Unit = {},
@@ -249,6 +251,9 @@ fun NowPlayingScreen(
         AppBackgroundLayer(
             customBackgroundPath = equalizerUiState.customBackgroundPath,
             customSolidBackgroundColor = equalizerUiState.customSolidBackgroundColor,
+            isGradientEnabled = equalizerUiState.isGradientEnabled,
+            customGradientColors = equalizerUiState.customGradientColors,
+            isGradientDynamic = equalizerUiState.isGradientDynamic,
             blurRadius = equalizerUiState.backgroundBlurRadius,
             blurStyle = equalizerUiState.backgroundBlurStyle,
             dimAlpha = equalizerUiState.backgroundDimAlpha
@@ -2763,6 +2768,7 @@ fun NowPlayingScreen(
             onToggleMaximizedCoverPosition = onToggleMaximizedCoverPosition,
             onToggleMaximizedCoverRotating = onToggleMaximizedCoverRotating,
             onToggleMaximizedShowControls = onToggleMaximizedShowControls,
+            onToggleMaximizedShowTopBar = onToggleMaximizedShowTopBar,
             onSetMaximizedCoverAlpha = onSetMaximizedCoverAlpha,
             onToggleFollowCoverColor = onToggleFollowCoverColor,
             onTogglePlay = { viewModel.togglePlayPause() },
@@ -2773,6 +2779,7 @@ fun NowPlayingScreen(
                 val queue = playbackState.currentPlaylist.ifEmpty { allSongs }
                 viewModel.playSong(queue, targetIdx)
             },
+            onOpenQueue = { showQueueBottomSheet = true },
             modifier = Modifier.fillMaxSize()
         )
     }
@@ -3353,6 +3360,7 @@ private fun MaximizedVisualizerOverlay(
     onToggleMaximizedCoverPosition: (Boolean) -> Unit,
     onToggleMaximizedCoverRotating: (Boolean) -> Unit,
     onToggleMaximizedShowControls: (Boolean) -> Unit,
+    onToggleMaximizedShowTopBar: (Boolean) -> Unit = {},
     onSetMaximizedCoverAlpha: (Float) -> Unit,
     onToggleFollowCoverColor: (Boolean) -> Unit = {},
     onTogglePlay: () -> Unit,
@@ -3360,6 +3368,7 @@ private fun MaximizedVisualizerOverlay(
     onPlayPrevious: () -> Unit,
     onSeekTo: (Float) -> Unit,
     onSongClick: ((Song, Int) -> Unit)? = null,
+    onOpenQueue: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -3458,7 +3467,9 @@ private fun MaximizedVisualizerOverlay(
     val progress = if (isDraggingSlider) draggingProgress else playbackState.progress
     val currentPosMs = if (isDraggingSlider) (draggingProgress * playbackState.durationMs).toLong() else playbackState.currentPositionMs
 
-    var showTopControlBar by remember { mutableStateOf(true) }
+    // 一键清屏状态 (双击屏幕空白处开启/关闭清屏，清屏状态下单点屏幕任意处即可瞬间恢复)
+    var isCleanScreen by remember { mutableStateOf(false) }
+    val clearScreenHint = stringResource(R.string.maximized_clear_screen_hint)
 
     // Cover Flow 进入/退出的动画插值量 (0f: 常规全屏大频谱模式, 1f: 沉浸 Cover Flow 模式)
     val coverFlowTransition by animateFloatAsState(
@@ -3474,24 +3485,93 @@ private fun MaximizedVisualizerOverlay(
         label = "SpectrumDimAnim"
     )
 
-    val clearScreenHint = stringResource(R.string.maximized_clear_screen_hint)
-    val toggleAllControls: () -> Unit = {
-        // 若当前上方或下方控制栏正在显示，则执行一键清屏；若都已隐藏，则同时恢复显示
-        val willShow = !(showTopControlBar || equalizerUiState.maximizedShowControls)
-        showTopControlBar = willShow
-        onToggleMaximizedShowControls(willShow)
-        if (!willShow) {
-            Toast.makeText(context, clearScreenHint, Toast.LENGTH_SHORT).show()
-        }
+    // 手势层：
+    // 1. 上滑手势：在 Cover Flow 关闭时，向上滑动屏幕调出当前播放列表
+    // 2. 下滑手势：在 Cover Flow 关闭时，向下滑动屏幕唤出/显示顶部控制栏（若已显示则可快速收起）
+    // 3. 双击手势：在 Cover Flow 关闭时，双击屏幕空白处一键清屏 / 恢复所有控制条
+    // 4. 单击手势：在处于一键清屏或顶部栏隐藏状态时，轻触屏幕任意空白处恢复显示
+    val backgroundGestureModifier = if (!isCoverFlowMode) {
+        Modifier
+            .pointerInput(Unit) {
+                var totalDragY = 0f
+                var hasTriggered = false
+                detectVerticalDragGestures(
+                    onDragStart = {
+                        totalDragY = 0f
+                        hasTriggered = false
+                    },
+                    onDragEnd = {
+                        if (!hasTriggered) {
+                            if (totalDragY < -75f) {
+                                // 向上滑动：调出当前播放队列
+                                onOpenQueue()
+                            } else if (totalDragY > 75f) {
+                                // 向下滑动：唤醒并恢复显示顶部控制栏
+                                if (isCleanScreen) {
+                                    isCleanScreen = false
+                                } else if (!equalizerUiState.maximizedShowTopBar) {
+                                    onToggleMaximizedShowTopBar(true)
+                                }
+                            }
+                        }
+                        totalDragY = 0f
+                        hasTriggered = false
+                    },
+                    onDragCancel = {
+                        totalDragY = 0f
+                        hasTriggered = false
+                    },
+                    onVerticalDrag = { _, dragAmount ->
+                        totalDragY += dragAmount
+                        if (!hasTriggered) {
+                            if (totalDragY < -100f) {
+                                hasTriggered = true
+                                onOpenQueue()
+                            } else if (totalDragY > 100f) {
+                                hasTriggered = true
+                                if (isCleanScreen) {
+                                    isCleanScreen = false
+                                } else if (!equalizerUiState.maximizedShowTopBar) {
+                                    onToggleMaximizedShowTopBar(true)
+                                }
+                            }
+                        }
+                    }
+                )
+            }
+            .pointerInput(isCleanScreen, equalizerUiState.maximizedShowTopBar) {
+                detectTapGestures(
+                    onDoubleTap = {
+                        isCleanScreen = !isCleanScreen
+                        if (isCleanScreen) {
+                            Toast.makeText(context, clearScreenHint, Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onTap = {
+                        if (isCleanScreen) {
+                            isCleanScreen = false
+                        } else if (!equalizerUiState.maximizedShowTopBar) {
+                            onToggleMaximizedShowTopBar(true)
+                        }
+                    }
+                )
+            }
+    } else {
+        Modifier
     }
 
     Box(
-        modifier = modifier.fillMaxSize()
+        modifier = modifier
+            .fillMaxSize()
+            .then(backgroundGestureModifier)
     ) {
         // 0. 全局沉浸背景层 (彻底遮挡普通播放页面的大封面与按钮，呈现纯净壁纸/暗黑底色)
         AppBackgroundLayer(
             customBackgroundPath = equalizerUiState.customBackgroundPath,
             customSolidBackgroundColor = equalizerUiState.customSolidBackgroundColor,
+            isGradientEnabled = equalizerUiState.isGradientEnabled,
+            customGradientColors = equalizerUiState.customGradientColors,
+            isGradientDynamic = equalizerUiState.isGradientDynamic,
             blurRadius = equalizerUiState.backgroundBlurRadius,
             blurStyle = equalizerUiState.backgroundBlurStyle,
             dimAlpha = equalizerUiState.backgroundDimAlpha
@@ -3538,36 +3618,6 @@ private fun MaximizedVisualizerOverlay(
             onClick = null
         )
 
-        // 1.2 全屏左右两侧空白区域分屏交互层 (左侧空白清屏与恢复，右侧空白开关 Cover Flow)
-        Row(modifier = Modifier.fillMaxSize()) {
-            // 左侧空白区域：清屏与恢复控制条
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {
-                            toggleAllControls()
-                        }
-                    )
-            )
-            // 右侧空白区域：开关 Cover Flow
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {
-                            isCoverFlowMode = !isCoverFlowMode
-                        }
-                    )
-            )
-        }
-
         // 1.5 频谱层在 Cover Flow 沉浸模式下变暗一点 (叠加平滑暗色蒙层)
         if (spectrumDimAlpha > 0.001f) {
             Box(
@@ -3605,7 +3655,7 @@ private fun MaximizedVisualizerOverlay(
         } else {
             actualStatusBarHeight + 12.dp
         }
-        val topBarBottom = if (showTopControlBar) (topBarPaddingTop + 46.dp + 12.dp) else (topBarPaddingTop + 6.dp)
+        val topBarBottom = if (equalizerUiState.maximizedShowTopBar && !isCoverFlowMode && !isCleanScreen) (topBarPaddingTop + 46.dp + 12.dp) else (topBarPaddingTop + 6.dp)
 
         // 2. 精准测量底部控制卡片实际占用的高度
         val bottomControlsHeight = if (equalizerUiState.maximizedShowControls) {
@@ -3671,15 +3721,19 @@ private fun MaximizedVisualizerOverlay(
         val totalCardHeight = currentCoverSize + currentReflectionHeight
 
         // 圆角向歌曲列表 Cover Flow 样式 (top=6dp, bottom=1dp) 平滑演化
-        val circleCorner = currentCoverSize / 2
-        val topCorner = lerp(circleCorner, 6.dp, coverFlowTransition)
-        val bottomCorner = lerp(circleCorner, 1.dp, coverFlowTransition)
-        val centerCardShape = RoundedCornerShape(
-            topStart = topCorner,
-            topEnd = topCorner,
-            bottomStart = bottomCorner,
-            bottomEnd = bottomCorner
-        )
+        val centerCardShape = if (coverFlowTransition < 0.001f) {
+            CircleShape
+        } else {
+            val circleCorner = currentCoverSize / 2
+            val topCorner = lerp(circleCorner, 6.dp, coverFlowTransition)
+            val bottomCorner = lerp(circleCorner, 1.dp, coverFlowTransition)
+            RoundedCornerShape(
+                topStart = topCorner,
+                topEnd = topCorner,
+                bottomStart = bottomCorner,
+                bottomEnd = bottomCorner
+            )
+        }
         val wingCardShape = RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp, bottomStart = 1.dp, bottomEnd = 1.dp)
 
         // 边框宽度过渡
@@ -3807,7 +3861,6 @@ private fun MaximizedVisualizerOverlay(
                 ) { page ->
                     val pageSong = playlist.getOrNull(page) ?: song
                     val isCenterCard = (page == pagerState.currentPage)
-                    val isPlayingThis = (playbackState.currentSong?.id == pageSong?.id) && isCenterCard && isCoverFlowMode
 
                     val baseZIndex = when {
                         page < pagerState.currentPage -> 500f + (page - pagerState.currentPage)
@@ -3828,6 +3881,38 @@ private fun MaximizedVisualizerOverlay(
 
                     val currentCardAlpha = if (isCenterCard) equalizerUiState.maximizedCoverAlpha else 1f
 
+                    val cardClickModifier = if (isCoverFlowMode) {
+                        Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {
+                                if (page == pagerState.currentPage) {
+                                    // Cover Flow 模式下点击正中央封面主体：隐藏 Cover Flow
+                                    isCoverFlowMode = false
+                                } else {
+                                    // 点击两翼卡片：平滑翻页至该歌曲并切歌进行播放
+                                    coroutineScope.launch {
+                                        pagerState.animateScrollToPage(page)
+                                    }
+                                    if (pageSong != null && onSongClick != null) {
+                                        onSongClick(pageSong, page)
+                                    }
+                                }
+                            }
+                        )
+                    } else if (page == pagerState.currentPage) {
+                        Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {
+                                // 常规模式仅允许点击正中央当前封面开启 3D Cover Flow
+                                isCoverFlowMode = true
+                            }
+                        )
+                    } else {
+                        Modifier
+                    }
+
                     Box(
                         modifier = Modifier
                             .size(width = currentCoverSize, height = totalCardHeight)
@@ -3840,43 +3925,7 @@ private fun MaximizedVisualizerOverlay(
                                 cameraDistancePx = cameraDistancePx,
                                 wingsAlpha = wingsAlpha
                             )
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = {
-                                    if (!isCoverFlowMode) {
-                                        // 常规模式点击封面：开启 3D Cover Flow
-                                        isCoverFlowMode = true
-                                    } else {
-                                        if (page == pagerState.currentPage) {
-                                            // 点击正中央卡片：
-                                            // 若当前歌曲未处于播放状态（处于暂停，或翻到的歌曲尚未播放），点击封面进行播放；
-                                            // 若当前歌曲已在播放中（再点击一次封面），收起 Cover Flow
-                                            val currentPlayingSongId = playbackState.currentSong?.id
-                                            val isCurrentSong = (pageSong != null && pageSong.id == currentPlayingSongId)
-                                            val isCurrentlyPlaying = isCurrentSong && playbackState.isPlaying
-
-                                            if (!isCurrentlyPlaying) {
-                                                if (!isCurrentSong && pageSong != null && onSongClick != null) {
-                                                    onSongClick(pageSong, page)
-                                                } else if (!playbackState.isPlaying) {
-                                                    onTogglePlay()
-                                                }
-                                            } else {
-                                                isCoverFlowMode = false
-                                            }
-                                        } else {
-                                            // 点击两翼卡片：平滑翻页至该歌曲并切歌进行播放
-                                            coroutineScope.launch {
-                                                pagerState.animateScrollToPage(page)
-                                            }
-                                            if (pageSong != null && onSongClick != null) {
-                                                onSongClick(pageSong, page)
-                                            }
-                                        }
-                                    }
-                                }
-                            )
+                            .then(cardClickModifier)
                     ) {
                         Column(
                             modifier = Modifier
@@ -3890,14 +3939,15 @@ private fun MaximizedVisualizerOverlay(
 
                             Surface(
                                 shape = currentShape,
-                                shadowElevation = if (isCenterCard) (20.dp * currentCardAlpha) else 6.dp,
+                                color = Color.Transparent,
+                                shadowElevation = if (isCenterCard) (if (coverFlowTransition < 0.001f) (10.dp * currentCardAlpha) else (16.dp * currentCardAlpha)) else 6.dp,
                                 border = cardBorder,
                                 modifier = Modifier.size(currentCoverSize)
                             ) {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .background(OrbitTheme.colors.surfaceCard),
+                                        .background(if (coverFlowTransition < 0.001f) Color.Transparent else OrbitTheme.colors.surfaceCard),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     SubcomposeAsyncImage(
@@ -3945,22 +3995,38 @@ private fun MaximizedVisualizerOverlay(
                                             )
                                     )
 
-                                    // 正在播放的当前歌曲徽章 (与歌曲列表 Cover Flow 保持完全一致)
-                                    if (isPlayingThis) {
+                                    // Cover Flow 模式下正中央卡片右下角的播放/暂停控制按钮
+                                    if (isCenterCard && isCoverFlowMode) {
+                                        val isCurrentlyPlaying = (playbackState.currentSong?.id == pageSong?.id) && playbackState.isPlaying
                                         Box(
                                             modifier = Modifier
                                                 .align(Alignment.BottomEnd)
-                                                .padding(6.dp)
-                                                .size(26.dp)
+                                                .padding(8.dp)
+                                                .size(34.dp)
                                                 .clip(CircleShape)
-                                                .background(animatedBorderColor.copy(alpha = 0.88f)),
+                                                .background(animatedBorderColor.copy(alpha = 0.92f))
+                                                .clickable(
+                                                    interactionSource = remember { MutableInteractionSource() },
+                                                    indication = null,
+                                                    onClick = {
+                                                        val currentPlayingSongId = playbackState.currentSong?.id
+                                                        val isCurrentSong = (pageSong != null && pageSong.id == currentPlayingSongId)
+                                                        if (isCurrentSong) {
+                                                            onTogglePlay()
+                                                        } else if (pageSong != null && onSongClick != null) {
+                                                            onSongClick(pageSong, page)
+                                                        } else {
+                                                            onTogglePlay()
+                                                        }
+                                                    }
+                                                ),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
-                                                imageVector = if (playbackState.isPlaying) Icons.Default.PlayArrow else Icons.Default.Pause,
-                                                contentDescription = null,
+                                                imageVector = if (isCurrentlyPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                                contentDescription = if (isCurrentlyPlaying) "Pause" else "Play",
                                                 tint = Color.White,
-                                                modifier = Modifier.size(16.dp)
+                                                modifier = Modifier.size(20.dp)
                                             )
                                         }
                                     }
@@ -4098,9 +4164,9 @@ private fun MaximizedVisualizerOverlay(
             }
         }
 
-        // 3. 顶部悬浮操作胶囊栏 (在 Cover Flow 模式下清屏隐藏)
+        // 3. 顶部悬浮操作胶囊栏 (在 Cover Flow 模式、一键清屏或单独隐藏顶部栏状态下隐藏)
         MaximizedTopControlBar(
-            showTopControlBar = showTopControlBar && !isCoverFlowMode,
+            showTopControlBar = equalizerUiState.maximizedShowTopBar && !isCoverFlowMode && !isCleanScreen,
             topPadding = topBarPaddingTop,
             equalizerUiState = equalizerUiState,
             isDualColor = isDualColor,
@@ -4108,16 +4174,17 @@ private fun MaximizedVisualizerOverlay(
             onToggleMaximizedCoverPosition = onToggleMaximizedCoverPosition,
             onSetMaximizedCoverAlpha = onSetMaximizedCoverAlpha,
             onToggleMaximizedCoverRotating = onToggleMaximizedCoverRotating,
-            onToggleClearScreen = toggleAllControls,
+            onToggleMaximizedShowControls = onToggleMaximizedShowControls,
+            onToggleMaximizedShowTopBar = onToggleMaximizedShowTopBar,
             onToggleFollowCoverColor = onToggleFollowCoverColor,
             onCycleVisualizerStyle = onCycleVisualizerStyle,
             onBack = onBack,
             modifier = Modifier.align(Alignment.TopCenter)
         )
 
-        // 4. 底部悬浮播放控制卡片 (在 Cover Flow 模式下清屏隐藏)
+        // 4. 底部悬浮播放控制卡片 (在 Cover Flow 模式或一键清屏状态下隐藏)
         AnimatedVisibility(
-            visible = equalizerUiState.maximizedShowControls && !isCoverFlowMode,
+            visible = equalizerUiState.maximizedShowControls && !isCoverFlowMode && !isCleanScreen,
             enter = slideInVertically(tween(250)) { height -> height } + fadeIn(tween(200)),
             exit = slideOutVertically(tween(200)) { height -> height } + fadeOut(tween(150)),
             modifier = Modifier
@@ -4286,7 +4353,8 @@ private fun MaximizedTopControlBar(
     onToggleMaximizedCoverPosition: (Boolean) -> Unit,
     onSetMaximizedCoverAlpha: (Float) -> Unit,
     onToggleMaximizedCoverRotating: (Boolean) -> Unit,
-    onToggleClearScreen: () -> Unit,
+    onToggleMaximizedShowControls: (Boolean) -> Unit,
+    onToggleMaximizedShowTopBar: (Boolean) -> Unit = {},
     onToggleFollowCoverColor: (Boolean) -> Unit,
     onCycleVisualizerStyle: (() -> Unit)?,
     onBack: () -> Unit,
@@ -4388,15 +4456,15 @@ private fun MaximizedTopControlBar(
                     }
                 }
 
-                // 5. 一键清屏 (同时隐藏/显示上下方控制条)
+                // 5. 显示/隐藏底部控制条
                 IconButton(
-                    onClick = onToggleClearScreen,
+                    onClick = { onToggleMaximizedShowControls(!equalizerUiState.maximizedShowControls) },
                     modifier = Modifier.size(38.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.VisibilityOff,
-                        contentDescription = stringResource(R.string.maximized_clear_screen),
-                        tint = OrbitTheme.colors.primary,
+                        imageVector = if (equalizerUiState.maximizedShowControls) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                        contentDescription = stringResource(if (equalizerUiState.maximizedShowControls) R.string.maximized_hide_controls else R.string.maximized_show_controls),
+                        tint = if (equalizerUiState.maximizedShowControls) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -4436,9 +4504,26 @@ private fun MaximizedTopControlBar(
                     )
                 }
 
+                // 8. 隐藏顶部控制栏按钮
+                val hideTopBarHint = stringResource(R.string.maximized_hide_top_bar_hint)
+                IconButton(
+                    onClick = {
+                        onToggleMaximizedShowTopBar(false)
+                        Toast.makeText(context, hideTopBarHint, Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowUp,
+                        contentDescription = stringResource(R.string.maximized_hide_top_bar),
+                        tint = OrbitTheme.colors.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
                 Spacer(modifier = Modifier.width(2.dp))
 
-                // 8. 退出最大化全屏按钮
+                // 9. 退出最大化全屏按钮
                 IconButton(
                     onClick = onBack,
                     modifier = Modifier.size(38.dp)

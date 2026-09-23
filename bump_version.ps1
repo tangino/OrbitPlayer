@@ -1,4 +1,4 @@
-# ==============================================================================
+﻿# ==============================================================================
 # Orbit Player - 版本号修改/升级脚本 (PowerShell)
 # ==============================================================================
 
@@ -7,21 +7,26 @@ param (
     [int]$ExplicitCode = 0
 )
 
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $ErrorActionPreference = "Stop"
 $GradleFile = "app/build.gradle.kts"
 
 if (-not (Test-Path $GradleFile)) {
-    Write-Host "[错误] 未找到 $GradleFile 文件，请在项目根目录下运行。" -ForegroundColor Red
+    Write-Host "[ERROR] 未找到 $GradleFile 文件，请在项目根目录下运行。" -ForegroundColor Red
     exit 1
 }
 
 # 读取并提取当前版本
-$content = Get-Content $GradleFile -Raw
-$codeMatch = [regex]::Match($content, 'versionCode\s*=\s*([0-9]+)')
-$nameMatch = [regex]::Match($content, 'versionName\s*=\s*"([^"]+)"')
+$content = [System.IO.File]::ReadAllText((Resolve-Path $GradleFile).Path, [System.Text.Encoding]::UTF8)
+
+$codePattern = 'versionCode\s*=\s*([0-9]+)'
+$namePattern = 'versionName\s*=\s*\"([^\"]+)\"'
+
+$codeMatch = [System.Text.RegularExpressions.Regex]::Match($content, $codePattern)
+$nameMatch = [System.Text.RegularExpressions.Regex]::Match($content, $namePattern)
 
 if (-not $codeMatch.Success -or -not $nameMatch.Success) {
-    Write-Host "[错误] 无法从 $GradleFile 解析当前版本号！" -ForegroundColor Red
+    Write-Host "[ERROR] 无法从 $GradleFile 解析当前版本号！" -ForegroundColor Red
     exit 1
 }
 
@@ -29,7 +34,7 @@ $CurrentCode = [int]$codeMatch.Groups[1].Value
 $CurrentName = $nameMatch.Groups[1].Value
 
 Write-Host "======================================================" -ForegroundColor Cyan
-Write-Host "            Orbit Player 版本管理脚本                 " -ForegroundColor Cyan
+Write-Host "            Orbit Player 版本管理工具                 " -ForegroundColor Cyan
 Write-Host "======================================================" -ForegroundColor Cyan
 Write-Host "当前版本: " -NoNewline
 Write-Host "versionName = `"$CurrentName`"" -ForegroundColor Green -NoNewline
@@ -72,7 +77,11 @@ if ($TypeOrVersion -ne "") {
     Write-Host "  5) 退出" -ForegroundColor Yellow
     Write-Host ""
     $choice = Read-Host "请输入选项 [1-5] (默认 1)"
-    if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "1" }
+    if ([string]::IsNullOrWhiteSpace($choice)) {
+        $choice = "1"
+    } else {
+        $choice = $choice.Trim()
+    }
 
     switch ($choice) {
         "1" { $NewName = $SuggestPatchName; $NewCode = $SuggestCode }
@@ -81,7 +90,7 @@ if ($TypeOrVersion -ne "") {
         "4" {
             $inputName = Read-Host "请输入新的 versionName (例如 $SuggestPatchName)"
             if ([string]::IsNullOrWhiteSpace($inputName)) {
-                Write-Host "[错误] versionName 不能为空！" -ForegroundColor Red
+                Write-Host "[ERROR] versionName 不能为空！" -ForegroundColor Red
                 exit 1
             }
             $NewName = $inputName
@@ -93,7 +102,7 @@ if ($TypeOrVersion -ne "") {
             }
         }
         "5" { Write-Host "已取消操作。"; exit 0 }
-        default { Write-Host "[错误] 无效选择！" -ForegroundColor Red; exit 1 }
+        default { Write-Host "[ERROR] 无效选择！" -ForegroundColor Red; exit 1 }
     }
 }
 
@@ -105,10 +114,10 @@ Write-Host "  versionCode : $CurrentCode -> $NewCode" -ForegroundColor Green
 Write-Host "------------------------------------------------------" -ForegroundColor Cyan
 
 # 执行文本替换
-$newContent = [regex]::Replace($content, 'versionCode\s*=\s*[0-9]+', "versionCode = $NewCode")
-$newContent = [regex]::Replace($newContent, 'versionName\s*=\s*"[^"]+"', "versionName = `"$NewName`"")
+$newContent = [System.Text.RegularExpressions.Regex]::Replace($content, 'versionCode\s*=\s*[0-9]+', "versionCode = $NewCode")
+$newContent = [System.Text.RegularExpressions.Regex]::Replace($newContent, 'versionName\s*=\s*\"[^\"]+\"', "versionName = `"$NewName`"")
 
 [System.IO.File]::WriteAllText((Resolve-Path $GradleFile).Path, $newContent, [System.Text.Encoding]::UTF8)
 
-Write-Host "✓ 版本号已成功更新到 $GradleFile ！" -ForegroundColor Green
+Write-Host "[SUCCESS] 版本号已成功更新到 $GradleFile !" -ForegroundColor Green
 Write-Host ""

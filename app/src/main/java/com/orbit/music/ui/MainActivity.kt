@@ -202,7 +202,7 @@ class MainActivity : ComponentActivity() {
                 handleBackFromSettings()
             }
 
-            val hasCustomBg = uiState.customBackgroundPath != null || uiState.customSolidBackgroundColor != null
+            val hasCustomBg = uiState.customBackgroundPath != null || uiState.customSolidBackgroundColor != null || uiState.isGradientEnabled
             CompositionLocalProvider(
                 LocalConfiguration provides updatedConfig,
                 LocalContext provides localizedContext,
@@ -224,6 +224,9 @@ class MainActivity : ComponentActivity() {
                             AppBackgroundLayer(
                                 customBackgroundPath = uiState.customBackgroundPath,
                                 customSolidBackgroundColor = uiState.customSolidBackgroundColor,
+                                isGradientEnabled = uiState.isGradientEnabled,
+                                customGradientColors = uiState.customGradientColors,
+                                isGradientDynamic = uiState.isGradientDynamic,
                                 blurRadius = uiState.backgroundBlurRadius,
                                 blurStyle = uiState.backgroundBlurStyle,
                                 dimAlpha = uiState.backgroundDimAlpha
@@ -343,6 +346,9 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onToggleMaximizedShowControls = { show ->
                                     equalizerViewModel.setMaximizedShowControls(show)
+                                },
+                                onToggleMaximizedShowTopBar = { show ->
+                                    equalizerViewModel.setMaximizedShowTopBar(show)
                                 },
                                 onSetMaximizedCoverAlpha = { alpha ->
                                     equalizerViewModel.setMaximizedCoverAlpha(alpha)

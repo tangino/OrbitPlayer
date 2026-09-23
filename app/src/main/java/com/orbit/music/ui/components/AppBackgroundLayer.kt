@@ -34,6 +34,9 @@ import java.io.File
 fun AppBackgroundLayer(
     customBackgroundPath: String?,
     customSolidBackgroundColor: Long? = null,
+    isGradientEnabled: Boolean = false,
+    customGradientColors: List<Long>? = null,
+    isGradientDynamic: Boolean = true,
     blurRadius: Float,
     blurStyle: String,
     dimAlpha: Float,
@@ -47,6 +50,16 @@ fun AppBackgroundLayer(
             modifier = modifier
                 .fillMaxSize()
                 .background(solidColor)
+        )
+        return
+    }
+
+    // 启用多颜色混合弥散渐变背景 (保持通透纯净，与设置预览视窗 1:1 完美一致)
+    if (isGradientEnabled && !customGradientColors.isNullOrEmpty()) {
+        MeshGradientBackground(
+            colors = customGradientColors,
+            isDynamic = isGradientDynamic,
+            modifier = modifier.fillMaxSize()
         )
         return
     }

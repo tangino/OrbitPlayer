@@ -243,6 +243,24 @@
     <string name="custom_solid_quick_palette">推荐基准色</string>
     <string name="custom_solid_custom_tag">自选</string>
 
+    <!-- 多颜色混合弥散渐变背景 -->
+    <string name="custom_gradient_background_title">多颜色混合渐变背景</string>
+    <string name="custom_gradient_background_subtitle">自定义 2~4 种颜色生成柔和弥散极光渐变（支持动态流光与静态渐变）</string>
+    <string name="custom_gradient_enable_title">开启多颜色渐变背景</string>
+    <string name="custom_gradient_enable_subtitle">渲染现代极光漫反射多色融合背景</string>
+    <string name="custom_gradient_dynamic_title">动态流光效果</string>
+    <string name="custom_gradient_dynamic_subtitle">颜色缓慢呼吸游走与交融流转（关闭则为静态优雅渐变）</string>
+    <string name="custom_gradient_colors_title">自定义渐变色彩 (2~4 种颜色)</string>
+    <string name="custom_gradient_colors_hint">点击色块编辑颜色，长按移除。点击「+」最多添加 4 种颜色。</string>
+    <string name="custom_gradient_add_color">添加颜色</string>
+    <string name="custom_gradient_presets_title">精选色板预设</string>
+    <string name="custom_gradient_reset">恢复默认配色</string>
+    <string name="preset_gradient_aurora">深邃极光</string>
+    <string name="preset_gradient_cyberpunk">赛博霓虹</string>
+    <string name="preset_gradient_twilight">暮色森林</string>
+    <string name="preset_gradient_sunset">落日余晖</string>
+    <string name="preset_gradient_deep_ocean">深海幽蓝</string>
+
     <!-- 歌曲删除 -->
     <string name="menu_delete_song">删除歌曲</string>
     <string name="delete_song_dialog_title">删除歌曲</string>

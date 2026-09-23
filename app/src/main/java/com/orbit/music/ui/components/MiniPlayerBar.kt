@@ -637,15 +637,6 @@ fun MiniPlayerBar(
                                 modifier = Modifier.size(18.dp)
                             )
                         }
-
-                        // 黑胶同心微轴芯
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xEE1E2430))
-                                .border(1.dp, colors.primary.copy(alpha = 0.85f), CircleShape)
-                        )
                     }
                 }
             }

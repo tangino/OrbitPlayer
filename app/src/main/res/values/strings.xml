@@ -282,6 +282,9 @@
     <string name="maximized_cover_right">Right</string>
     <string name="maximized_show_controls">Show Controls</string>
     <string name="maximized_hide_controls">Hide Controls</string>
+    <string name="maximized_show_top_bar">Show Top Bar</string>
+    <string name="maximized_hide_top_bar">Hide Top Bar</string>
+    <string name="maximized_hide_top_bar_hint">Top bar hidden. Swipe down to restore.</string>
     <string name="maximized_clear_screen">Clean Screen</string>
     <string name="maximized_clear_screen_hint">Screen cleaned. Tap anywhere to restore controls.</string>
     <string name="maximized_cover_alpha">Cover Opacity</string>
@@ -337,6 +340,24 @@
     <string name="custom_solid_delete_color_msg">Remove this color from your custom palette?</string>
     <string name="custom_solid_quick_palette">Preset Palettes</string>
     <string name="custom_solid_custom_tag">Custom</string>
+
+    <!-- Custom Mesh Gradient Background -->
+    <string name="custom_gradient_background_title">Mesh Gradient Background</string>
+    <string name="custom_gradient_background_subtitle">Blend 2 to 4 colors into a soft diffused aurora background (Supports static &amp; dynamic flow)</string>
+    <string name="custom_gradient_enable_title">Enable Mesh Gradient Background</string>
+    <string name="custom_gradient_enable_subtitle">Render a modern soft aurora multi-color blended background</string>
+    <string name="custom_gradient_dynamic_title">Dynamic Flow Animation</string>
+    <string name="custom_gradient_dynamic_subtitle">Smooth breathing motion and fluid color transitions (Turn off for static gradient)</string>
+    <string name="custom_gradient_colors_title">Custom Gradient Colors (2-4 colors)</string>
+    <string name="custom_gradient_colors_hint">Tap to edit color, long press to remove. Tap + to add up to 4 colors.</string>
+    <string name="custom_gradient_add_color">Add Color</string>
+    <string name="custom_gradient_presets_title">Curated Preset Palettes</string>
+    <string name="custom_gradient_reset">Reset to Default Colors</string>
+    <string name="preset_gradient_aurora">Deep Aurora</string>
+    <string name="preset_gradient_cyberpunk">Cyber Neon</string>
+    <string name="preset_gradient_twilight">Twilight Forest</string>
+    <string name="preset_gradient_sunset">Sunset Glow</string>
+    <string name="preset_gradient_deep_ocean">Ocean Abyss</string>
 
     <!-- Spectrum Solid Single Color Mode -->
     <string name="visualizer_single_color_title">Solid Single Color</string>

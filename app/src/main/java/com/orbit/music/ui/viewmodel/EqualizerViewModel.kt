@@ -78,6 +78,7 @@ data class EqualizerUiState(
     val maximizedShowCover: Boolean = true,
     val maximizedCoverOnRight: Boolean = false,
     val maximizedShowControls: Boolean = true,
+    val maximizedShowTopBar: Boolean = true,
     val maximizedCoverAlpha: Float = 0.85f,
     val maximizedCoverRotating: Boolean = false,
     val showCoverInQueue: Boolean = true,
@@ -89,6 +90,9 @@ data class EqualizerUiState(
     val customBackgroundPath: String? = null,
     val customSolidBackgroundColor: Long? = null,
     val customUserSolidColors: List<Long> = emptyList(),
+    val isGradientEnabled: Boolean = false,
+    val isGradientDynamic: Boolean = true,
+    val customGradientColors: List<Long> = listOf(0xFF1E284AL, 0xFF423328L, 0xFF382D4AL),
     val backgroundBlurRadius: Float = 20f,
     val backgroundBlurStyle: String = "frosted_glass",
     val backgroundDimAlpha: Float = 0.35f,
@@ -149,6 +153,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         val savedMaximizedShowCover = prefs.getBoolean(KEY_MAXIMIZED_SHOW_COVER, true)
         val savedMaximizedCoverOnRight = prefs.getBoolean(KEY_MAXIMIZED_COVER_ON_RIGHT, false)
         val savedMaximizedShowControls = prefs.getBoolean(KEY_MAXIMIZED_SHOW_CONTROLS, true)
+        val savedMaximizedShowTopBar = prefs.getBoolean(KEY_MAXIMIZED_SHOW_TOP_BAR, true)
         val savedMaximizedCoverAlpha = prefs.getFloat(KEY_MAXIMIZED_COVER_ALPHA, 0.85f)
         val savedMaximizedCoverRotating = prefs.getBoolean(KEY_MAXIMIZED_COVER_ROTATING, false)
         val savedShowCoverInQueue = prefs.getBoolean(KEY_SHOW_COVER_IN_QUEUE, true)
@@ -160,6 +165,11 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         val savedCustomUserSolidColors = prefs.getString(KEY_CUSTOM_USER_SOLID_COLORS, null)?.let { str ->
             str.split(",").mapNotNull { it.trim().toLongOrNull() }
         } ?: emptyList()
+        val savedIsGradientEnabled = prefs.getBoolean(KEY_CUSTOM_GRADIENT_ENABLED, false)
+        val savedIsGradientDynamic = prefs.getBoolean(KEY_IS_GRADIENT_DYNAMIC, true)
+        val savedGradientColors = prefs.getString(KEY_CUSTOM_GRADIENT_COLORS, null)?.let { str ->
+            str.split(",").mapNotNull { it.trim().toLongOrNull() }.takeIf { it.isNotEmpty() }
+        } ?: listOf(0xFF1E284AL, 0xFF423328L, 0xFF382D4AL)
         val savedBgBlurRadius = prefs.getFloat(KEY_BG_BLUR_RADIUS, 20f)
         val savedBgBlurStyle = prefs.getString(KEY_BG_BLUR_STYLE, "frosted_glass") ?: "frosted_glass"
         val savedBgDimAlpha = prefs.getFloat(KEY_BG_DIM_ALPHA, 0.35f)
@@ -199,6 +209,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
                 maximizedShowCover = savedMaximizedShowCover,
                 maximizedCoverOnRight = savedMaximizedCoverOnRight,
                 maximizedShowControls = savedMaximizedShowControls,
+                maximizedShowTopBar = savedMaximizedShowTopBar,
                 maximizedCoverAlpha = savedMaximizedCoverAlpha,
                 maximizedCoverRotating = savedMaximizedCoverRotating,
                 showCoverInQueue = savedShowCoverInQueue,
@@ -210,6 +221,9 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
                 customBackgroundPath = savedCustomBgPath,
                 customSolidBackgroundColor = savedCustomSolidBgColor,
                 customUserSolidColors = savedCustomUserSolidColors,
+                isGradientEnabled = savedIsGradientEnabled,
+                isGradientDynamic = savedIsGradientDynamic,
+                customGradientColors = savedGradientColors,
                 backgroundBlurRadius = savedBgBlurRadius,
                 backgroundBlurStyle = savedBgBlurStyle,
                 backgroundDimAlpha = savedBgDimAlpha,
@@ -693,6 +707,11 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         prefs.edit().putBoolean(KEY_MAXIMIZED_SHOW_CONTROLS, show).apply()
     }
 
+    fun setMaximizedShowTopBar(show: Boolean) {
+        _uiState.update { it.copy(maximizedShowTopBar = show) }
+        prefs.edit().putBoolean(KEY_MAXIMIZED_SHOW_TOP_BAR, show).apply()
+    }
+
     fun setMaximizedCoverAlpha(alpha: Float) {
         val clamped = alpha.coerceIn(0.1f, 1.0f)
         _uiState.update { it.copy(maximizedCoverAlpha = clamped) }
@@ -774,8 +793,20 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
             try { File(context.filesDir, "custom_app_background.jpg").delete() } catch (_: Exception) {}
 
             val absPath = destFile.absolutePath
-            _uiState.update { it.copy(customBackgroundPath = absPath) }
-            prefs.edit().putString(KEY_CUSTOM_BG_PATH, absPath).apply()
+            // 互斥逻辑：启用图片背景时，自动关闭渐变背景并清除纯色背景
+            _uiState.update { 
+                it.copy(
+                    customBackgroundPath = absPath,
+                    customSolidBackgroundColor = null,
+                    isGradientEnabled = false
+                ) 
+            }
+            prefs.edit()
+                .putString(KEY_CUSTOM_BG_PATH, absPath)
+                .remove(KEY_CUSTOM_SOLID_BG_COLOR)
+                .putBoolean(KEY_CUSTOM_GRADIENT_ENABLED, false)
+                .apply()
+
             extractAndApplyBackgroundColors(absPath)
             true
         } catch (e: Exception) {
@@ -804,10 +835,30 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun setCustomSolidBackgroundColor(color: Long?) {
-        _uiState.update { it.copy(customSolidBackgroundColor = color) }
         if (color != null) {
-            prefs.edit().putLong(KEY_CUSTOM_SOLID_BG_COLOR, color).apply()
+            // 互斥逻辑：启用纯色背景时，自动关闭渐变背景并清除图片背景
+            try {
+                val oldPath = _uiState.value.customBackgroundPath
+                if (oldPath != null) {
+                    val f = File(oldPath)
+                    if (f.exists()) f.delete()
+                }
+            } catch (_: Exception) {}
+
+            _uiState.update { 
+                it.copy(
+                    customSolidBackgroundColor = color,
+                    isGradientEnabled = false,
+                    customBackgroundPath = null
+                ) 
+            }
+            prefs.edit()
+                .putLong(KEY_CUSTOM_SOLID_BG_COLOR, color)
+                .putBoolean(KEY_CUSTOM_GRADIENT_ENABLED, false)
+                .remove(KEY_CUSTOM_BG_PATH)
+                .apply()
         } else {
+            _uiState.update { it.copy(customSolidBackgroundColor = null) }
             prefs.edit().remove(KEY_CUSTOM_SOLID_BG_COLOR).apply()
         }
     }
@@ -816,14 +867,16 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         setCustomSolidBackgroundColor(null)
     }
 
-    fun addCustomUserSolidColor(color: Long) {
+    fun addCustomUserSolidColor(color: Long, applyAsBackground: Boolean = true) {
         val current = _uiState.value.customUserSolidColors.toMutableList()
         current.remove(color)
         current.add(0, color)
         val limited = current.take(30)
         _uiState.update { it.copy(customUserSolidColors = limited) }
         prefs.edit().putString(KEY_CUSTOM_USER_SOLID_COLORS, limited.joinToString(",")).apply()
-        setCustomSolidBackgroundColor(color)
+        if (applyAsBackground) {
+            setCustomSolidBackgroundColor(color)
+        }
     }
 
     fun removeCustomUserSolidColor(color: Long) {
@@ -889,6 +942,76 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
             .edit().putBoolean(KEY_ONLINE_COVER_WIFI_ONLY, enabled).apply()
     }
 
+    fun setCustomGradientEnabled(enabled: Boolean) {
+        if (enabled) {
+            // 互斥逻辑：启用渐变背景时，自动清除纯色背景与图片背景
+            try {
+                val oldPath = _uiState.value.customBackgroundPath
+                if (oldPath != null) {
+                    val f = File(oldPath)
+                    if (f.exists()) f.delete()
+                }
+            } catch (_: Exception) {}
+
+            _uiState.update { 
+                it.copy(
+                    isGradientEnabled = true,
+                    customSolidBackgroundColor = null,
+                    customBackgroundPath = null
+                ) 
+            }
+            prefs.edit()
+                .putBoolean(KEY_CUSTOM_GRADIENT_ENABLED, true)
+                .remove(KEY_CUSTOM_SOLID_BG_COLOR)
+                .remove(KEY_CUSTOM_BG_PATH)
+                .apply()
+        } else {
+            _uiState.update { it.copy(isGradientEnabled = false) }
+            prefs.edit().putBoolean(KEY_CUSTOM_GRADIENT_ENABLED, false).apply()
+        }
+    }
+
+    fun setGradientDynamic(isDynamic: Boolean) {
+        _uiState.update { it.copy(isGradientDynamic = isDynamic) }
+        prefs.edit().putBoolean(KEY_IS_GRADIENT_DYNAMIC, isDynamic).apply()
+    }
+
+    fun setGradientColors(colors: List<Long>) {
+        val safe = colors.take(4).let { if (it.size < 2) it + listOf(0xFF423328L) else it }
+        setCustomGradientEnabled(true)
+        _uiState.update { it.copy(customGradientColors = safe) }
+        prefs.edit().putString(KEY_CUSTOM_GRADIENT_COLORS, safe.joinToString(",")).apply()
+    }
+
+    fun updateGradientColor(index: Int, color: Long) {
+        val current = _uiState.value.customGradientColors.toMutableList()
+        if (index in current.indices) {
+            current[index] = color
+            setGradientColors(current)
+        }
+    }
+
+    fun addGradientColor(color: Long) {
+        val current = _uiState.value.customGradientColors.toMutableList()
+        if (current.size < 4) {
+            current.add(color)
+            setGradientColors(current)
+        }
+    }
+
+    fun removeGradientColor(index: Int) {
+        val current = _uiState.value.customGradientColors.toMutableList()
+        if (current.size > 2 && index in current.indices) {
+            current.removeAt(index)
+            setGradientColors(current)
+        }
+    }
+
+    fun resetGradientColors() {
+        val defaultColors = listOf(0xFF1E284AL, 0xFF423328L, 0xFF382D4AL)
+        setGradientColors(defaultColors)
+    }
+
     fun setTabletLandscapeModeEnabled(enabled: Boolean) {
         _uiState.update { it.copy(isTabletLandscapeModeEnabled = enabled) }
         prefs.edit().putBoolean(KEY_TABLET_LANDSCAPE_MODE, enabled).apply()
@@ -936,6 +1059,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         private const val KEY_MAXIMIZED_SHOW_COVER = "key_maximized_show_cover"
         private const val KEY_MAXIMIZED_COVER_ON_RIGHT = "key_maximized_cover_on_right"
         private const val KEY_MAXIMIZED_SHOW_CONTROLS = "key_maximized_show_controls"
+        private const val KEY_MAXIMIZED_SHOW_TOP_BAR = "key_maximized_show_top_bar"
         private const val KEY_MAXIMIZED_COVER_ALPHA = "key_maximized_cover_alpha"
         private const val KEY_MAXIMIZED_COVER_ROTATING = "key_maximized_cover_rotating"
         private const val KEY_IS_VISUALIZER_MAXIMIZED = "key_is_visualizer_maximized"
@@ -944,6 +1068,9 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         private const val KEY_CUSTOM_BG_PATH = "key_custom_bg_path"
         private const val KEY_CUSTOM_SOLID_BG_COLOR = "key_custom_solid_bg_color"
         private const val KEY_CUSTOM_USER_SOLID_COLORS = "key_custom_user_solid_colors"
+        private const val KEY_CUSTOM_GRADIENT_ENABLED = "key_custom_gradient_enabled"
+        private const val KEY_IS_GRADIENT_DYNAMIC = "key_is_gradient_dynamic"
+        private const val KEY_CUSTOM_GRADIENT_COLORS = "key_custom_gradient_colors"
         private const val KEY_BG_BLUR_RADIUS = "key_bg_blur_radius"
         private const val KEY_BG_BLUR_STYLE = "key_bg_blur_style"
         private const val KEY_BG_DIM_ALPHA = "key_bg_dim_alpha"
