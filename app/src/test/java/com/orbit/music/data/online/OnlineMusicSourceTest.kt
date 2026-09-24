@@ -5,6 +5,8 @@ import com.orbit.music.data.online.repository.OnlineMusicRepository
 import com.orbit.music.data.online.source.netease.NeteaseCrypto
 import com.orbit.music.data.online.source.netease.NeteaseMusicSource
 import com.orbit.music.data.online.source.qq.QQMusicSource
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -163,4 +165,66 @@ class OnlineMusicSourceTest {
             fail(e.message)
         }
     }
+
+    @Test
+    fun testQQArtistRawApis() {
+        val client = okhttp3.OkHttpClient()
+        val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        val singerMid = "001BLpXF2DyJe2" // 林俊杰
+
+        val payload = org.json.JSONObject().apply {
+            put("comm", org.json.JSONObject().apply {
+                put("cv", 4747474)
+                put("ct", 24)
+                put("format", "json")
+                put("inCharset", "utf-8")
+                put("outCharset", "utf-8")
+                put("notice", 0)
+                put("platform", "yqq.json")
+                put("needNewCode", 1)
+                put("uin", 0)
+            })
+            put("album1", org.json.JSONObject().apply {
+                put("module", "music.musichallAlbum.AlbumListServer")
+                put("method", "GetAlbumListBySinger")
+                put("param", org.json.JSONObject().apply {
+                    put("singerMid", singerMid)
+                    put("begin", 0)
+                    put("num", 10)
+                    put("order", 0)
+                })
+            })
+            put("album2", org.json.JSONObject().apply {
+                put("module", "music.musichallAlbum.AlbumListServer")
+                put("method", "GetAlbumListBySinger")
+                put("param", org.json.JSONObject().apply {
+                    put("singermid", singerMid)
+                    put("begin", 0)
+                    put("num", 10)
+                    put("order", 0)
+                })
+            })
+            put("album3", org.json.JSONObject().apply {
+                put("module", "music.web_singer_info_svr")
+                put("method", "get_singer_album")
+                put("param", org.json.JSONObject().apply {
+                    put("singermid", singerMid)
+                    put("begin", 0)
+                    put("num", 10)
+                    put("order", 0)
+                })
+            })
+        }
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val req = okhttp3.Request.Builder()
+            .url("https://u.y.qq.com/cgi-bin/musicu.fcg")
+            .header("User-Agent", userAgent)
+            .header("Referer", "https://y.qq.com/")
+            .post(payload.toString().toRequestBody(mediaType))
+            .build()
+        val resp = client.newCall(req).execute().body?.string()
+        println("=== QQ Album Responses ===")
+        println(resp)
+    }
 }
+

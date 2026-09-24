@@ -76,6 +76,13 @@ if [[ "$*" == *"--clean"* ]]; then
     $GRADLE_BIN "${GRADLE_EXTRA_OPTS[@]}" clean
 fi
 
+# 支持传入自定义 Gradle 任务 (如 test, testDebugUnitTest)
+if [ -n "$1" ] && [[ "$1" != "--clean" ]]; then
+    echo -e "${YELLOW}正在执行自定义任务: $@...${NC}"
+    $GRADLE_BIN "${GRADLE_EXTRA_OPTS[@]}" "$@"
+    exit 0
+fi
+
 # 执行完整编译任务
 $GRADLE_BIN "${GRADLE_EXTRA_OPTS[@]}" assembleDebug
 

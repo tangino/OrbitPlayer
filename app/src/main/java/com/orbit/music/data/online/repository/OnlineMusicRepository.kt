@@ -138,6 +138,95 @@ class OnlineMusicRepository private constructor() {
     }
 
     /**
+     * 获取歌手分类标签
+     */
+    suspend fun getArtistCategories(platform: OnlinePlatform = _currentPlatform.value): Result<List<com.orbit.music.data.online.model.OnlineArtistCategory>> {
+        return runCatching {
+            getSource(platform).getArtistCategories()
+        }
+    }
+
+    /**
+     * 分页获取歌手列表
+     */
+    suspend fun getArtists(
+        category: String = "全部",
+        page: Int = 1,
+        pageSize: Int = 30,
+        platform: OnlinePlatform = _currentPlatform.value
+    ): Result<List<com.orbit.music.data.online.model.OnlineArtist>> {
+        return runCatching {
+            getSource(platform).getArtists(category, page, pageSize)
+        }
+    }
+
+    /**
+     * 搜索歌手
+     */
+    suspend fun searchArtists(
+        keyword: String,
+        page: Int = 1,
+        pageSize: Int = 20,
+        platform: OnlinePlatform = _currentPlatform.value
+    ): Result<List<com.orbit.music.data.online.model.OnlineArtist>> {
+        return runCatching {
+            getSource(platform).searchArtists(keyword, page, pageSize)
+        }
+    }
+
+    /**
+     * 获取歌手详情（含热门歌曲与专辑概览）
+     */
+    suspend fun getArtistDetail(
+        artistId: String,
+        platform: OnlinePlatform = _currentPlatform.value
+    ): Result<com.orbit.music.data.online.model.OnlineArtistDetail> {
+        return runCatching {
+            getSource(platform).getArtistDetail(artistId)
+        }
+    }
+
+    /**
+     * 分页获取歌手歌曲列表
+     */
+    suspend fun getArtistSongs(
+        artistId: String,
+        page: Int = 1,
+        pageSize: Int = 50,
+        platform: OnlinePlatform = _currentPlatform.value
+    ): Result<List<OnlineSongItem>> {
+        return runCatching {
+            getSource(platform).getArtistSongs(artistId, page, pageSize)
+        }
+    }
+
+    /**
+     * 分页获取歌手专辑列表
+     */
+    suspend fun getArtistAlbums(
+        artistId: String,
+        page: Int = 1,
+        pageSize: Int = 30,
+        platform: OnlinePlatform = _currentPlatform.value
+    ): Result<List<com.orbit.music.data.online.model.OnlineAlbum>> {
+        return runCatching {
+            getSource(platform).getArtistAlbums(artistId, page, pageSize)
+        }
+    }
+
+    /**
+     * 获取专辑详情及曲目列表
+     */
+    suspend fun getAlbumDetail(
+        albumId: String,
+        platform: OnlinePlatform = _currentPlatform.value
+    ): Result<Pair<com.orbit.music.data.online.model.OnlineAlbum, List<OnlineSongItem>>> {
+        return runCatching {
+            getSource(platform).getAlbumDetail(albumId)
+        }
+    }
+
+    /**
      * 尝试从链接或输入文本中自动识别平台并提取歌单 ID
      * @return Pair<OnlinePlatform, PlaylistId> 或者 null
      */

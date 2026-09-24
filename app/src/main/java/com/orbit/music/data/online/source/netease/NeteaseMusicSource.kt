@@ -401,4 +401,394 @@ class NeteaseMusicSource(
         }
         return null
     }
+
+    override suspend fun getArtistCategories(): List<com.orbit.music.data.online.model.OnlineArtistCategory> {
+        return listOf(
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "7_1", name = "华语男歌手", area = "7", type = "1"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "7_2", name = "华语女歌手", area = "7", type = "2"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "7_3", name = "华语乐队/组合", area = "7", type = "3"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "96_1", name = "欧美男歌手", area = "96", type = "1"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "96_2", name = "欧美女歌手", area = "96", type = "2"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "96_3", name = "欧美乐队/组合", area = "96", type = "3"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "8_1", name = "日本男歌手", area = "8", type = "1"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "8_2", name = "日本女歌手", area = "8", type = "2"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "8_3", name = "日本乐队/组合", area = "8", type = "3"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "16_1", name = "韩国男歌手", area = "16", type = "1"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "16_2", name = "韩国女歌手", area = "16", type = "2"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "16_3", name = "韩国乐队/组合", area = "16", type = "3")
+        )
+    }
+
+    override suspend fun getArtists(
+        category: String,
+        page: Int,
+        pageSize: Int
+    ): List<com.orbit.music.data.online.model.OnlineArtist> = withContext(Dispatchers.IO) {
+        var area = "-1"
+        var type = "-1"
+        if (category.contains("_")) {
+            val parts = category.split("_")
+            area = parts.getOrNull(0) ?: "-1"
+            type = parts.getOrNull(1) ?: "-1"
+        }
+        val offset = (page - 1) * pageSize
+        val url = "https://music.163.com/api/v1/artist/list?categoryCode=0&area=$area&type=$type&initial=-1&offset=$offset&limit=$pageSize&total=true"
+        val root = getApi(url)
+        val artistsArr = root.optJSONArray("artists") ?: return@withContext emptyList()
+        val list = mutableListOf<com.orbit.music.data.online.model.OnlineArtist>()
+
+        for (i in 0 until artistsArr.length()) {
+            val item = artistsArr.optJSONObject(i) ?: continue
+            val id = item.optLong("id").toString()
+            val name = item.optString("name")
+            var picUrl = item.optString("picUrl").ifEmpty { item.optString("img1v1Url") }
+            if (picUrl.isNotEmpty() && !picUrl.contains("?param=")) {
+                picUrl = "$picUrl?param=300y300"
+            }
+            val musicSize = item.optInt("musicSize", 0)
+            val albumSize = item.optInt("albumSize", 0)
+            val mvSize = item.optInt("mvSize", 0)
+            val aliasArr = item.optJSONArray("alias")
+            val aliasList = mutableListOf<String>()
+            if (aliasArr != null) {
+                for (j in 0 until aliasArr.length()) {
+                    aliasArr.optString(j).takeIf { it.isNotBlank() }?.let { aliasList.add(it) }
+                }
+            }
+
+            list.add(
+                com.orbit.music.data.online.model.OnlineArtist(
+                    id = id,
+                    platform = platform,
+                    name = name,
+                    avatarUrl = picUrl,
+                    songCount = musicSize,
+                    albumCount = albumSize,
+                    mvCount = mvSize,
+                    alias = aliasList
+                )
+            )
+        }
+        list
+    }
+
+    override suspend fun searchArtists(
+        keyword: String,
+        page: Int,
+        pageSize: Int
+    ): List<com.orbit.music.data.online.model.OnlineArtist> = withContext(Dispatchers.IO) {
+        val offset = (page - 1) * pageSize
+        val formBody = FormBody.Builder()
+            .add("s", keyword)
+            .add("type", "100") // 100 代表歌手
+            .add("offset", offset.toString())
+            .add("limit", pageSize.toString())
+            .add("total", "true")
+            .build()
+
+        val root = postApi("https://music.163.com/api/search/get/web?csrf_token=", formBody)
+        val resultObj = root.optJSONObject("result") ?: return@withContext emptyList()
+        val artistsArr = resultObj.optJSONArray("artists") ?: return@withContext emptyList()
+        val list = mutableListOf<com.orbit.music.data.online.model.OnlineArtist>()
+
+        for (i in 0 until artistsArr.length()) {
+            val item = artistsArr.optJSONObject(i) ?: continue
+            val id = item.optLong("id").toString()
+            val name = item.optString("name")
+            var picUrl = item.optString("picUrl").ifEmpty { item.optString("img1v1Url") }
+            if (picUrl.isNotEmpty() && !picUrl.contains("?param=")) {
+                picUrl = "$picUrl?param=300y300"
+            }
+            val albumSize = item.optInt("albumSize", 0)
+            val mvSize = item.optInt("mvSize", 0)
+            val aliasArr = item.optJSONArray("alias")
+            val aliasList = mutableListOf<String>()
+            if (aliasArr != null) {
+                for (j in 0 until aliasArr.length()) {
+                    aliasArr.optString(j).takeIf { it.isNotBlank() }?.let { aliasList.add(it) }
+                }
+            }
+
+            list.add(
+                com.orbit.music.data.online.model.OnlineArtist(
+                    id = id,
+                    platform = platform,
+                    name = name,
+                    avatarUrl = picUrl,
+                    albumCount = albumSize,
+                    mvCount = mvSize,
+                    alias = aliasList
+                )
+            )
+        }
+        list
+    }
+
+    override suspend fun getArtistDetail(artistId: String): com.orbit.music.data.online.model.OnlineArtistDetail = withContext(Dispatchers.IO) {
+        // 1. 获取歌手基本信息
+        var artistName = ""
+        var avatarUrl = ""
+        var desc: String? = null
+        var songCount = 0
+        var albumCount = 0
+        val aliasList = mutableListOf<String>()
+
+        try {
+            val detailRoot = getApi("https://music.163.com/api/v1/artist/detail?id=$artistId")
+            val artistObj = detailRoot.optJSONObject("data")?.optJSONObject("artist")
+            if (artistObj != null) {
+                artistName = artistObj.optString("name")
+                avatarUrl = artistObj.optString("avatar").ifEmpty { artistObj.optString("cover") }
+                desc = artistObj.optString("briefDesc")
+                songCount = artistObj.optInt("musicSize", 0)
+                albumCount = artistObj.optInt("albumSize", 0)
+                val aliasArr = artistObj.optJSONArray("alias")
+                if (aliasArr != null) {
+                    for (i in 0 until aliasArr.length()) {
+                        aliasArr.optString(i).takeIf { it.isNotBlank() }?.let { aliasList.add(it) }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 2. 获取热门歌曲
+        val hotSongs = mutableListOf<OnlineSongItem>()
+        try {
+            val songsRoot = getApi("https://music.163.com/api/artist/50/hot?id=$artistId")
+            val songsArr = songsRoot.optJSONArray("songs")
+            if (songsArr != null) {
+                if (artistName.isEmpty() && songsArr.length() > 0) {
+                    val firstAr = songsArr.optJSONObject(0)?.optJSONArray("ar")?.optJSONObject(0)
+                    artistName = firstAr?.optString("name") ?: ""
+                }
+                for (i in 0 until songsArr.length()) {
+                    val sObj = songsArr.optJSONObject(i) ?: continue
+                    val id = sObj.optLong("id").toString()
+                    val title = sObj.optString("name")
+                    val arArr = sObj.optJSONArray("ar")
+                    val arNames = mutableListOf<String>()
+                    if (arArr != null) {
+                        for (j in 0 until arArr.length()) {
+                            arArr.optJSONObject(j)?.optString("name")?.let { arNames.add(it) }
+                        }
+                    }
+                    val alObj = sObj.optJSONObject("al")
+                    val albumTitle = alObj?.optString("name") ?: ""
+                    var pic = alObj?.optString("picUrl") ?: ""
+                    if (pic.isNotEmpty() && !pic.contains("?param=")) {
+                        pic = "$pic?param=300y300"
+                    }
+                    val dt = sObj.optLong("dt", 0L)
+                    val fee = sObj.optInt("fee", 0)
+
+                    hotSongs.add(
+                        OnlineSongItem(
+                            id = id,
+                            platform = platform,
+                            title = title,
+                            artist = if (arNames.isNotEmpty()) arNames.joinToString(", ") else artistName,
+                            album = albumTitle,
+                            durationMs = dt,
+                            coverUrl = pic,
+                            isVip = fee == 1 || fee == 4
+                        )
+                    )
+                }
+            }
+        } catch (_: Exception) {}
+
+        if (songCount <= 0) songCount = hotSongs.size
+
+        // 3. 获取专辑列表
+        val albums = getArtistAlbums(artistId, 1, 30)
+        if (albumCount <= 0) albumCount = albums.size
+
+        if (avatarUrl.isNotEmpty() && !avatarUrl.contains("?param=")) {
+            avatarUrl = "$avatarUrl?param=500y500"
+        }
+        if (avatarUrl.isEmpty() && hotSongs.isNotEmpty()) {
+            avatarUrl = hotSongs.first().coverUrl ?: ""
+        }
+
+        val artist = com.orbit.music.data.online.model.OnlineArtist(
+            id = artistId,
+            platform = platform,
+            name = artistName.ifEmpty { "歌手 $artistId" },
+            avatarUrl = avatarUrl,
+            songCount = songCount,
+            albumCount = albumCount,
+            description = desc,
+            alias = aliasList
+        )
+
+        com.orbit.music.data.online.model.OnlineArtistDetail(
+            artist = artist,
+            hotSongs = hotSongs,
+            albums = albums
+        )
+    }
+
+    override suspend fun getArtistSongs(
+        artistId: String,
+        page: Int,
+        pageSize: Int
+    ): List<OnlineSongItem> = withContext(Dispatchers.IO) {
+        val offset = (page - 1) * pageSize
+        val url = "https://music.163.com/api/v1/artist/songs?id=$artistId&order=hot&limit=$pageSize&offset=$offset"
+        val root = getApi(url)
+        val songsArr = root.optJSONArray("songs") ?: return@withContext emptyList()
+        val list = mutableListOf<OnlineSongItem>()
+
+        for (i in 0 until songsArr.length()) {
+            val sObj = songsArr.optJSONObject(i) ?: continue
+            val id = sObj.optLong("id").toString()
+            val title = sObj.optString("name")
+            val arArr = sObj.optJSONArray("ar")
+            val arNames = mutableListOf<String>()
+            if (arArr != null) {
+                for (j in 0 until arArr.length()) {
+                    arArr.optJSONObject(j)?.optString("name")?.let { arNames.add(it) }
+                }
+            }
+            val alObj = sObj.optJSONObject("al")
+            val albumTitle = alObj?.optString("name") ?: ""
+            var pic = alObj?.optString("picUrl") ?: ""
+            if (pic.isNotEmpty() && !pic.contains("?param=")) {
+                pic = "$pic?param=300y300"
+            }
+            val dt = sObj.optLong("dt", 0L)
+            val fee = sObj.optInt("fee", 0)
+
+            list.add(
+                OnlineSongItem(
+                    id = id,
+                    platform = platform,
+                    title = title,
+                    artist = arNames.joinToString(", "),
+                    album = albumTitle,
+                    durationMs = dt,
+                    coverUrl = pic,
+                    isVip = fee == 1 || fee == 4
+                )
+            )
+        }
+        list
+    }
+
+    override suspend fun getArtistAlbums(
+        artistId: String,
+        page: Int,
+        pageSize: Int
+    ): List<com.orbit.music.data.online.model.OnlineAlbum> = withContext(Dispatchers.IO) {
+        val offset = (page - 1) * pageSize
+        val url = "https://music.163.com/api/artist/albums/$artistId?limit=$pageSize&offset=$offset"
+        val root = getApi(url)
+        val hotAlbums = root.optJSONArray("hotAlbums") ?: return@withContext emptyList()
+        val list = mutableListOf<com.orbit.music.data.online.model.OnlineAlbum>()
+
+        for (i in 0 until hotAlbums.length()) {
+            val aObj = hotAlbums.optJSONObject(i) ?: continue
+            val id = aObj.optLong("id").toString()
+            val title = aObj.optString("name")
+            var picUrl = aObj.optString("picUrl")
+            if (picUrl.isNotEmpty() && !picUrl.contains("?param=")) {
+                picUrl = "$picUrl?param=300y300"
+            }
+            val artistObj = aObj.optJSONObject("artist")
+            val artistName = artistObj?.optString("name") ?: ""
+            val size = aObj.optInt("size", 0)
+            val publishTimeLong = aObj.optLong("publishTime", 0L)
+            val publishTime = if (publishTimeLong > 0) {
+                java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(publishTimeLong))
+            } else null
+            val company = aObj.optString("company")
+            val desc = aObj.optString("description")
+
+            list.add(
+                com.orbit.music.data.online.model.OnlineAlbum(
+                    id = id,
+                    platform = platform,
+                    title = title,
+                    coverUrl = picUrl,
+                    artist = artistName,
+                    artistId = artistId,
+                    songCount = size,
+                    publishTime = publishTime,
+                    company = company,
+                    description = desc
+                )
+            )
+        }
+        list
+    }
+
+    override suspend fun getAlbumDetail(albumId: String): Pair<com.orbit.music.data.online.model.OnlineAlbum, List<OnlineSongItem>> = withContext(Dispatchers.IO) {
+        val url = "https://music.163.com/api/v1/album/$albumId"
+        val root = getApi(url)
+        val albumObj = root.optJSONObject("album") ?: throw IllegalStateException("专辑数据不存在")
+        val id = albumObj.optLong("id").toString()
+        val title = albumObj.optString("name")
+        var cover = albumObj.optString("picUrl")
+        if (cover.isNotEmpty() && !cover.contains("?param=")) {
+            cover = "$cover?param=500y500"
+        }
+        val artistObj = albumObj.optJSONObject("artist")
+        val artistName = artistObj?.optString("name") ?: ""
+        val artistId = artistObj?.optLong("id")?.toString()
+        val size = albumObj.optInt("size", 0)
+        val publishTimeLong = albumObj.optLong("publishTime", 0L)
+        val publishTime = if (publishTimeLong > 0) {
+            java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(publishTimeLong))
+        } else null
+        val company = albumObj.optString("company")
+        val desc = albumObj.optString("description")
+
+        val album = com.orbit.music.data.online.model.OnlineAlbum(
+            id = id,
+            platform = platform,
+            title = title,
+            coverUrl = cover,
+            artist = artistName,
+            artistId = artistId,
+            songCount = size,
+            publishTime = publishTime,
+            company = company,
+            description = desc
+        )
+
+        val songsArr = root.optJSONArray("songs") ?: albumObj.optJSONArray("songs")
+        val songList = mutableListOf<OnlineSongItem>()
+        if (songsArr != null) {
+            for (i in 0 until songsArr.length()) {
+                val sObj = songsArr.optJSONObject(i) ?: continue
+                val songId = sObj.optLong("id").toString()
+                val songName = sObj.optString("name")
+                val arArr = sObj.optJSONArray("ar")
+                val arNames = mutableListOf<String>()
+                if (arArr != null) {
+                    for (j in 0 until arArr.length()) {
+                        arArr.optJSONObject(j)?.optString("name")?.let { arNames.add(it) }
+                    }
+                }
+                val dt = sObj.optLong("dt", 0L)
+                val fee = sObj.optInt("fee", 0)
+
+                songList.add(
+                    OnlineSongItem(
+                        id = songId,
+                        platform = platform,
+                        title = songName,
+                        artist = if (arNames.isNotEmpty()) arNames.joinToString(", ") else artistName,
+                        album = title,
+                        durationMs = dt,
+                        coverUrl = cover,
+                        isVip = fee == 1 || fee == 4
+                    )
+                )
+            }
+        }
+
+        Pair(album, songList)
+    }
 }
+

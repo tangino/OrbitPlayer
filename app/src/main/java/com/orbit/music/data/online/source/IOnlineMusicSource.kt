@@ -1,5 +1,9 @@
 package com.orbit.music.data.online.source
 
+import com.orbit.music.data.online.model.OnlineAlbum
+import com.orbit.music.data.online.model.OnlineArtist
+import com.orbit.music.data.online.model.OnlineArtistCategory
+import com.orbit.music.data.online.model.OnlineArtistDetail
 import com.orbit.music.data.online.model.OnlineLeaderboard
 import com.orbit.music.data.online.model.OnlinePlatform
 import com.orbit.music.data.online.model.OnlinePlaylist
@@ -47,4 +51,45 @@ interface IOnlineMusicSource {
      * 从分享链接/字符串中提取解析歌单 ID
      */
     fun extractPlaylistId(urlOrText: String): String?
+
+    /**
+     * 获取歌手分类列表
+     */
+    suspend fun getArtistCategories(): List<OnlineArtistCategory> = emptyList()
+
+    /**
+     * 分页获取热门/分类歌手列表
+     */
+    suspend fun getArtists(category: String = "全部", page: Int = 1, pageSize: Int = 30): List<OnlineArtist> = emptyList()
+
+    /**
+     * 搜索歌手
+     */
+    suspend fun searchArtists(keyword: String, page: Int = 1, pageSize: Int = 20): List<OnlineArtist> = emptyList()
+
+    /**
+     * 获取歌手详情（含热门歌曲与专辑）
+     */
+    suspend fun getArtistDetail(artistId: String): OnlineArtistDetail = OnlineArtistDetail(
+        artist = OnlineArtist(id = artistId, platform = platform, name = "", avatarUrl = "")
+    )
+
+    /**
+     * 获取歌手的歌曲列表
+     */
+    suspend fun getArtistSongs(artistId: String, page: Int = 1, pageSize: Int = 50): List<OnlineSongItem> = emptyList()
+
+    /**
+     * 获取歌手的专辑列表
+     */
+    suspend fun getArtistAlbums(artistId: String, page: Int = 1, pageSize: Int = 30): List<OnlineAlbum> = emptyList()
+
+    /**
+     * 获取专辑详情及专辑内的所有歌曲
+     */
+    suspend fun getAlbumDetail(albumId: String): Pair<OnlineAlbum, List<OnlineSongItem>> = Pair(
+        OnlineAlbum(id = albumId, platform = platform, title = "", coverUrl = "", artist = ""),
+        emptyList()
+    )
 }
+

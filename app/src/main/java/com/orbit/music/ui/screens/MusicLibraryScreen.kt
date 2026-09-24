@@ -171,6 +171,16 @@ fun MusicLibraryScreen(
     var isOnlineDetailLoading by remember { mutableStateOf(false) }
     var onlineDetailError by remember { mutableStateOf<String?>(null) }
 
+    // 在线歌手与在线专辑状态 (QQ音乐平台)
+    var openedOnlineArtist by remember { mutableStateOf<com.orbit.music.data.online.model.OnlineArtist?>(null) }
+    var openedOnlineAlbum by remember { mutableStateOf<com.orbit.music.data.online.model.OnlineAlbum?>(null) }
+
+    // 切换 Tab 时自动清空网络歌手/专辑下钻
+    LaunchedEffect(libraryState.currentTab) {
+        openedOnlineArtist = null
+        openedOnlineAlbum = null
+    }
+
     // 监听 openedOnlinePlaylist 变化自动抓取歌单详情与歌曲
     LaunchedEffect(openedOnlinePlaylist?.id, openedOnlinePlaylist?.platform) {
         val op = openedOnlinePlaylist
@@ -303,6 +313,16 @@ fun MusicLibraryScreen(
         viewModel.selectOnlinePlaylist(null)
     }
 
+    // 5.1 在线专辑下钻状态 -> 侧滑返回回到歌手详情或广场
+    BackHandler(enabled = !libraryState.isNowPlayingExpanded && openedOnlineAlbum != null) {
+        openedOnlineAlbum = null
+    }
+
+    // 5.2 在线歌手下钻状态 -> 侧滑返回回到广场
+    BackHandler(enabled = !libraryState.isNowPlayingExpanded && openedOnlineArtist != null) {
+        openedOnlineArtist = null
+    }
+
     // 6. 搜索栏开启状态 -> 侧滑返回关闭搜索
     BackHandler(enabled = !libraryState.isNowPlayingExpanded && libraryState.isSearching) {
         viewModel.toggleSearch()
@@ -318,6 +338,8 @@ fun MusicLibraryScreen(
         openedArtist != null -> "detail_artist"
         openedPlaylist != null -> "detail_playlist"
         openedOnlinePlaylist != null -> "detail_online_playlist"
+        openedOnlineAlbum != null -> "detail_online_album"
+        openedOnlineArtist != null -> "detail_online_artist"
         else -> libraryState.currentTab.pageKey
     }
     val currentActiveViewMode = libraryState.getViewModeFor(currentPageKey)
@@ -532,8 +554,9 @@ fun MusicLibraryScreen(
         LibraryTab.QQ_SQUARE,
         LibraryTab.KUGOU_SQUARE,
         LibraryTab.KUWO_SQUARE,
-        LibraryTab.MIGU_SQUARE
-    ) || openedOnlinePlaylist != null
+        LibraryTab.MIGU_SQUARE,
+        LibraryTab.ONLINE_ARTISTS
+    ) || openedOnlinePlaylist != null || openedOnlineArtist != null || openedOnlineAlbum != null
 
     // 全 Tab 通用 Pinch 手势控制器与修饰符（绑定当前页面的独立视图模式，网络歌曲列表及广场禁用 Pinch 缩放）
     val pinchTransitionState = rememberPinchTransitionState()
@@ -839,11 +862,17 @@ fun MusicLibraryScreen(
                             fontSize = 13.sp
                         )
                     }
-                } else if (openedFolderPath != null || openedAlbum != null || openedArtist != null || openedPlaylist != null || openedOnlinePlaylist != null) {
+                } else if (openedFolderPath != null || openedAlbum != null || openedArtist != null || openedPlaylist != null || openedOnlinePlaylist != null || openedOnlineArtist != null || openedOnlineAlbum != null) {
                     // 下钻模式：返回键 + 标题与副标题
                     IconButton(
                         onClick = {
-                            viewModel.clearAllDrillDown()
+                            if (openedOnlineAlbum != null) {
+                                openedOnlineAlbum = null
+                            } else if (openedOnlineArtist != null) {
+                                openedOnlineArtist = null
+                            } else {
+                                viewModel.clearAllDrillDown()
+                            }
                         },
                         modifier = Modifier.size(34.dp)
                     ) {
@@ -866,6 +895,12 @@ fun MusicLibraryScreen(
                             }
                             openedArtist != null -> {
                                 openedArtist!!.name to "${openedArtist!!.albumCount} albums • ${openedArtist!!.songCount} tracks"
+                            }
+                            openedOnlineAlbum != null -> {
+                                openedOnlineAlbum!!.title to "专辑 · ${openedOnlineAlbum!!.artist}"
+                            }
+                            openedOnlineArtist != null -> {
+                                openedOnlineArtist!!.name to "QQ 音乐认证歌手"
                             }
                             openedOnlinePlaylist != null -> {
                                 val count = if (onlinePlaylistSongs.isNotEmpty()) onlinePlaylistSongs.size else openedOnlinePlaylist!!.trackCount
@@ -1034,7 +1069,7 @@ fun MusicLibraryScreen(
                 }
             }
 
-            val isDrillDown = openedFolderPath != null || openedAlbum != null || openedArtist != null || openedPlaylist != null || openedOnlinePlaylist != null
+            val isDrillDown = openedFolderPath != null || openedAlbum != null || openedArtist != null || openedPlaylist != null || openedOnlinePlaylist != null || openedOnlineArtist != null || openedOnlineAlbum != null
 
             // 2. 现代 Segmented Pill 胶囊标签栏 (下钻时隐藏)
             if (!isDrillDown) {
@@ -1044,7 +1079,8 @@ fun MusicLibraryScreen(
                     LibraryTab.QQ_SQUARE,
                     LibraryTab.KUGOU_SQUARE,
                     LibraryTab.KUWO_SQUARE,
-                    LibraryTab.MIGU_SQUARE
+                    LibraryTab.MIGU_SQUARE,
+                    LibraryTab.ONLINE_ARTISTS
                 )
                 val onlineTabLabel = when (libraryState.currentTab) {
                     LibraryTab.NETEASE_SQUARE -> "网易云广场"
@@ -1052,7 +1088,8 @@ fun MusicLibraryScreen(
                     LibraryTab.KUGOU_SQUARE -> "酷狗音乐广场"
                     LibraryTab.KUWO_SQUARE -> "酷我音乐广场"
                     LibraryTab.MIGU_SQUARE -> "咪咕音乐广场"
-                    else -> "在线歌单"
+                    LibraryTab.ONLINE_ARTISTS -> "歌手库"
+                    else -> "在线广场"
                 }
 
                 Row(
@@ -1169,7 +1206,8 @@ fun MusicLibraryScreen(
                                 Triple(LibraryTab.QQ_SQUARE, "QQ音乐广场", Color(0xFF1ECF96) to "Q"),
                                 Triple(LibraryTab.KUGOU_SQUARE, "酷狗音乐广场", Color(0xFF0088FF) to "狗"),
                                 Triple(LibraryTab.KUWO_SQUARE, "酷我音乐广场", Color(0xFFFF9500) to "我"),
-                                Triple(LibraryTab.MIGU_SQUARE, "咪咕音乐广场", Color(0xFFE91E63) to "咕")
+                                Triple(LibraryTab.MIGU_SQUARE, "咪咕音乐广场", Color(0xFFE91E63) to "咕"),
+                                Triple(LibraryTab.ONLINE_ARTISTS, "歌手库", Color(0xFF8B5CF6) to "歌")
                             )
 
                             platformsList.forEach { (tabItem, label, badge) ->
@@ -3022,6 +3060,40 @@ fun MusicLibraryScreen(
                             )
                         }
                     }
+
+                    LibraryTab.ONLINE_ARTISTS -> {
+                        // 11. 在线歌手库广场与歌手/专辑下钻详情
+                        if (openedOnlineAlbum != null) {
+                            com.orbit.music.ui.components.OnlineAlbumDetailView(
+                                album = openedOnlineAlbum!!,
+                                onBack = { openedOnlineAlbum = null },
+                                onSongClick = { index, song, allSongs ->
+                                    viewModel.playOnlineSongs(allSongs, index)
+                                },
+                                currentPlayingTitle = playbackState.currentSong?.title,
+                                currentPlayingArtist = playbackState.currentSong?.artist,
+                                isPlaying = playbackState.isPlaying
+                            )
+                        } else if (openedOnlineArtist != null) {
+                            com.orbit.music.ui.components.OnlineArtistDetailView(
+                                artist = openedOnlineArtist!!,
+                                onBack = { openedOnlineArtist = null },
+                                onSongClick = { index, song, allSongs ->
+                                    viewModel.playOnlineSongs(allSongs, index)
+                                },
+                                onAlbumClick = { album ->
+                                    openedOnlineAlbum = album
+                                },
+                                currentPlayingTitle = playbackState.currentSong?.title,
+                                currentPlayingArtist = playbackState.currentSong?.artist,
+                                isPlaying = playbackState.isPlaying
+                            )
+                        } else {
+                            com.orbit.music.ui.components.OnlineArtistSquareView(
+                                onArtistClick = { openedOnlineArtist = it }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -3079,15 +3151,19 @@ fun MusicLibraryScreen(
                     .clipToBounds()
             ) {
                 Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
-                    // 仅在下钻（文件夹/专辑/艺术家/歌单）时展示返回面包屑栏；未下钻时不展示任何TopBar且不保留空间
-                    val isDrillDown = openedFolderPath != null || openedAlbum != null || openedArtist != null || openedPlaylist != null || openedOnlinePlaylist != null
+                    // 仅在下钻（文件夹/专辑/艺术家/歌单/在线歌手/在线专辑）时展示返回面包屑栏；未下钻时不展示任何TopBar且不保留空间
+                    val isDrillDown = openedFolderPath != null || openedAlbum != null || openedArtist != null || openedPlaylist != null || openedOnlinePlaylist != null || openedOnlineArtist != null || openedOnlineAlbum != null
                     if (isDrillDown) {
                         TabletDrillDownTopBar(
                             openedFolderPath = openedFolderPath,
                             openedAlbum = openedAlbum,
                             openedArtist = openedArtist,
                             openedPlaylist = openedPlaylist,
+                            openedOnlinePlaylist = openedOnlinePlaylist,
+                            openedOnlineArtist = openedOnlineArtist,
+                            openedOnlineAlbum = openedOnlineAlbum,
                             playlistSongsCount = playlistSongs.size,
+                            onlinePlaylistSongsCount = onlinePlaylistSongs.size,
                             isSearching = libraryState.isSearching,
                             searchQuery = libraryState.searchQuery,
                             onToggleSearch = { viewModel.toggleSearch() },
@@ -3095,7 +3171,13 @@ fun MusicLibraryScreen(
                             viewMode = currentActiveViewMode,
                             onCycleViewMode = { viewModel.cycleViewMode(currentPageKey) },
                             onBack = {
-                                viewModel.clearAllDrillDown()
+                                if (openedOnlineAlbum != null) {
+                                    openedOnlineAlbum = null
+                                } else if (openedOnlineArtist != null) {
+                                    openedOnlineArtist = null
+                                } else {
+                                    viewModel.clearAllDrillDown()
+                                }
                             }
                         )
                     }
@@ -4389,6 +4471,7 @@ private fun getTabTitle(tab: LibraryTab): String {
         LibraryTab.KUGOU_SQUARE -> "酷狗音乐广场"
         LibraryTab.KUWO_SQUARE -> "酷我音乐广场"
         LibraryTab.MIGU_SQUARE -> "咪咕音乐广场"
+        LibraryTab.ONLINE_ARTISTS -> "歌手库"
     }
 }
 
@@ -4519,6 +4602,7 @@ private fun TabletSideNavRail(
                         LibraryTab.KUGOU_SQUARE -> Icons.Default.Headphones to -1
                         LibraryTab.KUWO_SQUARE -> Icons.Default.Radio to -1
                         LibraryTab.MIGU_SQUARE -> Icons.Default.GraphicEq to -1
+                        LibraryTab.ONLINE_ARTISTS -> Icons.Default.PersonSearch to -1
                     }
 
                     if (isExpanded) {
@@ -4719,7 +4803,11 @@ private fun TabletDrillDownTopBar(
     openedAlbum: AlbumItem?,
     openedArtist: ArtistItem?,
     openedPlaylist: Playlist?,
+    openedOnlinePlaylist: com.orbit.music.data.online.model.OnlinePlaylist? = null,
+    openedOnlineArtist: com.orbit.music.data.online.model.OnlineArtist? = null,
+    openedOnlineAlbum: com.orbit.music.data.online.model.OnlineAlbum? = null,
     playlistSongsCount: Int = 0,
+    onlinePlaylistSongsCount: Int = 0,
     isSearching: Boolean,
     searchQuery: String,
     onToggleSearch: () -> Unit,
@@ -4754,6 +4842,9 @@ private fun TabletDrillDownTopBar(
                     openedFolderPath != null -> openedFolderPath.substringAfterLast("/").ifEmpty { "Folder" }
                     openedAlbum != null -> openedAlbum.title
                     openedArtist != null -> openedArtist.name
+                    openedOnlineAlbum != null -> openedOnlineAlbum.title
+                    openedOnlineArtist != null -> openedOnlineArtist.name
+                    openedOnlinePlaylist != null -> openedOnlinePlaylist.title
                     openedPlaylist != null -> openedPlaylist.name
                     else -> ""
                 }
@@ -4761,6 +4852,12 @@ private fun TabletDrillDownTopBar(
                     openedFolderPath != null -> openedFolderPath
                     openedAlbum != null -> "${openedAlbum.artist} • ${stringResource(R.string.tracks_count, openedAlbum.songCount)}"
                     openedArtist != null -> "${openedArtist.albumCount} albums • ${stringResource(R.string.tracks_count, openedArtist.songCount)}"
+                    openedOnlineAlbum != null -> "专辑 · ${openedOnlineAlbum.artist}"
+                    openedOnlineArtist != null -> "QQ 音乐认证歌手"
+                    openedOnlinePlaylist != null -> {
+                        val count = if (onlinePlaylistSongsCount > 0) onlinePlaylistSongsCount else openedOnlinePlaylist.trackCount
+                        "${openedOnlinePlaylist.platform.displayName} • $count 首歌曲"
+                    }
                     openedPlaylist != null -> {
                         val count = if (playlistSongsCount > 0 || openedPlaylist.id in listOf(FAVORITE_PLAYLIST_ID, DISLIKED_PLAYLIST_ID)) playlistSongsCount else openedPlaylist.songCount
                         stringResource(R.string.tracks_count, count)

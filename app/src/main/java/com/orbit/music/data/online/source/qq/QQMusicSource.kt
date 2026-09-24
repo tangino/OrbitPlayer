@@ -598,4 +598,431 @@ class QQMusicSource(
         }
         return null
     }
+
+    override suspend fun getArtistCategories(): List<com.orbit.music.data.online.model.OnlineArtistCategory> {
+        return listOf(
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "all_all_all", name = "全部热门"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "cn_man_all", name = "华语男歌手"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "cn_woman_all", name = "华语女歌手"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "cn_team_all", name = "华语组合"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "eu_man_all", name = "欧美男歌手"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "eu_woman_all", name = "欧美女歌手"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "eu_team_all", name = "欧美组合"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "k_man_all", name = "韩国男歌手"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "k_woman_all", name = "韩国女歌手"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "k_team_all", name = "韩国组合"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "j_man_all", name = "日本男歌手"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "j_woman_all", name = "日本女歌手"),
+            com.orbit.music.data.online.model.OnlineArtistCategory(id = "j_team_all", name = "日本组合")
+        )
+    }
+
+    override suspend fun getArtists(
+        category: String,
+        page: Int,
+        pageSize: Int
+    ): List<com.orbit.music.data.online.model.OnlineArtist> = withContext(Dispatchers.IO) {
+        try {
+            // key 格式: area_sex_genre, 默认 all_all_all
+            val key = if (category.isNotBlank() && category != "全部") category else "all_all_all"
+            val url = "https://c.y.qq.com/v8/fcg-bin/v8.fcg?channel=singer&page=list&key=$key&pagesize=$pageSize&pagenum=$page&loginUin=0&hostUin=0&format=json&inCharset=utf8&outCharset=utf-8&notice=0&platform=yqq&needNewCode=0"
+            val req = Request.Builder()
+                .url(url)
+                .header("User-Agent", userAgent)
+                .header("Referer", "https://y.qq.com/")
+                .build()
+
+            val res = client.newCall(req).execute().body?.string() ?: return@withContext emptyList()
+            val dataObj = JSONObject(res).optJSONObject("data")
+            val listArr = dataObj?.optJSONArray("list") ?: JSONArray()
+            val list = mutableListOf<com.orbit.music.data.online.model.OnlineArtist>()
+
+            for (i in 0 until listArr.length()) {
+                val sObj = listArr.optJSONObject(i) ?: continue
+                val singerMid = sObj.optString("Fsinger_mid").ifEmpty { sObj.optString("singer_mid") }
+                val singerName = sObj.optString("Fsinger_name").ifEmpty { sObj.optString("singer_name") }
+                val pic = "https://y.gtimg.cn/music/photo_new/T001R300x300M000$singerMid.jpg"
+
+                if (singerMid.isNotEmpty() && singerName.isNotEmpty()) {
+                    list.add(
+                        com.orbit.music.data.online.model.OnlineArtist(
+                            id = singerMid,
+                            platform = platform,
+                            name = singerName,
+                            avatarUrl = pic
+                        )
+                    )
+                }
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    override suspend fun searchArtists(
+        keyword: String,
+        page: Int,
+        pageSize: Int
+    ): List<com.orbit.music.data.online.model.OnlineArtist> = withContext(Dispatchers.IO) {
+        try {
+            val payload = JSONObject().apply {
+                put("comm", JSONObject().apply {
+                    put("ct", "19")
+                    put("cv", "1873")
+                    put("uin", "0")
+                })
+                put("search", JSONObject().apply {
+                    put("module", "music.search.SearchCgiService")
+                    put("method", "DoSearchForQQMusicDesktop")
+                    put("param", JSONObject().apply {
+                        put("query", keyword)
+                        put("search_type", 1) // 1 代表搜索歌手
+                        put("num_per_page", pageSize)
+                        put("page_num", page)
+                    })
+                })
+            }
+
+            val root = postMusicU(payload)
+            val listArr = root.optJSONObject("search")?.optJSONObject("data")?.optJSONObject("body")?.optJSONObject("singer")?.optJSONArray("list") ?: JSONArray()
+            val list = mutableListOf<com.orbit.music.data.online.model.OnlineArtist>()
+
+            for (i in 0 until listArr.length()) {
+                val item = listArr.optJSONObject(i) ?: continue
+                val mid = item.optString("singerMID").ifEmpty { item.optString("singer_mid").ifEmpty { item.optString("mid") } }
+                val name = item.optString("singerName").ifEmpty { item.optString("singer_name").ifEmpty { item.optString("name") } }
+                var pic = item.optString("singerPic").ifEmpty { item.optString("singer_pic").ifEmpty { item.optString("pic") } }
+                if (pic.isBlank() && mid.isNotEmpty()) {
+                    pic = "https://y.gtimg.cn/music/photo_new/T001R300x300M000$mid.jpg"
+                }
+                val songCount = item.optInt("songNum", item.optInt("song_count", 0))
+                val albumCount = item.optInt("albumNum", item.optInt("album_count", 0))
+                val mvCount = item.optInt("mvNum", item.optInt("mv_count", 0))
+
+                if (mid.isNotEmpty() && name.isNotEmpty()) {
+                    list.add(
+                        com.orbit.music.data.online.model.OnlineArtist(
+                            id = mid,
+                            platform = platform,
+                            name = name,
+                            avatarUrl = pic,
+                            songCount = songCount,
+                            albumCount = albumCount,
+                            mvCount = mvCount
+                        )
+                    )
+                }
+            }
+
+            if (list.isEmpty() && page == 1) {
+                // 兜底通过智能联想直达
+                val encoded = URLEncoder.encode(keyword, "UTF-8")
+                val smartUrl = "https://c.y.qq.com/splcloud/fcgi-bin/smartbox_new.fcg?key=$encoded&format=json&inCharset=utf8&outCharset=utf-8"
+                val smartReq = Request.Builder().url(smartUrl).header("User-Agent", userAgent).header("Referer", "https://y.qq.com/").build()
+                val smartRes = client.newCall(smartReq).execute().body?.string()
+                if (!smartRes.isNullOrBlank()) {
+                    val clean = if (smartRes.startsWith("callback(") && smartRes.endsWith(")")) smartRes.substring(9, smartRes.length - 1) else smartRes
+                    val smartSingers = JSONObject(clean).optJSONObject("data")?.optJSONObject("singer")?.optJSONArray("itemlist")
+                    if (smartSingers != null) {
+                        for (j in 0 until smartSingers.length()) {
+                            val sObj = smartSingers.optJSONObject(j) ?: continue
+                            val mid = sObj.optString("mid")
+                            val name = sObj.optString("name")
+                            val pic = sObj.optString("pic").ifEmpty { "https://y.gtimg.cn/music/photo_new/T001R300x300M000$mid.jpg" }
+                            if (mid.isNotEmpty() && name.isNotEmpty()) {
+                                list.add(
+                                    com.orbit.music.data.online.model.OnlineArtist(
+                                        id = mid,
+                                        platform = platform,
+                                        name = name,
+                                        avatarUrl = pic
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            list
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    override suspend fun getArtistDetail(artistId: String): com.orbit.music.data.online.model.OnlineArtistDetail = withContext(Dispatchers.IO) {
+        val payload = JSONObject().apply {
+            put("comm", JSONObject().apply {
+                put("cv", 4747474)
+                put("ct", 24)
+                put("format", "json")
+                put("inCharset", "utf-8")
+                put("outCharset", "utf-8")
+                put("notice", 0)
+                put("platform", "yqq.json")
+                put("needNewCode", 1)
+                put("uin", 0)
+            })
+            put("singerDetail", JSONObject().apply {
+                put("module", "music.web_singer_info_svr")
+                put("method", "get_singer_detail_info")
+                put("param", JSONObject().apply {
+                    put("singermid", artistId)
+                })
+            })
+        }
+
+        try {
+            val root = postMusicU(payload)
+            val dataObj = root.optJSONObject("singerDetail")?.optJSONObject("data")
+            val singerInfo = dataObj?.optJSONObject("singer_info")
+            val singerBrief = dataObj?.optString("singer_brief")
+            val artistName = singerInfo?.optString("name")?.ifEmpty { null } ?: "歌手 $artistId"
+            val avatarUrl = "https://y.gtimg.cn/music/photo_new/T001R500x500M000$artistId.jpg"
+            val totalSong = dataObj?.optInt("total_song", 0) ?: 0
+            val totalAlbum = dataObj?.optInt("total_album", 0) ?: 0
+            val totalMv = dataObj?.optInt("total_mv", 0) ?: 0
+            val fansCount = singerInfo?.optLong("fans", 0L) ?: 0L
+
+            val songlistArr = dataObj?.optJSONArray("songlist") ?: JSONArray()
+            val songs = mutableListOf<OnlineSongItem>()
+            val albumMap = mutableMapOf<String, com.orbit.music.data.online.model.OnlineAlbum>()
+
+            for (i in 0 until songlistArr.length()) {
+                val sObj = songlistArr.optJSONObject(i) ?: continue
+                val songMid = sObj.optString("mid").ifEmpty { sObj.optString("songmid") }
+                val songName = sObj.optString("name").ifEmpty { sObj.optString("title") }
+                val singerArr = sObj.optJSONArray("singer")
+                val singerNames = mutableListOf<String>()
+                if (singerArr != null) {
+                    for (j in 0 until singerArr.length()) {
+                        singerArr.optJSONObject(j)?.optString("name")?.let { singerNames.add(it) }
+                    }
+                }
+                val albumObj = sObj.optJSONObject("album")
+                val albumName = albumObj?.optString("name") ?: ""
+                val albumMid = albumObj?.optString("mid") ?: ""
+                val albumPubTime = albumObj?.optString("time_public") ?: ""
+                val coverUrl = if (albumMid.isNotEmpty()) {
+                    "https://y.gtimg.cn/music/photo_new/T002R300x300M000$albumMid.jpg"
+                } else {
+                    avatarUrl
+                }
+                val interval = sObj.optLong("interval", 0L) * 1000L
+                val payObj = sObj.optJSONObject("pay")
+                val isVip = payObj?.optInt("pay_play", 0) == 1
+
+                if (songMid.isNotEmpty() && songName.isNotEmpty()) {
+                    songs.add(
+                        OnlineSongItem(
+                            id = songMid,
+                            platform = platform,
+                            title = songName,
+                            artist = if (singerNames.isNotEmpty()) singerNames.joinToString(", ") else artistName,
+                            album = albumName,
+                            durationMs = interval,
+                            coverUrl = coverUrl,
+                            isVip = isVip
+                        )
+                    )
+                }
+
+                if (albumMid.isNotEmpty() && albumName.isNotEmpty() && !albumMap.containsKey(albumMid)) {
+                    albumMap[albumMid] = com.orbit.music.data.online.model.OnlineAlbum(
+                        id = albumMid,
+                        platform = platform,
+                        title = albumName,
+                        coverUrl = "https://y.gtimg.cn/music/photo_new/T002R300x300M000$albumMid.jpg",
+                        artist = artistName,
+                        artistId = artistId,
+                        songCount = 1,
+                        publishTime = albumPubTime
+                    )
+                }
+            }
+
+            // 补充搜索专辑
+            val searchAlbums = if (artistName.isNotBlank() && !artistName.startsWith("歌手")) {
+                searchAlbumsByArtist(artistName, artistId)
+            } else emptyList()
+
+            for (alb in searchAlbums) {
+                if (!albumMap.containsKey(alb.id)) {
+                    albumMap[alb.id] = alb
+                }
+            }
+
+            val finalAlbums = albumMap.values.toList()
+
+            val artist = com.orbit.music.data.online.model.OnlineArtist(
+                id = artistId,
+                platform = platform,
+                name = artistName,
+                avatarUrl = avatarUrl,
+                songCount = if (totalSong > 0) totalSong else songs.size,
+                albumCount = if (totalAlbum > 0) totalAlbum else finalAlbums.size,
+                mvCount = totalMv,
+                fansCount = fansCount,
+                description = singerBrief
+            )
+
+            com.orbit.music.data.online.model.OnlineArtistDetail(
+                artist = artist,
+                hotSongs = songs,
+                albums = finalAlbums
+            )
+        } catch (_: Exception) {
+            com.orbit.music.data.online.model.OnlineArtistDetail(
+                artist = com.orbit.music.data.online.model.OnlineArtist(
+                    id = artistId,
+                    platform = platform,
+                    name = "歌手 $artistId",
+                    avatarUrl = "https://y.gtimg.cn/music/photo_new/T001R500x500M000$artistId.jpg"
+                )
+            )
+        }
+    }
+
+    private suspend fun searchAlbumsByArtist(artistName: String, artistId: String): List<com.orbit.music.data.online.model.OnlineAlbum> = withContext(Dispatchers.IO) {
+        try {
+            val payload = JSONObject().apply {
+                put("comm", JSONObject().apply {
+                    put("ct", "19")
+                    put("cv", "1873")
+                    put("uin", "0")
+                })
+                put("req", JSONObject().apply {
+                    put("module", "music.search.SearchCgiService")
+                    put("method", "DoSearchForQQMusicDesktop")
+                    put("param", JSONObject().apply {
+                        put("query", artistName)
+                        put("search_type", 2) // 2: 专辑搜索
+                        put("num_per_page", 30)
+                        put("page_num", 1)
+                        put("highlight", 1)
+                    })
+                })
+            }
+            val root = postMusicU(payload)
+            val listArr = root.optJSONObject("req")?.optJSONObject("data")?.optJSONObject("body")?.optJSONObject("album")?.optJSONArray("list") ?: JSONArray()
+            val list = mutableListOf<com.orbit.music.data.online.model.OnlineAlbum>()
+            for (i in 0 until listArr.length()) {
+                val item = listArr.optJSONObject(i) ?: continue
+                val albMid = item.optString("albumMID").ifEmpty { item.optString("album_mid").ifEmpty { item.optString("mid") } }
+                val albName = item.optString("albumName").ifEmpty { item.optString("album_name").ifEmpty { item.optString("name") } }
+                val singerName = item.optString("singerName").ifEmpty { item.optString("singer_name") }
+                val pubTime = item.optString("publicTime").ifEmpty { item.optString("publish_date") }
+                val songCount = item.optInt("song_count", item.optInt("songNum", 0))
+                val cover = if (albMid.isNotEmpty()) "https://y.gtimg.cn/music/photo_new/T002R300x300M000$albMid.jpg" else ""
+
+                if (albMid.isNotEmpty() && albName.isNotEmpty()) {
+                    list.add(
+                        com.orbit.music.data.online.model.OnlineAlbum(
+                            id = albMid,
+                            platform = platform,
+                            title = albName,
+                            coverUrl = cover,
+                            artist = singerName.ifEmpty { artistName },
+                            artistId = artistId,
+                            songCount = songCount,
+                            publishTime = pubTime
+                        )
+                    )
+                }
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    override suspend fun getArtistSongs(
+        artistId: String,
+        page: Int,
+        pageSize: Int
+    ): List<OnlineSongItem> = withContext(Dispatchers.IO) {
+        val detail = getArtistDetail(artistId)
+        detail.hotSongs
+    }
+
+    override suspend fun getArtistAlbums(
+        artistId: String,
+        page: Int,
+        pageSize: Int
+    ): List<com.orbit.music.data.online.model.OnlineAlbum> = withContext(Dispatchers.IO) {
+        val detail = getArtistDetail(artistId)
+        detail.albums
+    }
+
+    override suspend fun getAlbumDetail(albumId: String): Pair<com.orbit.music.data.online.model.OnlineAlbum, List<OnlineSongItem>> = withContext(Dispatchers.IO) {
+        val url = "https://c.y.qq.com/v8/fcg-bin/fcg_v8_album_info_cp.fcg?albummid=$albumId&format=json"
+        val req = Request.Builder()
+            .url(url)
+            .header("User-Agent", userAgent)
+            .header("Referer", "https://y.qq.com/")
+            .build()
+
+        val res = client.newCall(req).execute().body?.string() ?: throw IllegalStateException("QQ 音乐专辑响应为空")
+        val cleanJson = if (res.startsWith("callback(") && res.endsWith(")")) {
+            res.substring(9, res.length - 1)
+        } else res
+
+        val root = JSONObject(cleanJson)
+        val dataObj = root.optJSONObject("data") ?: throw IllegalStateException("专辑数据不存在")
+        val albumName = dataObj.optString("name")
+        val singerName = dataObj.optString("singername")
+        val cover = "https://y.gtimg.cn/music/photo_new/T002R500x500M000$albumId.jpg"
+        val desc = dataObj.optString("desc")
+        val pubTime = dataObj.optString("aDate")
+        val company = dataObj.optString("company")
+
+        val album = com.orbit.music.data.online.model.OnlineAlbum(
+            id = albumId,
+            platform = platform,
+            title = albumName,
+            coverUrl = cover,
+            artist = singerName,
+            publishTime = pubTime,
+            company = company,
+            description = desc
+        )
+
+        val songArr = dataObj.optJSONArray("list") ?: JSONArray()
+        val list = mutableListOf<OnlineSongItem>()
+
+        for (i in 0 until songArr.length()) {
+            val sObj = songArr.optJSONObject(i) ?: continue
+            val songMid = sObj.optString("songmid")
+            val songName = sObj.optString("songname")
+            val singerArr = sObj.optJSONArray("singer")
+            val singerNames = mutableListOf<String>()
+            if (singerArr != null) {
+                for (j in 0 until singerArr.length()) {
+                    singerArr.optJSONObject(j)?.optString("name")?.let { singerNames.add(it) }
+                }
+            }
+            val interval = sObj.optLong("interval", 0L) * 1000L
+            val payObj = sObj.optJSONObject("pay")
+            val isVip = payObj?.optInt("payplay", 0) == 1
+
+            if (songMid.isNotEmpty() && songName.isNotEmpty()) {
+                list.add(
+                    OnlineSongItem(
+                        id = songMid,
+                        platform = platform,
+                        title = songName,
+                        artist = singerNames.joinToString(", "),
+                        album = albumName,
+                        durationMs = interval,
+                        coverUrl = cover,
+                        isVip = isVip
+                    )
+                )
+            }
+        }
+
+        Pair(album.copy(songCount = list.size), list)
+    }
 }
+
