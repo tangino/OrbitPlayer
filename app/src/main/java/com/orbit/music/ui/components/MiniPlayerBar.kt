@@ -474,10 +474,10 @@ fun MiniPlayerBar(
                                 Spacer(modifier = Modifier.height(2.5.dp))
 
                                 Text(
-                                    text = "${song.artist} • ${song.album}",
+                                    text = if (playbackState.isBuffering) "正在缓冲音频..." else "${song.artist} • ${song.album}",
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.Normal,
-                                    color = colors.textSecondary,
+                                    fontWeight = if (playbackState.isBuffering) FontWeight.Medium else FontWeight.Normal,
+                                    color = if (playbackState.isBuffering) colors.primary else colors.textSecondary,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -558,12 +558,20 @@ fun MiniPlayerBar(
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (isPlaying) "Pause" else "Play",
-                                tint = Color.White,
-                                modifier = Modifier.size(24.dp)
-                            )
+                            if (playbackState.isBuffering) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause" else "Play",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
 
                         // 下一曲按键

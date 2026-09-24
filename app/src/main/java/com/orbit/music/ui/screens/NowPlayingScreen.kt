@@ -1076,9 +1076,37 @@ fun NowPlayingScreen(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(text = formatTime(currentPosMs), fontSize = 11.sp, color = OrbitTheme.colors.textSecondary)
+                    if (playbackState.isBuffering) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(10.dp),
+                                strokeWidth = 1.5.dp,
+                                color = OrbitTheme.colors.primary
+                            )
+                            Text(
+                                text = "正在缓冲...",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = OrbitTheme.colors.primary
+                            )
+                        }
+                    } else if (!playbackState.errorMessage.isNullOrBlank()) {
+                        Text(
+                            text = playbackState.errorMessage ?: "",
+                            fontSize = 10.sp,
+                            color = Color(0xFFFF5252),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
+                    }
                     Text(text = formatTime(playbackState.durationMs), fontSize = 11.sp, color = OrbitTheme.colors.textSecondary)
                 }
             }
@@ -1152,12 +1180,20 @@ fun NowPlayingScreen(
                             if (OrbitTheme.colors.isDark) Color(0xFFFF6A3D) else Color(0xFFF2541B)
                         )
                 ) {
-                    Icon(
-                        imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
-                        tint = Color.White,
-                        modifier = Modifier.size(if (isLandscape) 32.dp else 38.dp)
-                    )
+                    if (playbackState.isBuffering) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(if (isLandscape) 28.dp else 34.dp),
+                            color = Color.White,
+                            strokeWidth = 3.dp
+                        )
+                    } else {
+                        Icon(
+                            imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
+                            tint = Color.White,
+                            modifier = Modifier.size(if (isLandscape) 32.dp else 38.dp)
+                        )
+                    }
                 }
 
                 // 下一曲
@@ -4022,12 +4058,21 @@ private fun MaximizedVisualizerOverlay(
                                                 ),
                                             contentAlignment = Alignment.Center
                                         ) {
-                                            Icon(
-                                                imageVector = if (isCurrentlyPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                                contentDescription = if (isCurrentlyPlaying) "Pause" else "Play",
-                                                tint = Color.White,
-                                                modifier = Modifier.size(20.dp)
-                                            )
+                                            val isCurrentSongCard = (pageSong != null && pageSong.id == playbackState.currentSong?.id)
+                                            if (isCurrentSongCard && playbackState.isBuffering) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(18.dp),
+                                                    color = Color.White,
+                                                    strokeWidth = 2.dp
+                                                )
+                                            } else {
+                                                Icon(
+                                                    imageVector = if (isCurrentlyPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                                    contentDescription = if (isCurrentlyPlaying) "Pause" else "Play",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
                                         }
                                     }
 
@@ -4310,12 +4355,20 @@ private fun MaximizedVisualizerOverlay(
                             .clickable { onTogglePlay() }
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
-                                tint = Color.White,
-                                modifier = Modifier.size(26.dp)
-                            )
+                            if (playbackState.isBuffering) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(22.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            }
                         }
                     }
 

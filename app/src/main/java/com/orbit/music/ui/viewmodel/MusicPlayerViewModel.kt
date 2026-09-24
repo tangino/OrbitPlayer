@@ -26,7 +26,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 enum class LibraryTab {
-    SONGS, FOLDERS, ALBUMS, ARTISTS, PLAYLISTS
+    SONGS, FOLDERS, ALBUMS, ARTISTS, PLAYLISTS, NETEASE_SQUARE, QQ_SQUARE
 }
 
 enum class LibraryViewMode {
@@ -46,6 +46,8 @@ val LibraryTab.pageKey: String
         LibraryTab.ALBUMS -> "tab_albums"
         LibraryTab.ARTISTS -> "tab_artists"
         LibraryTab.PLAYLISTS -> "tab_playlists"
+        LibraryTab.NETEASE_SQUARE -> "tab_netease_square"
+        LibraryTab.QQ_SQUARE -> "tab_qq_square"
     }
 
 data class LibraryUiState(
@@ -442,6 +444,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             _playbackOrigin.value = origin
         }
         playerManager.playSongList(songs, index)
+    }
+
+    fun playOnlineSongs(songs: List<com.orbit.music.data.online.model.OnlineSongItem>, startIndex: Int = 0) {
+        playerManager.playOnlineSongList(songs, startIndex)
     }
 
     fun togglePlayPause() = playerManager.togglePlayPause()

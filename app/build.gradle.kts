@@ -11,8 +11,8 @@ android {
         applicationId = "com.orbit.music"
         minSdk = 21
         targetSdk = 34
-        versionCode = 13
-        versionName = "0.2.2"
+        versionCode = 14
+        versionName = "0.2.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -131,6 +131,7 @@ dependencies {
 
     // Haze 专为 Jetpack Compose 打造的实时背景高斯模糊 (Backdrop Blur) 库
     implementation("dev.chrisbanes.haze:haze:0.7.3")
+
 
 
 

@@ -1,0 +1,5 @@
+六音音源（推荐）：https://raw.githubusercontent.com/pdone/lx-music-source/main/sixyin/latest.js
+LX官方源：https://raw.githubusercontent.com/pdone/lx-music-source/main/lx/latest.js
+Flower音源：https://raw.githubusercontent.com/pdone/lx-music-source/main/flower/latest.js
+Huibq音源：https://raw.githubusercontent.com/pdone/lx-music-source/main/huibq/latest.js
+JuheApi音源：https://raw.githubusercontent.com/pdone/lx-music-source/main/juhe/latest.js

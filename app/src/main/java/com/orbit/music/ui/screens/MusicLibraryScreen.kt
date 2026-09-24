@@ -165,6 +165,35 @@ fun MusicLibraryScreen(
     var playlistSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
     val playlistSongsListState = rememberLazyListState()
 
+    // 在线公共歌单状态
+    var openedOnlinePlaylist by remember { mutableStateOf<com.orbit.music.data.online.model.OnlinePlaylist?>(null) }
+    var onlinePlaylistSongs by remember { mutableStateOf<List<com.orbit.music.data.online.model.OnlineSongItem>>(emptyList()) }
+    var isOnlineDetailLoading by remember { mutableStateOf(false) }
+    var onlineDetailError by remember { mutableStateOf<String?>(null) }
+
+    // 监听 openedOnlinePlaylist 变化自动抓取歌单详情与歌曲
+    LaunchedEffect(openedOnlinePlaylist) {
+        val op = openedOnlinePlaylist
+        if (op != null) {
+            isOnlineDetailLoading = true
+            onlineDetailError = null
+            onlinePlaylistSongs = emptyList()
+            val repo = com.orbit.music.data.online.repository.OnlineMusicRepository.getInstance()
+            val res = repo.getPlaylistDetail(op.id, op.platform)
+            res.onSuccess { (detail, songs) ->
+                openedOnlinePlaylist = detail
+                onlinePlaylistSongs = songs
+                isOnlineDetailLoading = false
+            }.onFailure { err ->
+                onlineDetailError = "加载歌曲失败: ${err.localizedMessage ?: "解析错误"}"
+                isOnlineDetailLoading = false
+            }
+        } else {
+            onlinePlaylistSongs = emptyList()
+            onlineDetailError = null
+        }
+    }
+
     // 多选批量操作状态
     var isSelectionMode by remember { mutableStateOf(false) }
     var selectedSongIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
@@ -271,6 +300,11 @@ fun MusicLibraryScreen(
         openedPlaylist = null
     }
 
+    // 5.1 在线歌单下钻状态 -> 侧滑返回回到歌单广场
+    BackHandler(enabled = openedOnlinePlaylist != null) {
+        openedOnlinePlaylist = null
+    }
+
     // 6. 搜索栏开启状态 -> 侧滑返回关闭搜索
     BackHandler(enabled = libraryState.isSearching) {
         viewModel.toggleSearch()
@@ -285,6 +319,7 @@ fun MusicLibraryScreen(
         openedAlbum != null -> "detail_album"
         openedArtist != null -> "detail_artist"
         openedPlaylist != null -> "detail_playlist"
+        openedOnlinePlaylist != null -> "detail_online_playlist"
         else -> libraryState.currentTab.pageKey
     }
     val currentActiveViewMode = libraryState.getViewModeFor(currentPageKey)
@@ -439,19 +474,20 @@ fun MusicLibraryScreen(
         }
     }
 
-    // 🎯 优化单曲点击：如果该歌曲已经是当前播放歌曲，则直接打开播放页面；否则记录当前播放来源页面并播放
+    // 🎯 优化单曲点击：点击列表项直接发起播放并记录播放来源
     fun handleSongItemClick(songs: List<Song>, index: Int, origin: PlaybackOrigin? = null) {
         val clickedSong = songs.getOrNull(index) ?: return
-        if (playbackState.currentSong?.id == clickedSong.id) {
+        val resolvedOrigin = origin ?: when {
+            openedFolderPath != null -> PlaybackOrigin.Folder(openedFolderPath!!)
+            openedAlbum != null -> PlaybackOrigin.Album(openedAlbum!!)
+            openedArtist != null -> PlaybackOrigin.Artist(openedArtist!!)
+            openedPlaylist != null -> PlaybackOrigin.PlaylistOrigin(openedPlaylist!!)
+            else -> PlaybackOrigin.AllSongs
+        }
+        val isCurrent = playbackState.currentSong?.id == clickedSong.id
+        if (isCurrent && playbackState.isPlaying) {
             viewModel.setNowPlayingExpanded(true)
         } else {
-            val resolvedOrigin = origin ?: when {
-                openedFolderPath != null -> PlaybackOrigin.Folder(openedFolderPath!!)
-                openedAlbum != null -> PlaybackOrigin.Album(openedAlbum!!)
-                openedArtist != null -> PlaybackOrigin.Artist(openedArtist!!)
-                openedPlaylist != null -> PlaybackOrigin.PlaylistOrigin(openedPlaylist!!)
-                else -> PlaybackOrigin.AllSongs
-            }
             viewModel.playSong(songs, index, resolvedOrigin)
         }
     }
@@ -756,7 +792,7 @@ fun MusicLibraryScreen(
                             fontSize = 13.sp
                         )
                     }
-                } else if (openedFolderPath != null || openedAlbum != null || openedArtist != null || openedPlaylist != null) {
+                } else if (openedFolderPath != null || openedAlbum != null || openedArtist != null || openedPlaylist != null || openedOnlinePlaylist != null) {
                     // 下钻模式：返回键 + 标题与副标题
                     IconButton(
                         onClick = {
@@ -764,6 +800,7 @@ fun MusicLibraryScreen(
                             openedAlbum = null
                             openedArtist = null
                             openedPlaylist = null
+                            openedOnlinePlaylist = null
                         },
                         modifier = Modifier.size(34.dp)
                     ) {
@@ -786,6 +823,10 @@ fun MusicLibraryScreen(
                             }
                             openedArtist != null -> {
                                 openedArtist!!.name to "${openedArtist!!.albumCount} albums • ${openedArtist!!.songCount} tracks"
+                            }
+                            openedOnlinePlaylist != null -> {
+                                val count = if (onlinePlaylistSongs.isNotEmpty()) onlinePlaylistSongs.size else openedOnlinePlaylist!!.trackCount
+                                openedOnlinePlaylist!!.title to "${openedOnlinePlaylist!!.platform.displayName} • $count 首歌曲"
                             }
                             else -> {
                                 openedPlaylist!!.name to stringResource(R.string.tracks_count, playlistSongs.size)
@@ -948,7 +989,7 @@ fun MusicLibraryScreen(
                 }
             }
 
-            val isDrillDown = openedFolderPath != null || openedAlbum != null || openedArtist != null || openedPlaylist != null
+            val isDrillDown = openedFolderPath != null || openedAlbum != null || openedArtist != null || openedPlaylist != null || openedOnlinePlaylist != null
 
             // 2. 现代 Segmented Pill 胶囊标签栏 (下钻时隐藏)
             if (!isDrillDown) {
@@ -1857,7 +1898,7 @@ fun MusicLibraryScreen(
                     }
 
                     LibraryTab.PLAYLISTS -> {
-                        // 5. 播放列表 (支持下钻详情、创建、重命名、删除及歌曲管理)
+                        // 5. 播放列表 (本地自建歌单与系统歌单)
                         if (openedPlaylist != null) {
                             val currentPlaylist = openedPlaylist!!
                             val filteredPlaylistSongs = remember(playlistSongs, libraryState.searchQuery) {
@@ -2287,33 +2328,34 @@ fun MusicLibraryScreen(
                                 }
                             }
                         } else {
+                            // 本地歌单列表
                             Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(start = 16.dp, end = 16.dp, top = 12.dp)
+                                    .padding(start = 16.dp, end = 16.dp, top = 8.dp)
                                     .then(pinchGestureModifier)
                             ) {
                                 Button(
-                                    onClick = {
-                                        newPlaylistName = ""
-                                        showNewPlaylistDialog = true
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.fillMaxWidth().height(46.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Add,
-                                        contentDescription = null,
-                                        tint = if (OrbitTheme.colors.isDark) DarkBackground else Color.White
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = stringResource(R.string.create_new_playlist),
-                                        color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
+                                                onClick = {
+                                                    newPlaylistName = ""
+                                                    showNewPlaylistDialog = true
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary),
+                                                shape = RoundedCornerShape(12.dp),
+                                                modifier = Modifier.fillMaxWidth().height(46.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Add,
+                                                    contentDescription = null,
+                                                    tint = if (OrbitTheme.colors.isDark) DarkBackground else Color.White
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text(
+                                                    text = stringResource(R.string.create_new_playlist),
+                                                    color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
 
                                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -2628,8 +2670,74 @@ fun MusicLibraryScreen(
                                         }
                                     }
                                 }
-                                }
                             }
+                        }
+                    }
+                }
+
+                    LibraryTab.NETEASE_SQUARE -> {
+                        // 6. 网易云音乐在线歌单广场
+                        if (openedOnlinePlaylist != null) {
+                            com.orbit.music.ui.components.OnlinePlaylistDetailView(
+                                playlist = openedOnlinePlaylist!!,
+                                songs = onlinePlaylistSongs,
+                                isLoading = isOnlineDetailLoading,
+                                errorMessage = onlineDetailError,
+                                onSongClick = { index, song ->
+                                    viewModel.playOnlineSongs(onlinePlaylistSongs, index)
+                                },
+                                onPlayAll = {
+                                    if (onlinePlaylistSongs.isNotEmpty()) {
+                                        viewModel.playOnlineSongs(onlinePlaylistSongs, 0)
+                                    }
+                                },
+                                onShufflePlay = {
+                                    if (onlinePlaylistSongs.isNotEmpty()) {
+                                        viewModel.playOnlineSongs(onlinePlaylistSongs.shuffled(), 0)
+                                    }
+                                },
+                                currentPlayingTitle = playbackState.currentSong?.title,
+                                currentPlayingArtist = playbackState.currentSong?.artist,
+                                isPlaying = playbackState.isPlaying
+                            )
+                        } else {
+                            com.orbit.music.ui.components.OnlinePlaylistSquareView(
+                                platform = com.orbit.music.data.online.model.OnlinePlatform.NETEASE,
+                                onPlaylistClick = { openedOnlinePlaylist = it }
+                            )
+                        }
+                    }
+
+                    LibraryTab.QQ_SQUARE -> {
+                        // 7. QQ 音乐在线歌单广场
+                        if (openedOnlinePlaylist != null) {
+                            com.orbit.music.ui.components.OnlinePlaylistDetailView(
+                                playlist = openedOnlinePlaylist!!,
+                                songs = onlinePlaylistSongs,
+                                isLoading = isOnlineDetailLoading,
+                                errorMessage = onlineDetailError,
+                                onSongClick = { index, song ->
+                                    viewModel.playOnlineSongs(onlinePlaylistSongs, index)
+                                },
+                                onPlayAll = {
+                                    if (onlinePlaylistSongs.isNotEmpty()) {
+                                        viewModel.playOnlineSongs(onlinePlaylistSongs, 0)
+                                    }
+                                },
+                                onShufflePlay = {
+                                    if (onlinePlaylistSongs.isNotEmpty()) {
+                                        viewModel.playOnlineSongs(onlinePlaylistSongs.shuffled(), 0)
+                                    }
+                                },
+                                currentPlayingTitle = playbackState.currentSong?.title,
+                                currentPlayingArtist = playbackState.currentSong?.artist,
+                                isPlaying = playbackState.isPlaying
+                            )
+                        } else {
+                            com.orbit.music.ui.components.OnlinePlaylistSquareView(
+                                platform = com.orbit.music.data.online.model.OnlinePlatform.QQ,
+                                onPlaylistClick = { openedOnlinePlaylist = it }
+                            )
                         }
                     }
                 }
@@ -2659,6 +2767,7 @@ fun MusicLibraryScreen(
                     openedAlbum = null
                     openedArtist = null
                     openedPlaylist = null
+                    openedOnlinePlaylist = null
                     viewModel.setTab(tab)
                 },
                 songCount = filteredSongs.size,
@@ -2694,7 +2803,7 @@ fun MusicLibraryScreen(
             ) {
                 Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
                     // 仅在下钻（文件夹/专辑/艺术家/歌单）时展示返回面包屑栏；未下钻时不展示任何TopBar且不保留空间
-                    val isDrillDown = openedFolderPath != null || openedAlbum != null || openedArtist != null || openedPlaylist != null
+                    val isDrillDown = openedFolderPath != null || openedAlbum != null || openedArtist != null || openedPlaylist != null || openedOnlinePlaylist != null
                     if (isDrillDown) {
                         TabletDrillDownTopBar(
                             openedFolderPath = openedFolderPath,
@@ -4001,6 +4110,8 @@ private fun getTabTitle(tab: LibraryTab): String {
         LibraryTab.ALBUMS -> stringResource(R.string.tab_albums)
         LibraryTab.ARTISTS -> stringResource(R.string.tab_artists)
         LibraryTab.PLAYLISTS -> stringResource(R.string.tab_playlists)
+        LibraryTab.NETEASE_SQUARE -> "网易云广场"
+        LibraryTab.QQ_SQUARE -> "QQ音乐广场"
     }
 }
 
@@ -4126,6 +4237,8 @@ private fun TabletSideNavRail(
                         LibraryTab.ALBUMS -> Icons.Default.Album to albumCount
                         LibraryTab.ARTISTS -> Icons.Default.Person to artistCount
                         LibraryTab.PLAYLISTS -> Icons.AutoMirrored.Filled.PlaylistPlay to playlistCount
+                        LibraryTab.NETEASE_SQUARE -> Icons.Default.CloudQueue to -1
+                        LibraryTab.QQ_SQUARE -> Icons.Default.MusicNote to -1
                     }
 
                     if (isExpanded) {

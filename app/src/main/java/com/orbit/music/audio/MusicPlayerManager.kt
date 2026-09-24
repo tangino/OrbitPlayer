@@ -11,6 +11,9 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.orbit.music.data.model.Song
+import com.orbit.music.data.online.engine.OnlineAudioSourceManager
+import com.orbit.music.data.online.model.OnlinePlatform
+import com.orbit.music.data.online.model.OnlineSongItem
 import java.util.ArrayDeque
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +39,7 @@ enum class ShuffleStrategy {
 data class PlaybackState(
     val currentSong: Song? = null,
     val isPlaying: Boolean = false,
+    val isBuffering: Boolean = false,
     val currentPositionMs: Long = 0L,
     val durationMs: Long = 0L,
     val progress: Float = 0f,
@@ -43,16 +47,20 @@ data class PlaybackState(
     val isShuffleEnabled: Boolean = false,
     val shuffleStrategy: ShuffleStrategy = ShuffleStrategy.STANDARD,
     val currentPlaylist: List<Song> = emptyList(),
-    val currentIndex: Int = -1
+    val currentIndex: Int = -1,
+    val errorMessage: String? = null
 )
 
 class MusicPlayerManager private constructor(private val context: Context) {
 
     private val effectManager = AudioEffectManager.getInstance(context)
     val visualizerManager = AudioVisualizerManager.getInstance(context)
+    val onlineSourceManager = OnlineAudioSourceManager.getInstance(context)
     private val scope = CoroutineScope(Dispatchers.Main)
     private var progressJob: Job? = null
     private var visualizerWatchdogJob: Job? = null
+    private var currentOnlineResolveJob: Job? = null
+    private var playbackSequenceId: Long = 0L
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val savedRepeatOrdinal = prefs.getInt(KEY_REPEAT_MODE, RepeatMode.ALL.ordinal)
@@ -223,7 +231,12 @@ class MusicPlayerManager private constructor(private val context: Context) {
     private fun setupPlayerListener() {
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                _playbackState.update { it.copy(isPlaying = isPlaying) }
+                _playbackState.update { 
+                    it.copy(
+                        isPlaying = isPlaying,
+                        isBuffering = if (isPlaying) false else it.isBuffering
+                    ) 
+                }
                 visualizerManager.setPlaying(isPlaying)
                 if (isPlaying) {
                     startProgressTracker()
@@ -246,11 +259,77 @@ class MusicPlayerManager private constructor(private val context: Context) {
                         }
                     }
                     _playbackState.update {
-                        it.copy(durationMs = player.duration.coerceAtLeast(0L))
+                        it.copy(
+                            durationMs = if (player.duration > 0) player.duration else it.durationMs,
+                            isBuffering = false,
+                            errorMessage = null
+                        )
+                    }
+                } else if (playbackState == Player.STATE_BUFFERING) {
+                    _playbackState.update { 
+                        it.copy(
+                            isBuffering = true
+                        ) 
                     }
                 } else if (playbackState == Player.STATE_ENDED) {
+                    _playbackState.update { it.copy(isBuffering = false) }
                     handlePlaybackEnded()
+                } else if (playbackState == Player.STATE_IDLE) {
+                    _playbackState.update { it.copy(isBuffering = false) }
                 }
+            }
+
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                val cause = error.cause
+                val errorMsg = when {
+                    // HTTP 状态码错误 (403, 404, 500 等)
+                    cause is androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException -> {
+                        when (cause.responseCode) {
+                            403 -> "音频访问受限 (HTTP 403: 防盗链或直链已过期)"
+                            404 -> "音频资源不存在 (HTTP 404: 资源已失效)"
+                            500, 502, 503 -> "音源服务器无响应 (HTTP ${cause.responseCode})"
+                            else -> "网络请求异常 (HTTP ${cause.responseCode})"
+                        }
+                    }
+                    // 网络不可用或超时
+                    cause is androidx.media3.datasource.HttpDataSource.HttpDataSourceException -> {
+                        if (cause.cause is java.net.SocketTimeoutException) {
+                            "音频加载超时，请检查网络连接"
+                        } else if (cause.cause is java.net.UnknownHostException || cause.cause is java.net.ConnectException) {
+                            "网络连接失败，请检查网络设置"
+                        } else {
+                            "网络音频流读取失败: ${cause.message ?: "网络异常"}"
+                        }
+                    }
+                    error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+                    error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT -> {
+                        "网络连接超时或断开，请检查网络"
+                    }
+                    error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> {
+                        "音源服务器返回错误状态码"
+                    }
+                    error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND -> {
+                        "音频文件不存在或已被移除"
+                    }
+                    error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ||
+                    error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_FAILED ||
+                    error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED -> {
+                        "音频解码失败: 格式不支持或数据损坏"
+                    }
+                    else -> {
+                        error.localizedMessage ?: error.message ?: "播放失败 (${error.errorCodeName})"
+                    }
+                }
+
+                Log.e(TAG, "ExoPlayer error occurred: $errorMsg (code: ${error.errorCode}, name: ${error.errorCodeName})", error)
+                _playbackState.update {
+                    it.copy(
+                        isPlaying = false,
+                        isBuffering = false,
+                        errorMessage = errorMsg
+                    )
+                }
+                com.orbit.music.utils.FastToast.show(context, errorMsg, 2500L)
             }
 
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
@@ -298,8 +377,14 @@ class MusicPlayerManager private constructor(private val context: Context) {
     }
 
     private fun createMediaItem(song: Song): MediaItem {
+        val uri = when {
+            song.path.startsWith("content://") || song.path.startsWith("http://") || song.path.startsWith("https://") -> Uri.parse(song.path)
+            song.path.startsWith("file://") -> Uri.parse(song.path)
+            song.path.startsWith("/") -> Uri.fromFile(java.io.File(song.path))
+            else -> Uri.parse(song.path)
+        }
         return MediaItem.Builder()
-            .setUri(Uri.parse(song.path))
+            .setUri(uri)
             .setMediaId(song.id.toString())
             .setMediaMetadata(
                 MediaMetadata.Builder()
@@ -319,118 +404,29 @@ class MusicPlayerManager private constructor(private val context: Context) {
         }
     }
 
-    fun playSongList(songs: List<Song>, startIndex: Int = 0) {
-        if (songs.isEmpty()) return
-        playHistory.clear()
-
-        val safeIndex = startIndex.coerceIn(0, songs.size - 1)
-        val targetSong = songs[safeIndex]
-        val updatedSong = targetSong.copy(playCount = targetSong.playCount + 1)
-        val updatedSongs = songs.mapIndexed { idx, s ->
-            if (idx == safeIndex) updatedSong else s
-        }
-
-        val mediaItems = updatedSongs.map { createMediaItem(it) }
-        visualizerManager.reset()
-
-        _playbackState.update {
-            it.copy(
-                currentPlaylist = updatedSongs,
-                currentIndex = safeIndex,
-                currentSong = updatedSong,
-                currentPositionMs = 0L,
-                durationMs = updatedSong.durationMs,
-                progress = 0f
-            )
-        }
-
-        recordPlayImmediately(targetSong)
-
-        player.setMediaItems(mediaItems, safeIndex, 0L)
-        player.prepare()
-        player.play()
-        com.orbit.music.service.MusicPlaybackService.start(context)
-        saveLastPlayedSong(updatedSong, 0L, syncImmediately = true)
-    }
-
-    fun togglePlayPause() {
-        if (player.isPlaying) {
-            player.pause()
-            saveLastPlayedSong(_playbackState.value.currentSong, player.currentPosition, syncImmediately = true)
-        } else {
-            if (player.playbackState == Player.STATE_IDLE) {
-                val currentSong = _playbackState.value.currentSong
-                if (currentSong != null) {
-                    val mediaItem = createMediaItem(currentSong)
-                    val lastPos = _playbackState.value.currentPositionMs
-                    player.setMediaItem(mediaItem, lastPos)
-                    player.prepare()
-                }
-            }
-            player.play()
-            com.orbit.music.service.MusicPlaybackService.start(context)
-        }
-    }
-
-    private fun pickNextShuffleIndex(playlist: List<Song>, currentIndex: Int): Int {
-        if (playlist.size <= 1) return 0
-        val historySet = playHistory.toSet()
-
-        return when (_playbackState.value.shuffleStrategy) {
-            ShuffleStrategy.LEAST_PLAYED -> {
-                // 排除当前正在播放的歌曲及标记为不喜欢的歌曲
-                val validIndices = playlist.indices.filter { it != currentIndex && !playlist[it].isDisliked }.ifEmpty {
-                    playlist.indices.filter { it != currentIndex }
-                }
-                if (validIndices.isEmpty()) return 0
-
-                // 寻找有效曲库中的全局最低播放次数
-                val minPlayCount = validIndices.minOfOrNull { playlist[it].playCount } ?: 0
-                // 仅筛选播放次数等于最低次数的歌曲入候选池（次数更高的全部严格排除）
-                val minPool = validIndices.filter { playlist[it].playCount <= minPlayCount }
-
-                // 在最低播放次数的候选池中，优先挑选未在最近历史栈中的歌曲
-                val freshCandidates = minPool.filter { it !in historySet }
-                if (freshCandidates.isNotEmpty()) {
-                    freshCandidates.random()
-                } else {
-                    minPool.random()
-                }
-            }
-            ShuffleStrategy.FAVORITE_FIRST -> {
-                var candidates = playlist.indices.filter { it != currentIndex && it !in historySet && !playlist[it].isDisliked }
-                if (candidates.isEmpty()) {
-                    candidates = playlist.indices.filter { it != currentIndex && !playlist[it].isDisliked }
-                    if (candidates.isEmpty()) {
-                        candidates = playlist.indices.filter { it != currentIndex }
-                        if (candidates.isEmpty()) return 0
-                    }
-                }
-                val favCandidates = candidates.filter { playlist[it].isFavorite }
-                if (favCandidates.isNotEmpty()) {
-                    favCandidates.random()
-                } else {
-                    candidates.random()
-                }
-            }
-            ShuffleStrategy.STANDARD -> {
-                var candidates = playlist.indices.filter { it != currentIndex && it !in historySet && !playlist[it].isDisliked }
-                if (candidates.isEmpty()) {
-                    candidates = playlist.indices.filter { it != currentIndex && !playlist[it].isDisliked }
-                    if (candidates.isEmpty()) {
-                        candidates = playlist.indices.filter { it != currentIndex }
-                        if (candidates.isEmpty()) return 0
-                    }
-                }
-                candidates.random()
-            }
-        }
+    /**
+     * 异步解析 online:// 协议歌曲的真实音频 URL
+     */
+    suspend fun resolveOnlineSongDirectUrl(song: Song): String? {
+        if (!song.path.startsWith("online://")) return song.path
+        val uri = Uri.parse(song.path)
+        val platformId = uri.host ?: ""
+        val songId = uri.lastPathSegment ?: ""
+        val platform = OnlinePlatform.values().firstOrNull { it.id == platformId } ?: OnlinePlatform.NETEASE
+        return onlineSourceManager.resolvePlayableUrl(
+            platform = platform,
+            songId = songId,
+            title = song.title,
+            artist = song.artist,
+            album = song.album
+        )
     }
 
     /**
-     * 高稳健性直接切歌调度引擎：自动修复队列脱节、IDLE状态自动唤醒准备并同步前台状态
+     * 参照 auralis 核心架构：统一单轨播放调度引擎
+     * 无论在线歌曲或本地歌曲，均通过全局单调递增事务序号 (playbackSequenceId) 与严格状态机驱动
      */
-    private fun seekToTrack(targetIndex: Int) {
+    private fun playTrackInternal(targetIndex: Int, startPositionMs: Long = 0L, autoPlay: Boolean = true) {
         val playlist = _playbackState.value.currentPlaylist
         if (playlist.isEmpty()) return
         val safeIndex = targetIndex.coerceIn(0, playlist.size - 1)
@@ -440,46 +436,242 @@ class MusicPlayerManager private constructor(private val context: Context) {
             if (idx == safeIndex) updatedSong else s
         }
 
+        // 分配本轮播放事务序号并递增，使所有更早的异步解析或网络请求立即作废
+        val txId = ++playbackSequenceId
+        currentOnlineResolveJob?.cancel()
+        currentOnlineResolveJob = null
+
         visualizerManager.reset()
+        hasRecordedPlayForCurrentSong = false
+
+        val isOnline = targetSong.path.startsWith("online://") || 
+                targetSong.path.startsWith("http://") || 
+                targetSong.path.startsWith("https://")
+
         _playbackState.update {
             it.copy(
                 currentPlaylist = updatedPlaylist,
                 currentIndex = safeIndex,
                 currentSong = updatedSong,
-                currentPositionMs = 0L,
+                currentPositionMs = startPositionMs,
                 durationMs = updatedSong.durationMs,
-                progress = 0f
+                progress = if (updatedSong.durationMs > 0) (startPositionMs.toFloat() / updatedSong.durationMs).coerceIn(0f, 1f) else 0f,
+                isPlaying = autoPlay,
+                isBuffering = isOnline,
+                errorMessage = null
             )
         }
 
         recordPlayImmediately(targetSong)
 
-        try {
-            // 如果底层 ExoPlayer 内部媒体项数量与播放列表脱节（例如冷启动或部分加载），立即完整同步
-            if (player.mediaItemCount != updatedPlaylist.size) {
-                val mediaItems = updatedPlaylist.map { createMediaItem(it) }
-                player.setMediaItems(mediaItems, safeIndex, 0L)
-                player.prepare()
-            } else {
-                player.seekTo(safeIndex, 0L)
-            }
+        if (targetSong.path.startsWith("online://")) {
+            // 在线歌曲分支：由应用层按需解析真实音频直链后安全交付 ExoPlayer
+            currentOnlineResolveJob = scope.launch {
+                var directUrl: String? = null
+                var resolveException: Exception? = null
+                try {
+                    directUrl = resolveOnlineSongDirectUrl(targetSong)
+                } catch (e: Exception) {
+                    resolveException = e
+                }
 
-            if (player.playbackState == Player.STATE_IDLE) {
-                player.prepare()
+                if (txId != playbackSequenceId || !isActive) {
+                    Log.d(TAG, "Online song resolution discarded due to stale txId: $txId vs $playbackSequenceId")
+                    return@launch
+                }
+
+                if (directUrl.isNullOrBlank() || directUrl.startsWith("online://")) {
+                    val errorMsg = when {
+                        resolveException is java.net.UnknownHostException || resolveException is java.net.ConnectException -> "网络连接失败，请检查网络设置"
+                        resolveException is java.net.SocketTimeoutException -> "网络请求超时，请稍后重试"
+                        !onlineSourceManager.hasCustomScript() -> "未导入音源，请前往「设置 - 音源管理」导入第三方音源"
+                        resolveException != null -> "第三方音源解析失败: ${resolveException.localizedMessage ?: "未知错误"}"
+                        else -> "第三方音源未解析到有效音频 (可能受版权保护或音源不支持)"
+                    }
+
+                    Log.e(TAG, "Failed to resolve direct URL for ${targetSong.title}: $errorMsg", resolveException)
+                    _playbackState.update {
+                        it.copy(
+                            isPlaying = false,
+                            isBuffering = false,
+                            errorMessage = errorMsg
+                        )
+                    }
+                    com.orbit.music.utils.FastToast.show(context, errorMsg, 2500L)
+                    return@launch
+                }
+
+                val resolvedSong = updatedSong.copy(path = directUrl)
+                val resolvedPlaylist = updatedPlaylist.mapIndexed { idx, s ->
+                    if (idx == safeIndex) resolvedSong else s
+                }
+
+                _playbackState.update {
+                    it.copy(
+                        currentPlaylist = resolvedPlaylist, 
+                        currentSong = resolvedSong,
+                        isBuffering = true,
+                        errorMessage = null
+                    )
+                }
+
+                try {
+                    val mediaItem = createMediaItem(resolvedSong)
+                    player.playWhenReady = autoPlay
+                    player.setMediaItem(mediaItem, startPositionMs)
+                    player.prepare()
+                    if (autoPlay) {
+                        player.play()
+                        com.orbit.music.service.MusicPlaybackService.start(context)
+                    } else {
+                        player.pause()
+                    }
+                    saveLastPlayedSong(resolvedSong, startPositionMs, syncImmediately = true)
+                } catch (e: Exception) {
+                    val errMsg = "播放初始化失败: ${e.localizedMessage ?: e.message}"
+                    Log.e(TAG, "Failed to initialize ExoPlayer for online song: ${resolvedSong.title}", e)
+                    _playbackState.update {
+                        it.copy(
+                            isPlaying = false,
+                            isBuffering = false,
+                            errorMessage = errMsg
+                        )
+                    }
+                    com.orbit.music.utils.FastToast.show(context, errMsg, 2500L)
+                }
+
+                // 异步预热解析下一首歌曲
+                if (safeIndex + 1 < resolvedPlaylist.size) {
+                    val next = resolvedPlaylist[safeIndex + 1]
+                    launch(Dispatchers.IO) { runCatching { resolveOnlineSongDirectUrl(next) } }
+                }
             }
-            player.play()
-            com.orbit.music.service.MusicPlaybackService.start(context)
-            saveLastPlayedSong(updatedSong, 0L, syncImmediately = true)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to seek to track at index $safeIndex, recovering...", e)
+        } else {
+            // 本地歌曲分支：直接向 ExoPlayer 挂载播放列表，实现极速切歌与播放
             try {
                 val mediaItems = updatedPlaylist.map { createMediaItem(it) }
-                player.setMediaItems(mediaItems, safeIndex, 0L)
+                player.playWhenReady = autoPlay
+                player.setMediaItems(mediaItems, safeIndex, startPositionMs)
                 player.prepare()
-                player.play()
-                saveLastPlayedSong(updatedSong, 0L, syncImmediately = true)
-            } catch (_: Exception) {}
+
+                if (autoPlay) {
+                    player.play()
+                    com.orbit.music.service.MusicPlaybackService.start(context)
+                } else {
+                    player.pause()
+                }
+                saveLastPlayedSong(updatedSong, startPositionMs, syncImmediately = true)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to play local track at index $safeIndex, attempting recovery...", e)
+                try {
+                    val mediaItem = createMediaItem(updatedSong)
+                    player.playWhenReady = autoPlay
+                    player.setMediaItem(mediaItem, startPositionMs)
+                    player.prepare()
+                    if (autoPlay) {
+                        player.play()
+                        com.orbit.music.service.MusicPlaybackService.start(context)
+                    }
+                    saveLastPlayedSong(updatedSong, startPositionMs, syncImmediately = true)
+                } catch (_: Exception) {}
+            }
         }
+    }
+
+    /**
+     * 播放整张在线歌单
+     */
+    fun playOnlineSongList(onlineSongs: List<OnlineSongItem>, startIndex: Int = 0) {
+        if (onlineSongs.isEmpty()) return
+        val songList = onlineSourceManager.toSongList(onlineSongs)
+        playHistory.clear()
+        _playbackState.update { it.copy(currentPlaylist = songList) }
+        playTrackInternal(startIndex, 0L, autoPlay = true)
+    }
+
+    /**
+     * 播放标准歌曲列表
+     */
+    fun playSongList(songs: List<Song>, startIndex: Int = 0) {
+        if (songs.isEmpty()) return
+        playHistory.clear()
+        _playbackState.update { it.copy(currentPlaylist = songs) }
+        playTrackInternal(startIndex, 0L, autoPlay = true)
+    }
+
+    fun pause() {
+        playbackSequenceId++ // 作废所有可能正在返回的异步解析回调
+        currentOnlineResolveJob?.cancel()
+        currentOnlineResolveJob = null
+        player.pause()
+        _playbackState.update { it.copy(isPlaying = false) }
+        visualizerManager.setPlaying(false)
+        stopProgressTracker()
+        stopVisualizerWatchdog()
+        saveLastPlayedSong(_playbackState.value.currentSong, player.currentPosition, syncImmediately = true)
+    }
+
+    fun play() {
+        _playbackState.update { it.copy(isPlaying = true) }
+        val currentSong = _playbackState.value.currentSong
+        if (currentSong != null && currentSong.path.startsWith("online://")) {
+            // 若为未完成直链解析的在线协议，重新启动单轨事务解析与播放
+            playTrackInternal(_playbackState.value.currentIndex, _playbackState.value.currentPositionMs, autoPlay = true)
+            return
+        }
+        if (player.playbackState == Player.STATE_IDLE || player.mediaItemCount == 0) {
+            if (currentSong != null) {
+                val mediaItem = createMediaItem(currentSong)
+                val lastPos = _playbackState.value.currentPositionMs
+                player.setMediaItem(mediaItem, lastPos)
+                player.prepare()
+            }
+        }
+        player.play()
+        com.orbit.music.service.MusicPlaybackService.start(context)
+    }
+
+    fun togglePlayPause() {
+        val isCurrentlyPlaying = _playbackState.value.isPlaying || player.playWhenReady || player.isPlaying
+        if (isCurrentlyPlaying) {
+            pause()
+        } else {
+            play()
+        }
+    }
+
+    private fun pickNextShuffleIndex(playlist: List<Song>, currentIndex: Int): Int {
+        if (playlist.size <= 1) return 0
+        val strategy = _playbackState.value.shuffleStrategy
+        val otherIndices = playlist.indices.filter { it != currentIndex }
+        if (otherIndices.isEmpty()) return 0
+
+        return when (strategy) {
+            ShuffleStrategy.FAVORITE_FIRST -> {
+                val favoriteIndices = otherIndices.filter { playlist[it].isFavorite }
+                if (favoriteIndices.isNotEmpty()) {
+                    favoriteIndices.random()
+                } else {
+                    otherIndices.random()
+                }
+            }
+            ShuffleStrategy.LEAST_PLAYED -> {
+                val minPlayCount = otherIndices.minOfOrNull { playlist[it].playCount } ?: 0
+                val leastPlayedIndices = otherIndices.filter { playlist[it].playCount <= minPlayCount }
+                if (leastPlayedIndices.isNotEmpty()) {
+                    leastPlayedIndices.random()
+                } else {
+                    otherIndices.random()
+                }
+            }
+            ShuffleStrategy.STANDARD -> {
+                otherIndices.random()
+            }
+        }
+    }
+
+    private fun seekToTrack(targetIndex: Int) {
+        playTrackInternal(targetIndex, 0L, autoPlay = true)
     }
 
     fun playNext() {

@@ -48,6 +48,7 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.haze
 
 import com.orbit.music.ui.screens.NowPlayingScreen
+import com.orbit.music.ui.screens.OnlinePlaylistSquareScreen
 import com.orbit.music.ui.screens.ParametricEqScreen
 import com.orbit.music.ui.screens.SettingsScreen
 import com.orbit.music.ui.theme.MusicEqualizerTheme

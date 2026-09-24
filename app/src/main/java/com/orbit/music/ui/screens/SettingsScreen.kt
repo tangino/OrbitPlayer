@@ -54,6 +54,15 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    var showAudioSourceManager by remember { mutableStateOf(false) }
+
+    if (showAudioSourceManager) {
+        AudioSourceManagementScreen(
+            onBack = { showAudioSourceManager = false }
+        )
+        return
+    }
+
     var showImportDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showColorPickerDialog by remember { mutableStateOf(false) }
@@ -151,6 +160,31 @@ fun SettingsScreen(
                         subtitle = "启用左侧分栏导航与大屏自适应网格，并锁定横屏显示",
                         checked = uiState.isTabletLandscapeModeEnabled,
                         onCheckedChange = { viewModel.setTabletLandscapeModeEnabled(it) }
+                    )
+                }
+            }
+
+            // 在线音源管理
+            item {
+                SettingsSectionHeader("在线音乐与音源")
+                SettingsCard {
+                    val sourceManager = remember { com.orbit.music.data.online.engine.SourceScriptManager.getInstance(context) }
+                    val activeScript by sourceManager.activeScript.collectAsState()
+                    val scripts by sourceManager.scripts.collectAsState()
+                    val preferredQuality by sourceManager.preferredQuality.collectAsState()
+
+                    val qualityLabel = when (preferredQuality) {
+                        "flac24bit" -> "母带 Hi-Res"
+                        "flac" -> "无损 FLAC"
+                        "320k" -> "高品 320K"
+                        else -> "标准 128K"
+                    }
+
+                    SettingsActionItem(
+                        icon = Icons.Default.CloudDownload,
+                        title = "在线音源与脚本管理",
+                        subtitle = if (activeScript != null) "活动音源: ${activeScript?.name} (v${activeScript?.version}) · $qualityLabel" else "官方直链兜底模式 (共 ${scripts.size} 个音源) · $qualityLabel",
+                        onClick = { showAudioSourceManager = true }
                     )
                 }
             }

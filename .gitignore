@@ -18,4 +18,8 @@ android studio/
 
 # 截图输出
 screenshot_*.png
+app_screenshot.png
+
+# 参考工程与临时文件
+auralis/
 
