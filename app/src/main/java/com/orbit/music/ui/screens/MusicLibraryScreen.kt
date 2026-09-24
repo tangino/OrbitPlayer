@@ -261,7 +261,7 @@ fun MusicLibraryScreen(
     }
 
     // 0. 多选模式 -> 返回键退出多选模式
-    BackHandler(enabled = isSelectionMode) {
+    BackHandler(enabled = !libraryState.isNowPlayingExpanded && isSelectionMode) {
         isSelectionMode = false
         selectedSongIds = emptySet()
     }
@@ -278,39 +278,33 @@ fun MusicLibraryScreen(
     val artistsListState = rememberLazyListState()
     val playlistsListState = rememberLazyListState()
 
-
-    // 1. 全屏播放页展开状态 -> 侧滑返回收起全屏播放页
-    BackHandler(enabled = libraryState.isNowPlayingExpanded) {
-        viewModel.setNowPlayingExpanded(false)
-    }
-
-    // 2. 文件夹下钻状态 -> 侧滑返回回到文件夹列表
-    BackHandler(enabled = openedFolderPath != null) {
+    // 1. 文件夹下钻状态 -> 侧滑返回回到文件夹列表
+    BackHandler(enabled = !libraryState.isNowPlayingExpanded && openedFolderPath != null) {
         viewModel.selectFolderPath(null)
     }
 
-    // 3. 专辑下钻状态 -> 侧滑返回回到专辑列表
-    BackHandler(enabled = openedAlbum != null) {
+    // 2. 专辑下钻状态 -> 侧滑返回回到专辑列表
+    BackHandler(enabled = !libraryState.isNowPlayingExpanded && openedAlbum != null) {
         viewModel.selectAlbum(null)
     }
 
-    // 4. 艺术家下钻状态 -> 侧滑返回回到艺术家列表
-    BackHandler(enabled = openedArtist != null) {
+    // 3. 艺术家下钻状态 -> 侧滑返回回到艺术家列表
+    BackHandler(enabled = !libraryState.isNowPlayingExpanded && openedArtist != null) {
         viewModel.selectArtist(null)
     }
 
-    // 5. 播放列表下钻状态 -> 侧滑返回回到播放列表列表
-    BackHandler(enabled = openedPlaylist != null) {
+    // 4. 播放列表下钻状态 -> 侧滑返回回到播放列表列表
+    BackHandler(enabled = !libraryState.isNowPlayingExpanded && openedPlaylist != null) {
         viewModel.selectPlaylist(null)
     }
 
-    // 5.1 在线歌单下钻状态 -> 侧滑返回回到歌单广场
-    BackHandler(enabled = openedOnlinePlaylist != null) {
+    // 5. 在线歌单下钻状态 -> 侧滑返回回到歌单广场
+    BackHandler(enabled = !libraryState.isNowPlayingExpanded && openedOnlinePlaylist != null) {
         viewModel.selectOnlinePlaylist(null)
     }
 
     // 6. 搜索栏开启状态 -> 侧滑返回关闭搜索
-    BackHandler(enabled = libraryState.isSearching) {
+    BackHandler(enabled = !libraryState.isNowPlayingExpanded && libraryState.isSearching) {
         viewModel.toggleSearch()
     }
 

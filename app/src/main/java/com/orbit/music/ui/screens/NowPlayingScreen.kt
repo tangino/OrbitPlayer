@@ -1,5 +1,6 @@
 package com.orbit.music.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -151,6 +152,15 @@ fun NowPlayingScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+
+    // 全屏播放页专属返回手势拦截：全屏频谱最大化时优先退出最大化，否则收起播放页
+    BackHandler {
+        if (equalizerUiState.isVisualizerMaximized) {
+            onToggleVisualizerMaximized(false)
+        } else {
+            onBack()
+        }
+    }
     val playbackState by viewModel.playbackState.collectAsState()
     val visualizerFrame by viewModel.visualizerFlow.collectAsState()
     val allSongs by viewModel.allSongs.collectAsState()
