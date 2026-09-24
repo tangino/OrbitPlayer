@@ -56,19 +56,21 @@ data class LibraryUiState(
     val isCoverFlowInertiaEnabled: Boolean = true,
     val searchQuery: String = "",
     val isSearching: Boolean = false,
-    val selectedFolder: FolderItem? = null,
+    val selectedFolderPath: String? = null,
     val selectedAlbum: AlbumItem? = null,
     val selectedArtist: ArtistItem? = null,
     val selectedPlaylist: Playlist? = null,
+    val selectedOnlinePlaylist: com.orbit.music.data.online.model.OnlinePlaylist? = null,
     val isNowPlayingExpanded: Boolean = false
 ) {
     val viewMode: LibraryViewMode
         get() {
             val key = when {
-                selectedFolder != null -> "detail_folder"
+                selectedFolderPath != null -> "detail_folder"
                 selectedAlbum != null -> "detail_album"
                 selectedArtist != null -> "detail_artist"
                 selectedPlaylist != null -> "detail_playlist"
+                selectedOnlinePlaylist != null -> "detail_online_playlist"
                 else -> currentTab.pageKey
             }
             return pageViewModes[key] ?: defaultModeFor(key)
@@ -85,14 +87,17 @@ data class LibraryUiState(
             "tab_albums" to LibraryViewMode.GRID_3_COL,
             "tab_artists" to LibraryViewMode.LIST_SMALL_ART,
             "tab_playlists" to LibraryViewMode.LIST_SMALL_ART,
+            "tab_netease_square" to LibraryViewMode.GRID_3_COL,
+            "tab_qq_square" to LibraryViewMode.GRID_3_COL,
             "detail_folder" to LibraryViewMode.LIST_SMALL_ART,
             "detail_album" to LibraryViewMode.LIST_SMALL_ART,
             "detail_artist" to LibraryViewMode.LIST_SMALL_ART,
-            "detail_playlist" to LibraryViewMode.LIST_SMALL_ART
+            "detail_playlist" to LibraryViewMode.LIST_SMALL_ART,
+            "detail_online_playlist" to LibraryViewMode.LIST_SMALL_ART
         )
 
         fun defaultModeFor(pageKey: String): LibraryViewMode = when (pageKey) {
-            "tab_albums" -> LibraryViewMode.GRID_3_COL
+            "tab_albums", "tab_netease_square", "tab_qq_square" -> LibraryViewMode.GRID_3_COL
             else -> LibraryViewMode.LIST_SMALL_ART
         }
     }
@@ -221,6 +226,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private fun restoreLibraryUiState() {
         val tabName = prefs.getString(KEY_TAB, LibraryTab.SONGS.name) ?: LibraryTab.SONGS.name
         val inertiaEnabled = prefs.getBoolean(KEY_COVER_FLOW_INERTIA, true)
+        val savedQuery = prefs.getString(KEY_SEARCH_QUERY, "") ?: ""
+        val savedSearching = prefs.getBoolean(KEY_IS_SEARCHING, false)
 
         val restoredTab = try {
             LibraryTab.valueOf(tabName)
@@ -250,7 +257,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
             it.copy(
                 currentTab = restoredTab,
                 pageViewModes = map,
-                isCoverFlowInertiaEnabled = inertiaEnabled
+                isCoverFlowInertiaEnabled = inertiaEnabled,
+                searchQuery = savedQuery,
+                isSearching = savedSearching || savedQuery.isNotBlank()
             )
         }
     }
@@ -260,6 +269,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val editor = prefs.edit()
             .putString(KEY_TAB, s.currentTab.name)
             .putBoolean(KEY_COVER_FLOW_INERTIA, s.isCoverFlowInertiaEnabled)
+            .putString(KEY_SEARCH_QUERY, s.searchQuery)
+            .putBoolean(KEY_IS_SEARCHING, s.isSearching)
         for ((k, v) in s.pageViewModes) {
             editor.putString(KEY_VIEW_MODE_PREFIX + k, v.name)
         }
@@ -277,10 +288,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _libraryUiState.update {
             it.copy(
                 currentTab = tab,
-                selectedFolder = null,
+                selectedFolderPath = null,
                 selectedAlbum = null,
                 selectedArtist = null,
-                selectedPlaylist = null
+                selectedPlaylist = null,
+                selectedOnlinePlaylist = null
             )
         }
         saveLibraryUiState()
@@ -290,10 +302,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val targetKey = pageKey ?: run {
             val s = _libraryUiState.value
             when {
-                s.selectedFolder != null -> "detail_folder"
+                s.selectedFolderPath != null -> "detail_folder"
                 s.selectedAlbum != null -> "detail_album"
                 s.selectedArtist != null -> "detail_artist"
                 s.selectedPlaylist != null -> "detail_playlist"
+                s.selectedOnlinePlaylist != null -> "detail_online_playlist"
                 else -> s.currentTab.pageKey
             }
         }
@@ -309,10 +322,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         val targetKey = pageKey ?: run {
             val s = _libraryUiState.value
             when {
-                s.selectedFolder != null -> "detail_folder"
+                s.selectedFolderPath != null -> "detail_folder"
                 s.selectedAlbum != null -> "detail_album"
                 s.selectedArtist != null -> "detail_artist"
                 s.selectedPlaylist != null -> "detail_playlist"
+                s.selectedOnlinePlaylist != null -> "detail_online_playlist"
                 else -> s.currentTab.pageKey
             }
         }
@@ -330,7 +344,13 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun setSearchQuery(query: String) {
-        _libraryUiState.update { it.copy(searchQuery = query) }
+        _libraryUiState.update {
+            it.copy(
+                searchQuery = query,
+                isSearching = if (query.isNotBlank()) true else it.isSearching
+            )
+        }
+        prefs.edit().putString(KEY_SEARCH_QUERY, query).apply()
     }
 
     fun toggleSearch() {
@@ -341,10 +361,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 searchQuery = if (!nextState) "" else it.searchQuery
             )
         }
+        val current = _libraryUiState.value
+        prefs.edit()
+            .putBoolean(KEY_IS_SEARCHING, current.isSearching)
+            .putString(KEY_SEARCH_QUERY, current.searchQuery)
+            .apply()
     }
 
-    fun selectFolder(folder: FolderItem?) {
-        _libraryUiState.update { it.copy(selectedFolder = folder) }
+    fun selectFolderPath(folderPath: String?) {
+        _libraryUiState.update { it.copy(selectedFolderPath = folderPath) }
     }
 
     fun selectAlbum(album: AlbumItem?) {
@@ -365,12 +390,11 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _libraryUiState.update {
             it.copy(
                 currentTab = LibraryTab.ALBUMS,
-                selectedFolder = null,
+                selectedFolderPath = null,
                 selectedAlbum = targetAlbum,
                 selectedArtist = null,
                 selectedPlaylist = null,
-                searchQuery = "",
-                isSearching = false,
+                selectedOnlinePlaylist = null,
                 isNowPlayingExpanded = false
             )
         }
@@ -382,6 +406,22 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun selectPlaylist(playlist: Playlist?) {
         _libraryUiState.update { it.copy(selectedPlaylist = playlist) }
+    }
+
+    fun selectOnlinePlaylist(onlinePlaylist: com.orbit.music.data.online.model.OnlinePlaylist?) {
+        _libraryUiState.update { it.copy(selectedOnlinePlaylist = onlinePlaylist) }
+    }
+
+    fun clearAllDrillDown() {
+        _libraryUiState.update {
+            it.copy(
+                selectedFolderPath = null,
+                selectedAlbum = null,
+                selectedArtist = null,
+                selectedPlaylist = null,
+                selectedOnlinePlaylist = null
+            )
+        }
     }
 
     fun setNowPlayingExpanded(expanded: Boolean) {
@@ -446,7 +486,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         playerManager.playSongList(songs, index)
     }
 
-    fun playOnlineSongs(songs: List<com.orbit.music.data.online.model.OnlineSongItem>, startIndex: Int = 0) {
+    fun playOnlineSongs(
+        songs: List<com.orbit.music.data.online.model.OnlineSongItem>,
+        startIndex: Int = 0,
+        origin: PlaybackOrigin? = null
+    ) {
+        if (origin != null) {
+            _playbackOrigin.value = origin
+        }
         playerManager.playOnlineSongList(songs, startIndex)
     }
 
@@ -579,6 +626,8 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         private const val KEY_TAB = "key_library_tab"
         private const val KEY_VIEW_MODE = "key_library_view_mode"
         private const val KEY_VIEW_MODE_PREFIX = "key_view_mode_"
+        private const val KEY_SEARCH_QUERY = "key_search_query"
+        private const val KEY_IS_SEARCHING = "key_is_searching"
         const val KEY_COVER_FLOW_INERTIA = "key_cover_flow_inertia"
     }
 }

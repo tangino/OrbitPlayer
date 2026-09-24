@@ -88,5 +88,6 @@ sealed interface PlaybackOrigin {
     data class Album(val albumItem: AlbumItem) : PlaybackOrigin
     data class Artist(val artistItem: ArtistItem) : PlaybackOrigin
     data class PlaylistOrigin(val playlist: Playlist) : PlaybackOrigin
+    data class OnlinePlaylistOrigin(val onlinePlaylist: com.orbit.music.data.online.model.OnlinePlaylist) : PlaybackOrigin
 }
 

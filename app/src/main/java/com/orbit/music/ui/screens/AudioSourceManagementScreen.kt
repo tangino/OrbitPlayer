@@ -79,6 +79,12 @@ fun AudioSourceManagementScreen(
         }
     }
 
+    val resolvedBgColor = if (OrbitTheme.colors.background == Color.Transparent) {
+        if (OrbitTheme.colors.isDark) Color(0xFF101216) else Color(0xFFF8FAFC)
+    } else {
+        OrbitTheme.colors.background
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -98,10 +104,10 @@ fun AudioSourceManagementScreen(
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = OrbitTheme.colors.background)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = resolvedBgColor)
             )
         },
-        containerColor = OrbitTheme.colors.background
+        containerColor = resolvedBgColor
     ) { innerPadding ->
         LazyColumn(
             modifier = modifier
@@ -602,10 +608,18 @@ private fun ImportUrlDialog(
                 OutlinedTextField(
                     value = url,
                     onValueChange = { url = it },
-                    placeholder = { Text("https://example.com/lx-source.js", fontSize = 12.sp) },
+                    placeholder = { Text("https://example.com/lx-source.js", fontSize = 12.sp, color = OrbitTheme.colors.textSecondary.copy(alpha = 0.6f)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = OrbitTheme.colors.surfaceCard,
+                        unfocusedContainerColor = OrbitTheme.colors.surfaceCard,
+                        focusedBorderColor = OrbitTheme.colors.primary,
+                        unfocusedBorderColor = OrbitTheme.colors.surfaceBorder,
+                        focusedTextColor = OrbitTheme.colors.textPrimary,
+                        unfocusedTextColor = OrbitTheme.colors.textPrimary
+                    )
                 )
             }
         },
@@ -613,16 +627,19 @@ private fun ImportUrlDialog(
             Button(
                 onClick = { if (url.isNotBlank()) onConfirm(url) },
                 enabled = url.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary)
+                colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary),
+                shape = RoundedCornerShape(8.dp)
             ) {
-                Text("下载并导入", color = if (OrbitTheme.colors.isDark) Color(0xFF101216) else Color.White)
+                Text("下载并导入", color = if (OrbitTheme.colors.isDark) Color(0xFF101216) else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消", color = OrbitTheme.colors.textSecondary)
+                Text("取消", color = OrbitTheme.colors.textSecondary, fontSize = 12.sp)
             }
-        }
+        },
+        containerColor = OrbitTheme.colors.surfaceDialog,
+        shape = RoundedCornerShape(16.dp)
     )
 }
 
@@ -647,20 +664,36 @@ private fun PasteScriptDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    placeholder = { Text("音源名称 (可选，留空自动提取)", fontSize = 12.sp) },
+                    placeholder = { Text("音源名称 (可选，留空自动提取)", fontSize = 12.sp, color = OrbitTheme.colors.textSecondary.copy(alpha = 0.6f)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(8.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = OrbitTheme.colors.surfaceCard,
+                        unfocusedContainerColor = OrbitTheme.colors.surfaceCard,
+                        focusedBorderColor = OrbitTheme.colors.primary,
+                        unfocusedBorderColor = OrbitTheme.colors.surfaceBorder,
+                        focusedTextColor = OrbitTheme.colors.textPrimary,
+                        unfocusedTextColor = OrbitTheme.colors.textPrimary
+                    )
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = code,
                     onValueChange = { code = it },
-                    placeholder = { Text("在此粘贴 JavaScript 脚本源码...", fontSize = 12.sp) },
+                    placeholder = { Text("在此粘贴 JavaScript 脚本源码...", fontSize = 12.sp, color = OrbitTheme.colors.textSecondary.copy(alpha = 0.6f)) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(180.dp),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(8.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = OrbitTheme.colors.surfaceCard,
+                        unfocusedContainerColor = OrbitTheme.colors.surfaceCard,
+                        focusedBorderColor = OrbitTheme.colors.primary,
+                        unfocusedBorderColor = OrbitTheme.colors.surfaceBorder,
+                        focusedTextColor = OrbitTheme.colors.textPrimary,
+                        unfocusedTextColor = OrbitTheme.colors.textPrimary
+                    )
                 )
             }
         },
@@ -668,15 +701,18 @@ private fun PasteScriptDialog(
             Button(
                 onClick = { if (code.isNotBlank()) onConfirm(name, code) },
                 enabled = code.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary)
+                colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary),
+                shape = RoundedCornerShape(8.dp)
             ) {
-                Text("确认导入", color = if (OrbitTheme.colors.isDark) Color(0xFF101216) else Color.White)
+                Text("确认导入", color = if (OrbitTheme.colors.isDark) Color(0xFF101216) else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("取消", color = OrbitTheme.colors.textSecondary)
+                Text("取消", color = OrbitTheme.colors.textSecondary, fontSize = 12.sp)
             }
-        }
+        },
+        containerColor = OrbitTheme.colors.surfaceDialog,
+        shape = RoundedCornerShape(16.dp)
     )
 }

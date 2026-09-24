@@ -22,4 +22,5 @@ app_screenshot.png
 
 # 参考工程与临时文件
 auralis/
-
+HotDownloader-main/
+*.js

@@ -1,5 +1,8 @@
 package com.orbit.music.utils
 
+import android.content.Context
+import com.orbit.music.data.model.Song
+import com.orbit.music.data.online.lyrics.OnlineLyricManager
 import java.io.File
 import java.nio.charset.Charset
 import java.util.regex.Pattern
@@ -13,14 +16,23 @@ data class LyricLine(
 )
 
 /**
- * 专业 LRC 歌词文件解析器
+ * 专业 LRC 歌词文件解析器与多级歌词调度
  * 1. 自动寻找音频文件同目录下的同名 .lrc 或 .LRC 文件；
  * 2. 兼容常见中文编码（UTF-8、GBK、GB2312、UTF-16），避免歌词乱码；
- * 3. 完美兼容标准与非标准时间戳（如 [01:23.45]、[01:23.456]、[01:23] 以及多时间戳同行）。
+ * 3. 完美兼容标准与非标准时间戳（如 [01:23.45]、[01:23.456]、[01:23] 以及多时间戳同行）；
+ * 4. 支持网络歌曲多源自动检索与本地缓存。
  */
 object LyricParser {
 
     private val TIME_TAG_PATTERN = Pattern.compile("\\[(\\d{1,2}):(\\d{1,2})(?:\\.(\\d{1,3}))?]")
+
+    /**
+     * 智能异步加载歌曲歌词（本地同名歌词 > 本地缓存 > 在线多源搜索）
+     */
+    suspend fun loadLyricForSongAsync(context: Context, song: Song?): List<LyricLine> {
+        if (song == null) return emptyList()
+        return OnlineLyricManager.getInstance(context).getLyricForSong(song)
+    }
 
     /**
      * 根据音频绝对路径查找并解析同目录下的同名歌词文件

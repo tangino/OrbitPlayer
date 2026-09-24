@@ -64,49 +64,58 @@ object SongMetadataHelper {
      * 读取音频文件的技术规格参数
      */
     fun extractTechSpecs(song: Song): AudioTechSpecs {
-        val file = File(song.path)
-        val ext = file.extension.uppercase().ifBlank {
-            when {
-                song.mimeType.contains("flac", true) -> "FLAC"
-                song.mimeType.contains("mp3", true) -> "MP3"
-                song.mimeType.contains("wav", true) -> "WAV"
-                song.mimeType.contains("ogg", true) -> "OGG"
-                song.mimeType.contains("aac", true) || song.mimeType.contains("m4a", true) -> "AAC"
-                else -> "AUDIO"
-            }
+        val cleanPath = song.path.substringBefore('?').substringBefore('#')
+        val rawExt = cleanPath.substringAfterLast('.', "").uppercase()
+        val validAudioExtensions = setOf(
+            "MP3", "FLAC", "M4A", "AAC", "OGG", "WAV", "APE",
+            "OPUS", "WMA", "AIFF", "DSD", "DSF", "DFF", "ALAC", "MP4"
+        )
+        val ext = when {
+            rawExt in validAudioExtensions -> rawExt
+            song.mimeType.contains("flac", true) || song.path.contains("flac", true) -> "FLAC"
+            song.mimeType.contains("mp3", true) || song.path.contains("mp3", true) -> "MP3"
+            song.mimeType.contains("wav", true) || song.path.contains("wav", true) -> "WAV"
+            song.mimeType.contains("ogg", true) || song.path.contains("ogg", true) -> "OGG"
+            song.mimeType.contains("aac", true) || song.mimeType.contains("m4a", true) || song.path.contains("m4a", true) -> "M4A"
+            song.path.startsWith("http://") || song.path.startsWith("https://") || song.path.startsWith("online://") -> "ONLINE"
+            else -> "AUDIO"
         }
 
         val totalSec = song.durationMs / 1000
         val min = totalSec / 60
         val sec = totalSec % 60
         val durFormatted = "%d:%02d".format(min, sec)
-        val sizeKb = (if (song.size > 0) song.size else file.length()) / 1024
+        val isNetworkUrl = song.path.startsWith("http://") || song.path.startsWith("https://") || song.path.startsWith("online://")
+        val file = if (!isNetworkUrl) File(song.path) else null
+        val sizeKb = (if (song.size > 0) song.size else file?.length() ?: 0L) / 1024
 
         var sampleRate = 44100
         var bitDepth = if (ext == "FLAC" || ext == "WAV") 16 else 16
         var bitrateKbps = if (totalSec > 0 && sizeKb > 0) ((sizeKb * 8) / totalSec).toInt() else 0
 
-        val retriever = MediaMetadataRetriever()
-        try {
-            retriever.setDataSource(song.path)
-            val srStr = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_SAMPLERATE)
-            } else {
-                null
-            }
-            val brStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)
-
-            srStr?.toIntOrNull()?.let { if (it > 0) sampleRate = it }
-            brStr?.toIntOrNull()?.let { if (it > 0) bitrateKbps = it / 1000 }
-            if (bitrateKbps > 1500) {
-                bitDepth = 24
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to read tech specs for ${song.path}", e)
-        } finally {
+        if (!isNetworkUrl && file?.exists() == true) {
+            val retriever = MediaMetadataRetriever()
             try {
-                retriever.release()
-            } catch (_: Exception) {}
+                retriever.setDataSource(song.path)
+                val srStr = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_SAMPLERATE)
+                } else {
+                    null
+                }
+                val brStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)
+
+                srStr?.toIntOrNull()?.let { if (it > 0) sampleRate = it }
+                brStr?.toIntOrNull()?.let { if (it > 0) bitrateKbps = it / 1000 }
+                if (bitrateKbps > 1500) {
+                    bitDepth = 24
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to read tech specs for ${song.path}", e)
+            } finally {
+                try {
+                    retriever.release()
+                } catch (_: Exception) {}
+            }
         }
 
         return AudioTechSpecs(

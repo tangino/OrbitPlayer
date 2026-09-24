@@ -47,10 +47,18 @@ data class OnlinePlaylistUiState(
 )
 
 class OnlinePlaylistViewModel(
+    val initialPlatform: OnlinePlatform = OnlinePlatform.NETEASE,
     private val repository: OnlineMusicRepository = OnlineMusicRepository.getInstance()
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(OnlinePlaylistUiState())
+    class Factory(private val platform: OnlinePlatform) : androidx.lifecycle.ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            return OnlinePlaylistViewModel(initialPlatform = platform) as T
+        }
+    }
+
+    private val _uiState = MutableStateFlow(OnlinePlaylistUiState(currentPlatform = initialPlatform))
     val uiState: StateFlow<OnlinePlaylistUiState> = _uiState.asStateFlow()
 
     init {
@@ -296,6 +304,19 @@ class OnlinePlaylistViewModel(
             }.onFailure {
                 _uiState.update { it.copy(isSearching = false) }
             }
+        }
+    }
+
+    fun setSearchActive(active: Boolean) {
+        _uiState.update { it.copy(isSearchMode = active) }
+    }
+
+    fun updateSearchKeyword(keyword: String) {
+        _uiState.update {
+            it.copy(
+                searchKeyword = keyword,
+                searchResults = if (keyword.isBlank()) emptyList() else it.searchResults
+            )
         }
     }
 

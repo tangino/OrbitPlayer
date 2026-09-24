@@ -77,7 +77,7 @@ fun SongDetailInfoDialog(
             val mb = bytes.toDouble() / (1024 * 1024)
             fileSizeFormatted = String.format(Locale.getDefault(), "%.2fMB", mb)
 
-            val lyrics = LyricParser.loadLyricForSong(song.path)
+            val lyrics = LyricParser.loadLyricForSongAsync(context, song)
             firstLyricPreview = lyrics.firstOrNull { it.text.isNotBlank() }?.text
         }
     }

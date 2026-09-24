@@ -193,17 +193,17 @@ fun NowPlayingScreen(
     val currentProgress = if (isDraggingSlider) draggingProgress else playbackState.progress
     val currentPosMs = if (isDraggingSlider) (draggingProgress * playbackState.durationMs).toLong() else playbackState.currentPositionMs
 
-    // 实时异步加载并解析同目录下同名歌词文件
+    // 实时异步加载并解析本地与在线歌词
     var lyricLines by remember { mutableStateOf<List<LyricLine>>(emptyList()) }
     var songTechSpecs by remember { mutableStateOf<com.orbit.music.data.model.AudioTechSpecs?>(null) }
     var showDeleteSongDialog by remember { mutableStateOf(false) }
     var deleteLocalFileChecked by remember { mutableStateOf(false) }
     val coverVer by com.orbit.music.utils.CoverHelper.coverVersion.collectAsState()
 
-    LaunchedEffect(song?.id, song?.path) {
+    LaunchedEffect(song?.id, song?.path, song?.title, song?.artist) {
         if (song != null) {
             lyricLines = withContext(Dispatchers.IO) {
-                LyricParser.loadLyricForSong(song.path)
+                LyricParser.loadLyricForSongAsync(context, song)
             }
             songTechSpecs = withContext(Dispatchers.IO) {
                 com.orbit.music.data.model.SongMetadataHelper.extractTechSpecs(song)
@@ -805,7 +805,8 @@ fun NowPlayingScreen(
         // 3.5 歌曲技术规格参数栏 (比特率、时长、格式、采样率等)
         val techSpecsView: @Composable (Modifier) -> Unit = { mod ->
             val specs = songTechSpecs
-            val formatText = specs?.format?.uppercase() ?: (song?.mimeType?.takeIf { it.isNotBlank() }?.substringAfterLast('/')?.uppercase() ?: "AUDIO")
+            val rawFormatText = specs?.format?.uppercase() ?: (song?.mimeType?.takeIf { it.isNotBlank() }?.substringAfterLast('/')?.uppercase() ?: "AUDIO")
+            val formatText = if (rawFormatText.length > 8 || rawFormatText.contains("=") || rawFormatText.contains("&")) "AUDIO" else rawFormatText
             val bitrateText = if ((specs?.bitrateKbps ?: 0) > 0) "${specs?.bitrateKbps} kbps" else ""
             val sampleRateText = if ((specs?.sampleRateHz ?: 0) > 0) {
                 val sr = specs!!.sampleRateHz

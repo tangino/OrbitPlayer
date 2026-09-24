@@ -160,19 +160,19 @@ fun MusicLibraryScreen(
     var renamePlaylistName by remember { mutableStateOf("") }
     var deletingPlaylist by remember { mutableStateOf<Playlist?>(null) }
 
-    // 播放列表下钻状态
-    var openedPlaylist by remember { mutableStateOf<Playlist?>(null) }
+    // 播放列表下钻状态：直接由 ViewModel 的 libraryState 驱动，跨页面切换时状态完全保持
+    val openedPlaylist = libraryState.selectedPlaylist
     var playlistSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
     val playlistSongsListState = rememberLazyListState()
 
     // 在线公共歌单状态
-    var openedOnlinePlaylist by remember { mutableStateOf<com.orbit.music.data.online.model.OnlinePlaylist?>(null) }
+    val openedOnlinePlaylist = libraryState.selectedOnlinePlaylist
     var onlinePlaylistSongs by remember { mutableStateOf<List<com.orbit.music.data.online.model.OnlineSongItem>>(emptyList()) }
     var isOnlineDetailLoading by remember { mutableStateOf(false) }
     var onlineDetailError by remember { mutableStateOf<String?>(null) }
 
     // 监听 openedOnlinePlaylist 变化自动抓取歌单详情与歌曲
-    LaunchedEffect(openedOnlinePlaylist) {
+    LaunchedEffect(openedOnlinePlaylist?.id, openedOnlinePlaylist?.platform) {
         val op = openedOnlinePlaylist
         if (op != null) {
             isOnlineDetailLoading = true
@@ -181,7 +181,9 @@ fun MusicLibraryScreen(
             val repo = com.orbit.music.data.online.repository.OnlineMusicRepository.getInstance()
             val res = repo.getPlaylistDetail(op.id, op.platform)
             res.onSuccess { (detail, songs) ->
-                openedOnlinePlaylist = detail
+                if (libraryState.selectedOnlinePlaylist?.id == detail.id) {
+                    viewModel.selectOnlinePlaylist(detail)
+                }
                 onlinePlaylistSongs = songs
                 isOnlineDetailLoading = false
             }.onFailure { err ->
@@ -217,27 +219,17 @@ fun MusicLibraryScreen(
     var songForDetailInfo by remember { mutableStateOf<Song?>(null) }
 
     // 文件夹下钻：当前展开的文件夹路径
-    var openedFolderPath by remember { mutableStateOf<String?>(null) }
+    val openedFolderPath = libraryState.selectedFolderPath
     // 专辑下钻：当前展开的专辑
-    var openedAlbum by remember { mutableStateOf<AlbumItem?>(null) }
+    val openedAlbum = libraryState.selectedAlbum
     // 艺术家下钻：当前展开的艺术家
-    var openedArtist by remember { mutableStateOf<ArtistItem?>(null) }
-
-    // 监听 ViewModel 中专辑下钻跳转（来自播放页或长按操作）
-    LaunchedEffect(libraryState.selectedAlbum) {
-        if (libraryState.selectedAlbum != null) {
-            openedAlbum = libraryState.selectedAlbum
-            openedFolderPath = null
-            openedArtist = null
-            openedPlaylist = null
-        }
-    }
+    val openedArtist = libraryState.selectedArtist
 
     val favoriteSongs by viewModel.favoriteSongs.collectAsState()
     val dislikedSongs by viewModel.dislikedSongs.collectAsState()
 
     // 监听 openedPlaylist 变化动态获取歌曲列表
-    LaunchedEffect(openedPlaylist, playlists, favoriteSongs, dislikedSongs) {
+    LaunchedEffect(openedPlaylist?.id, playlists, favoriteSongs, dislikedSongs) {
         val p = openedPlaylist
         if (p != null) {
             if (p.id == FAVORITE_PLAYLIST_ID) {
@@ -248,7 +240,7 @@ fun MusicLibraryScreen(
                 playlistSongs = viewModel.getSongsInPlaylist(p.id)
                 val updated = playlists.find { it.id == p.id }
                 if (updated != null && updated != p) {
-                    openedPlaylist = updated
+                    viewModel.selectPlaylist(updated)
                 }
             }
         } else {
@@ -282,27 +274,27 @@ fun MusicLibraryScreen(
 
     // 2. 文件夹下钻状态 -> 侧滑返回回到文件夹列表
     BackHandler(enabled = openedFolderPath != null) {
-        openedFolderPath = null
+        viewModel.selectFolderPath(null)
     }
 
     // 3. 专辑下钻状态 -> 侧滑返回回到专辑列表
     BackHandler(enabled = openedAlbum != null) {
-        openedAlbum = null
+        viewModel.selectAlbum(null)
     }
 
     // 4. 艺术家下钻状态 -> 侧滑返回回到艺术家列表
     BackHandler(enabled = openedArtist != null) {
-        openedArtist = null
+        viewModel.selectArtist(null)
     }
 
     // 5. 播放列表下钻状态 -> 侧滑返回回到播放列表列表
     BackHandler(enabled = openedPlaylist != null) {
-        openedPlaylist = null
+        viewModel.selectPlaylist(null)
     }
 
     // 5.1 在线歌单下钻状态 -> 侧滑返回回到歌单广场
     BackHandler(enabled = openedOnlinePlaylist != null) {
-        openedOnlinePlaylist = null
+        viewModel.selectOnlinePlaylist(null)
     }
 
     // 6. 搜索栏开启状态 -> 侧滑返回关闭搜索
@@ -325,6 +317,10 @@ fun MusicLibraryScreen(
     val currentActiveViewMode = libraryState.getViewModeFor(currentPageKey)
 
     // 🎯 一键精准跳回播放时的原始页面（全部歌曲/文件夹/专辑/艺术家/歌单）并平滑滚动定位到当前播放歌曲
+    // 网络歌单歌曲定位状态
+    var onlineSongsLocateTrigger by remember { mutableStateOf(0L) }
+    var onlineSongsLocateIndex by remember { mutableStateOf(-1) }
+
     fun locateCurrentPlayingSong() {
         val currentSong = playbackState.currentSong ?: return
         val origin = viewModel.playbackOrigin.value
@@ -336,12 +332,41 @@ fun MusicLibraryScreen(
 
         // 2. 根据记录的播放来源上下文（PlaybackOrigin），跳回对应页面并定位
         when (origin) {
+            is PlaybackOrigin.OnlinePlaylistOrigin -> {
+                val targetPlaylist = origin.onlinePlaylist
+                viewModel.clearAllDrillDown()
+                viewModel.selectOnlinePlaylist(targetPlaylist)
+                val targetTab = if (targetPlaylist.platform == com.orbit.music.data.online.model.OnlinePlatform.NETEASE) {
+                    LibraryTab.NETEASE_SQUARE
+                } else {
+                    LibraryTab.QQ_SQUARE
+                }
+                if (libraryState.currentTab != targetTab) {
+                    viewModel.setTab(targetTab)
+                }
+
+                coroutineScope.launch {
+                    var retry = 0
+                    while (retry < 15) {
+                        val currentList = onlinePlaylistSongs
+                        val targetIndex = currentList.indexOfFirst {
+                            it.title == currentSong.title && (currentSong.artist.isBlank() || it.artist == currentSong.artist)
+                        }
+                        if (targetIndex >= 0) {
+                            onlineSongsLocateIndex = targetIndex
+                            onlineSongsLocateTrigger = System.currentTimeMillis()
+                            break
+                        }
+                        kotlinx.coroutines.delay(100)
+                        retry++
+                    }
+                }
+            }
+
             is PlaybackOrigin.Folder -> {
                 val targetPath = origin.folderPath.ifBlank { currentSong.folderPath }
-                openedAlbum = null
-                openedArtist = null
-                openedPlaylist = null
-                openedFolderPath = targetPath
+                viewModel.clearAllDrillDown()
+                viewModel.selectFolderPath(targetPath)
                 if (libraryState.currentTab != LibraryTab.FOLDERS) {
                     viewModel.setTab(LibraryTab.FOLDERS)
                 }
@@ -362,10 +387,8 @@ fun MusicLibraryScreen(
 
             is PlaybackOrigin.Album -> {
                 val targetAlbum = origin.albumItem
-                openedFolderPath = null
-                openedArtist = null
-                openedPlaylist = null
-                openedAlbum = targetAlbum
+                viewModel.clearAllDrillDown()
+                viewModel.selectAlbum(targetAlbum)
                 if (libraryState.currentTab != LibraryTab.ALBUMS) {
                     viewModel.setTab(LibraryTab.ALBUMS)
                 }
@@ -392,10 +415,8 @@ fun MusicLibraryScreen(
 
             is PlaybackOrigin.Artist -> {
                 val targetArtist = origin.artistItem
-                openedFolderPath = null
-                openedAlbum = null
-                openedPlaylist = null
-                openedArtist = targetArtist
+                viewModel.clearAllDrillDown()
+                viewModel.selectArtist(targetArtist)
                 if (libraryState.currentTab != LibraryTab.ARTISTS) {
                     viewModel.setTab(LibraryTab.ARTISTS)
                 }
@@ -422,10 +443,8 @@ fun MusicLibraryScreen(
 
             is PlaybackOrigin.PlaylistOrigin -> {
                 val targetPlaylist = origin.playlist
-                openedFolderPath = null
-                openedAlbum = null
-                openedArtist = null
-                openedPlaylist = targetPlaylist
+                viewModel.clearAllDrillDown()
+                viewModel.selectPlaylist(targetPlaylist)
                 if (libraryState.currentTab != LibraryTab.PLAYLISTS) {
                     viewModel.setTab(LibraryTab.PLAYLISTS)
                 }
@@ -452,10 +471,18 @@ fun MusicLibraryScreen(
             }
 
             is PlaybackOrigin.AllSongs -> {
-                openedFolderPath = null
-                openedAlbum = null
-                openedArtist = null
-                openedPlaylist = null
+                if (currentSong.id < 0 && openedOnlinePlaylist != null) {
+                    // 当前正在播放网络歌曲且当前打开了网络歌单下钻
+                    val targetIndex = onlinePlaylistSongs.indexOfFirst {
+                        it.title == currentSong.title && (currentSong.artist.isBlank() || it.artist == currentSong.artist)
+                    }
+                    if (targetIndex >= 0) {
+                        onlineSongsLocateIndex = targetIndex
+                        onlineSongsLocateTrigger = System.currentTimeMillis()
+                        return
+                    }
+                }
+                viewModel.clearAllDrillDown()
                 if (libraryState.currentTab != LibraryTab.SONGS) {
                     viewModel.setTab(LibraryTab.SONGS)
                 }
@@ -492,13 +519,21 @@ fun MusicLibraryScreen(
         }
     }
 
-    // 全 Tab 通用 Pinch 手势控制器与修饰符（绑定当前页面的独立视图模式）
+    val isOnlineTabOrOnlineDrillDown = libraryState.currentTab == LibraryTab.NETEASE_SQUARE ||
+            libraryState.currentTab == LibraryTab.QQ_SQUARE ||
+            openedOnlinePlaylist != null
+
+    // 全 Tab 通用 Pinch 手势控制器与修饰符（绑定当前页面的独立视图模式，网络歌曲列表及广场禁用 Pinch 缩放）
     val pinchTransitionState = rememberPinchTransitionState()
-    val pinchGestureModifier = Modifier.pinchToZoomViewMode(
-        currentViewMode = currentActiveViewMode,
-        pinchState = pinchTransitionState,
-        onViewModeChange = { viewModel.setViewMode(it, currentPageKey) }
-    )
+    val pinchGestureModifier = if (isOnlineTabOrOnlineDrillDown) {
+        Modifier
+    } else {
+        Modifier.pinchToZoomViewMode(
+            currentViewMode = currentActiveViewMode,
+            pinchState = pinchTransitionState,
+            onViewModeChange = { viewModel.setViewMode(it, currentPageKey) }
+        )
+    }
 
     // 定位正在播放歌曲的悬浮按钮
     @Composable
@@ -796,11 +831,7 @@ fun MusicLibraryScreen(
                     // 下钻模式：返回键 + 标题与副标题
                     IconButton(
                         onClick = {
-                            openedFolderPath = null
-                            openedAlbum = null
-                            openedArtist = null
-                            openedPlaylist = null
-                            openedOnlinePlaylist = null
+                            viewModel.clearAllDrillDown()
                         },
                         modifier = Modifier.size(34.dp)
                     ) {
@@ -849,128 +880,130 @@ fun MusicLibraryScreen(
                         )
                     }
 
-                    // 下钻模式右侧操作图标群 (紧凑 32dp 圆形点击区域)
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(3.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // 1. 搜索开关
-                        IconButton(
-                            onClick = { viewModel.toggleSearch() },
-                            modifier = Modifier.size(32.dp)
+                    // 下钻模式右侧操作图标群 (紧凑 32dp 圆形点击区域，网络歌单下钻不显示这 3 个按钮)
+                    if (openedOnlinePlaylist == null) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = if (libraryState.isSearching) Icons.Default.Close else Icons.Default.Search,
-                                contentDescription = "Search",
-                                tint = if (libraryState.isSearching) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-
-                        // 2. 多选模式开关
-                        IconButton(
-                            onClick = { isSelectionMode = true },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Checklist,
-                                contentDescription = stringResource(R.string.menu_multi_select),
-                                tint = OrbitTheme.colors.textSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-
-                        // 3. 视图模式切换
-                        IconButton(
-                            onClick = { viewModel.cycleViewMode(currentPageKey) },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            val icon = when (currentActiveViewMode) {
-                                LibraryViewMode.LIST_NO_ART -> Icons.AutoMirrored.Filled.FormatListBulleted
-                                LibraryViewMode.LIST_SMALL_ART -> Icons.AutoMirrored.Filled.ViewList
-                                LibraryViewMode.LIST_LARGE_ART -> Icons.Default.ViewAgenda
-                                LibraryViewMode.GRID_2_COL -> Icons.Default.GridView
-                                LibraryViewMode.GRID_3_COL -> Icons.Default.GridOn
-                                LibraryViewMode.GRID_4_COL -> Icons.Default.Apps
-                                LibraryViewMode.COVER_FLOW -> Icons.Default.Flip
+                            // 1. 搜索开关
+                            IconButton(
+                                onClick = { viewModel.toggleSearch() },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (libraryState.isSearching) Icons.Default.Close else Icons.Default.Search,
+                                    contentDescription = "Search",
+                                    tint = if (libraryState.isSearching) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = "View Mode",
-                                tint = OrbitTheme.colors.primary,
-                                modifier = Modifier.size(18.dp)
-                            )
+
+                            // 2. 多选模式开关
+                            IconButton(
+                                onClick = { isSelectionMode = true },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Checklist,
+                                    contentDescription = stringResource(R.string.menu_multi_select),
+                                    tint = OrbitTheme.colors.textSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            // 3. 视图模式切换
+                            IconButton(
+                                onClick = { viewModel.cycleViewMode(currentPageKey) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                val icon = when (currentActiveViewMode) {
+                                    LibraryViewMode.LIST_NO_ART -> Icons.AutoMirrored.Filled.FormatListBulleted
+                                    LibraryViewMode.LIST_SMALL_ART -> Icons.AutoMirrored.Filled.ViewList
+                                    LibraryViewMode.LIST_LARGE_ART -> Icons.Default.ViewAgenda
+                                    LibraryViewMode.GRID_2_COL -> Icons.Default.GridView
+                                    LibraryViewMode.GRID_3_COL -> Icons.Default.GridOn
+                                    LibraryViewMode.GRID_4_COL -> Icons.Default.Apps
+                                    LibraryViewMode.COVER_FLOW -> Icons.Default.Flip
+                                }
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = "View Mode",
+                                    tint = OrbitTheme.colors.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
                     }
                 } else {
                     Spacer(modifier = Modifier.weight(1f))
-
-                    // 紧凑操作图标群 (32dp 精致圆形点击区域，间距均匀，极简现代)
 
                     // 右侧紧凑操作图标群 (32dp 精致圆形点击区域，间距均匀，毫无臃肿感)
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(3.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // 1. 搜索开关
-                        IconButton(
-                            onClick = { viewModel.toggleSearch() },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (libraryState.isSearching) Icons.Default.Close else Icons.Default.Search,
-                                contentDescription = "Search",
-                                tint = if (libraryState.isSearching) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-
-                        // 2. 多选模式开关
-                        IconButton(
-                            onClick = { isSelectionMode = true },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Checklist,
-                                contentDescription = stringResource(R.string.menu_multi_select),
-                                tint = OrbitTheme.colors.textSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-
-                        // 3. 视图模式切换
-                        IconButton(
-                            onClick = { viewModel.cycleViewMode(currentPageKey) },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            val icon = when (currentActiveViewMode) {
-                                LibraryViewMode.LIST_NO_ART -> Icons.AutoMirrored.Filled.FormatListBulleted
-                                LibraryViewMode.LIST_SMALL_ART -> Icons.AutoMirrored.Filled.ViewList
-                                LibraryViewMode.LIST_LARGE_ART -> Icons.Default.ViewAgenda
-                                LibraryViewMode.GRID_2_COL -> Icons.Default.GridView
-                                LibraryViewMode.GRID_3_COL -> Icons.Default.GridOn
-                                LibraryViewMode.GRID_4_COL -> Icons.Default.Apps
-                                LibraryViewMode.COVER_FLOW -> Icons.Default.Flip
+                        if (libraryState.currentTab != LibraryTab.NETEASE_SQUARE && libraryState.currentTab != LibraryTab.QQ_SQUARE) {
+                            // 1. 搜索开关
+                            IconButton(
+                                onClick = { viewModel.toggleSearch() },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (libraryState.isSearching) Icons.Default.Close else Icons.Default.Search,
+                                    contentDescription = "Search",
+                                    tint = if (libraryState.isSearching) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = "View Mode",
-                                tint = OrbitTheme.colors.primary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
 
-                        // 4. 扫描媒体库
-                        IconButton(
-                            onClick = { viewModel.scanMedia() },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Sync,
-                                contentDescription = "Scan",
-                                tint = if (isScanning) OrbitTheme.colors.tertiary else OrbitTheme.colors.textSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
+                            // 2. 多选模式开关
+                            IconButton(
+                                onClick = { isSelectionMode = true },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Checklist,
+                                    contentDescription = stringResource(R.string.menu_multi_select),
+                                    tint = OrbitTheme.colors.textSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            // 3. 视图模式切换
+                            IconButton(
+                                onClick = { viewModel.cycleViewMode(currentPageKey) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                val icon = when (currentActiveViewMode) {
+                                    LibraryViewMode.LIST_NO_ART -> Icons.AutoMirrored.Filled.FormatListBulleted
+                                    LibraryViewMode.LIST_SMALL_ART -> Icons.AutoMirrored.Filled.ViewList
+                                    LibraryViewMode.LIST_LARGE_ART -> Icons.Default.ViewAgenda
+                                    LibraryViewMode.GRID_2_COL -> Icons.Default.GridView
+                                    LibraryViewMode.GRID_3_COL -> Icons.Default.GridOn
+                                    LibraryViewMode.GRID_4_COL -> Icons.Default.Apps
+                                    LibraryViewMode.COVER_FLOW -> Icons.Default.Flip
+                                }
+                                Icon(
+                                    imageVector = icon,
+                                    contentDescription = "View Mode",
+                                    tint = OrbitTheme.colors.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            // 4. 扫描媒体库
+                            IconButton(
+                                onClick = { viewModel.scanMedia() },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Sync,
+                                    contentDescription = "Scan",
+                                    tint = if (isScanning) OrbitTheme.colors.tertiary else OrbitTheme.colors.textSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
                         }
 
                         // 5. 设置
@@ -993,6 +1026,14 @@ fun MusicLibraryScreen(
 
             // 2. 现代 Segmented Pill 胶囊标签栏 (下钻时隐藏)
             if (!isDrillDown) {
+                var showOnlinePlatformMenu by remember { mutableStateOf(false) }
+                val isOnlineTabSelected = libraryState.currentTab == LibraryTab.NETEASE_SQUARE || libraryState.currentTab == LibraryTab.QQ_SQUARE
+                val onlineTabLabel = when (libraryState.currentTab) {
+                    LibraryTab.NETEASE_SQUARE -> "网易云广场"
+                    LibraryTab.QQ_SQUARE -> "QQ音乐广场"
+                    else -> "在线歌单"
+                }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1001,7 +1042,15 @@ fun MusicLibraryScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    LibraryTab.values().forEach { tab ->
+                    val localTabs = listOf(
+                        LibraryTab.SONGS,
+                        LibraryTab.FOLDERS,
+                        LibraryTab.ALBUMS,
+                        LibraryTab.ARTISTS,
+                        LibraryTab.PLAYLISTS
+                    )
+
+                    localTabs.forEach { tab ->
                         val isSelected = libraryState.currentTab == tab
                         val pillBgColor = if (isSelected) {
                             OrbitTheme.colors.primary.copy(alpha = 0.16f)
@@ -1026,10 +1075,6 @@ fun MusicLibraryScreen(
                                 .background(pillBgColor)
                                 .border(BorderStroke(1.dp, pillBorderColor), RoundedCornerShape(16.dp))
                                 .clickable {
-                                    openedFolderPath = null
-                                    openedAlbum = null
-                                    openedArtist = null
-                                    openedPlaylist = null
                                     viewModel.setTab(tab)
                                 }
                                 .padding(horizontal = 14.dp),
@@ -1041,6 +1086,118 @@ fun MusicLibraryScreen(
                                 color = pillTextColor,
                                 fontSize = 12.5.sp,
                                 maxLines = 1
+                            )
+                        }
+                    }
+
+                    // 🌐 网络平台下拉选择胶囊
+                    Box {
+                        val pillBgColor = if (isOnlineTabSelected) {
+                            OrbitTheme.colors.primary.copy(alpha = 0.16f)
+                        } else {
+                            OrbitTheme.colors.surfaceCard.copy(alpha = 0.5f)
+                        }
+                        val pillBorderColor = if (isOnlineTabSelected) {
+                            OrbitTheme.colors.primary.copy(alpha = 0.45f)
+                        } else {
+                            Color.Transparent
+                        }
+                        val pillTextColor = if (isOnlineTabSelected) {
+                            OrbitTheme.colors.primary
+                        } else {
+                            OrbitTheme.colors.textSecondary
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .height(32.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(pillBgColor)
+                                .border(BorderStroke(1.dp, pillBorderColor), RoundedCornerShape(16.dp))
+                                .clickable {
+                                    showOnlinePlatformMenu = true
+                                }
+                                .padding(start = 12.dp, end = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = onlineTabLabel,
+                                fontWeight = if (isOnlineTabSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = pillTextColor,
+                                fontSize = 12.5.sp,
+                                maxLines = 1
+                            )
+                            Icon(
+                                imageVector = Icons.Default.ArrowDropDown,
+                                contentDescription = "切换平台",
+                                tint = pillTextColor,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showOnlinePlatformMenu,
+                            onDismissRequest = { showOnlinePlatformMenu = false },
+                            modifier = Modifier
+                                .background(OrbitTheme.colors.surfaceCard)
+                                .border(0.5.dp, OrbitTheme.colors.surfaceBorder, RoundedCornerShape(12.dp))
+                        ) {
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(18.dp)
+                                                .background(Color(0xFFE60026), RoundedCornerShape(4.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text("网", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "网易云广场",
+                                            fontSize = 13.sp,
+                                            fontWeight = if (libraryState.currentTab == LibraryTab.NETEASE_SQUARE) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (libraryState.currentTab == LibraryTab.NETEASE_SQUARE) OrbitTheme.colors.primary else OrbitTheme.colors.textPrimary
+                                        )
+                                    }
+                                },
+                                trailingIcon = if (libraryState.currentTab == LibraryTab.NETEASE_SQUARE) {
+                                    { Icon(Icons.Default.Check, contentDescription = null, tint = OrbitTheme.colors.primary, modifier = Modifier.size(16.dp)) }
+                                } else null,
+                                onClick = {
+                                    viewModel.setTab(LibraryTab.NETEASE_SQUARE)
+                                    showOnlinePlatformMenu = false
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(18.dp)
+                                                .background(Color(0xFF1ECF96), RoundedCornerShape(4.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text("Q", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "QQ音乐广场",
+                                            fontSize = 13.sp,
+                                            fontWeight = if (libraryState.currentTab == LibraryTab.QQ_SQUARE) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (libraryState.currentTab == LibraryTab.QQ_SQUARE) OrbitTheme.colors.primary else OrbitTheme.colors.textPrimary
+                                        )
+                                    }
+                                },
+                                trailingIcon = if (libraryState.currentTab == LibraryTab.QQ_SQUARE) {
+                                    { Icon(Icons.Default.Check, contentDescription = null, tint = OrbitTheme.colors.primary, modifier = Modifier.size(16.dp)) }
+                                } else null,
+                                onClick = {
+                                    viewModel.setTab(LibraryTab.QQ_SQUARE)
+                                    showOnlinePlatformMenu = false
+                                }
                             )
                         }
                     }
@@ -1755,8 +1912,7 @@ fun MusicLibraryScreen(
                                                 .background(OrbitTheme.colors.surfaceCard)
                                                 .clickable {
                                                     // 点击进入该文件夹展示歌曲
-                                                    viewModel.setSearchQuery("")
-                                                    openedFolderPath = folder.folderPath
+                                                    viewModel.selectFolderPath(folder.folderPath)
                                                 }
                                                 .padding(14.dp),
                                             verticalAlignment = Alignment.CenterVertically
@@ -1801,8 +1957,7 @@ fun MusicLibraryScreen(
                                     currentPlayingAlbumTitle = playbackState.currentSong?.album,
                                     coverVersion = coverVer,
                                     onAlbumClick = { album ->
-                                        viewModel.setSearchQuery("")
-                                        openedAlbum = album
+                                        viewModel.selectAlbum(album)
                                     },
                                     bottomPadding = 98.dp,
                                     isInertiaEnabled = libraryState.isCoverFlowInertiaEnabled,
@@ -1826,8 +1981,7 @@ fun MusicLibraryScreen(
                                             isCurrent = isAlbumPlaying,
                                             coverVersion = coverVer,
                                             onClick = {
-                                                viewModel.setSearchQuery("")
-                                                openedAlbum = album
+                                                viewModel.selectAlbum(album)
                                             }
                                         )
                                     }
@@ -1840,17 +1994,17 @@ fun MusicLibraryScreen(
                         if (artists.isEmpty()) {
                             EmptyStateView(
                                 title = if (libraryState.searchQuery.isNotBlank()) {
-                                    stringResource(R.string.search_no_results_title)
-                                } else if (isScanning) {
-                                    stringResource(R.string.scanning_library_title)
-                                } else {
-                                    stringResource(R.string.no_artists_found)
-                                },
-                                subtitle = if (libraryState.searchQuery.isNotBlank()) {
-                                    stringResource(R.string.search_no_results_desc)
-                                } else {
-                                    stringResource(R.string.empty_artists_desc)
-                                }
+                                        stringResource(R.string.search_no_results_title)
+                                    } else if (isScanning) {
+                                        stringResource(R.string.scanning_library_title)
+                                    } else {
+                                        stringResource(R.string.no_artists_found)
+                                    },
+                                    subtitle = if (libraryState.searchQuery.isNotBlank()) {
+                                        stringResource(R.string.search_no_results_desc)
+                                    } else {
+                                        stringResource(R.string.empty_artists_desc)
+                                    }
                             )
                         } else {
                             LazyColumn(
@@ -1869,8 +2023,7 @@ fun MusicLibraryScreen(
                                             .clip(RoundedCornerShape(12.dp))
                                             .background(if (isArtistPlaying) OrbitTheme.colors.primary.copy(alpha = 0.12f) else OrbitTheme.colors.surfaceCard)
                                             .clickable {
-                                                viewModel.setSearchQuery("")
-                                                openedArtist = artist
+                                                viewModel.selectArtist(artist)
                                             }
                                             .padding(14.dp),
                                         verticalAlignment = Alignment.CenterVertically
@@ -2336,26 +2489,26 @@ fun MusicLibraryScreen(
                                     .then(pinchGestureModifier)
                             ) {
                                 Button(
-                                                onClick = {
-                                                    newPlaylistName = ""
-                                                    showNewPlaylistDialog = true
-                                                },
-                                                colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary),
-                                                shape = RoundedCornerShape(12.dp),
-                                                modifier = Modifier.fillMaxWidth().height(46.dp)
-                                            ) {
-                                                Icon(
-                                                    Icons.Default.Add,
-                                                    contentDescription = null,
-                                                    tint = if (OrbitTheme.colors.isDark) DarkBackground else Color.White
-                                                )
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                                Text(
-                                                    text = stringResource(R.string.create_new_playlist),
-                                                    color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
+                                    onClick = {
+                                        newPlaylistName = ""
+                                        showNewPlaylistDialog = true
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth().height(46.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Add,
+                                        contentDescription = null,
+                                        tint = if (OrbitTheme.colors.isDark) DarkBackground else Color.White
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = stringResource(R.string.create_new_playlist),
+                                        color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
 
                                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -2388,7 +2541,7 @@ fun MusicLibraryScreen(
                                         contentPadding = PaddingValues(bottom = 98.dp),
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        // 置顶显示「我喜欢的音乐」专属卡片
+                                        // 置顶显示「喜欢的歌曲」专属卡片
                                         if (favMatches) {
                                             item {
                                                 Row(
@@ -2397,12 +2550,13 @@ fun MusicLibraryScreen(
                                                         .clip(RoundedCornerShape(14.dp))
                                                         .background(OrbitTheme.colors.surfaceCard)
                                                         .clickable {
-                                                            viewModel.setSearchQuery("")
-                                                            openedPlaylist = Playlist(
-                                                                id = FAVORITE_PLAYLIST_ID,
-                                                                name = favTitle,
-                                                                songCount = favoriteSongs.size,
-                                                                createdAt = 0L
+                                                            viewModel.selectPlaylist(
+                                                                Playlist(
+                                                                    id = FAVORITE_PLAYLIST_ID,
+                                                                    name = favTitle,
+                                                                    songCount = favoriteSongs.size,
+                                                                    createdAt = 0L
+                                                                )
                                                             )
                                                         }
                                                         .padding(14.dp),
@@ -2487,12 +2641,13 @@ fun MusicLibraryScreen(
                                                         .clip(RoundedCornerShape(14.dp))
                                                         .background(OrbitTheme.colors.surfaceCard)
                                                         .clickable {
-                                                            viewModel.setSearchQuery("")
-                                                            openedPlaylist = Playlist(
-                                                                id = DISLIKED_PLAYLIST_ID,
-                                                                name = dislikedTitle,
-                                                                songCount = dislikedSongs.size,
-                                                                createdAt = 0L
+                                                            viewModel.selectPlaylist(
+                                                                Playlist(
+                                                                    id = DISLIKED_PLAYLIST_ID,
+                                                                    name = dislikedTitle,
+                                                                    songCount = dislikedSongs.size,
+                                                                    createdAt = 0L
+                                                                )
                                                             )
                                                         }
                                                         .padding(14.dp),
@@ -2570,17 +2725,16 @@ fun MusicLibraryScreen(
 
                                         items(filteredPlaylists, key = { it.id }) { playlist ->
                                             Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clip(RoundedCornerShape(14.dp))
-                                                .background(OrbitTheme.colors.surfaceCard)
-                                                .clickable {
-                                                    viewModel.setSearchQuery("")
-                                                    openedPlaylist = playlist
-                                                }
-                                                .padding(14.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(14.dp))
+                                                    .background(OrbitTheme.colors.surfaceCard)
+                                                    .clickable {
+                                                        viewModel.selectPlaylist(playlist)
+                                                    }
+                                                    .padding(14.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
                                             Icon(
                                                 imageVector = Icons.AutoMirrored.Filled.PlaylistPlay,
                                                 contentDescription = null,
@@ -2684,26 +2838,31 @@ fun MusicLibraryScreen(
                                 isLoading = isOnlineDetailLoading,
                                 errorMessage = onlineDetailError,
                                 onSongClick = { index, song ->
-                                    viewModel.playOnlineSongs(onlinePlaylistSongs, index)
+                                    val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
+                                    viewModel.playOnlineSongs(onlinePlaylistSongs, index, origin)
                                 },
                                 onPlayAll = {
                                     if (onlinePlaylistSongs.isNotEmpty()) {
-                                        viewModel.playOnlineSongs(onlinePlaylistSongs, 0)
+                                        val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
+                                        viewModel.playOnlineSongs(onlinePlaylistSongs, 0, origin)
                                     }
                                 },
                                 onShufflePlay = {
                                     if (onlinePlaylistSongs.isNotEmpty()) {
-                                        viewModel.playOnlineSongs(onlinePlaylistSongs.shuffled(), 0)
+                                        val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
+                                        viewModel.playOnlineSongs(onlinePlaylistSongs.shuffled(), 0, origin)
                                     }
                                 },
                                 currentPlayingTitle = playbackState.currentSong?.title,
                                 currentPlayingArtist = playbackState.currentSong?.artist,
-                                isPlaying = playbackState.isPlaying
+                                isPlaying = playbackState.isPlaying,
+                                locateIndex = onlineSongsLocateIndex,
+                                locateTrigger = onlineSongsLocateTrigger
                             )
                         } else {
                             com.orbit.music.ui.components.OnlinePlaylistSquareView(
                                 platform = com.orbit.music.data.online.model.OnlinePlatform.NETEASE,
-                                onPlaylistClick = { openedOnlinePlaylist = it }
+                                onPlaylistClick = { viewModel.selectOnlinePlaylist(it) }
                             )
                         }
                     }
@@ -2717,26 +2876,31 @@ fun MusicLibraryScreen(
                                 isLoading = isOnlineDetailLoading,
                                 errorMessage = onlineDetailError,
                                 onSongClick = { index, song ->
-                                    viewModel.playOnlineSongs(onlinePlaylistSongs, index)
+                                    val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
+                                    viewModel.playOnlineSongs(onlinePlaylistSongs, index, origin)
                                 },
                                 onPlayAll = {
                                     if (onlinePlaylistSongs.isNotEmpty()) {
-                                        viewModel.playOnlineSongs(onlinePlaylistSongs, 0)
+                                        val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
+                                        viewModel.playOnlineSongs(onlinePlaylistSongs, 0, origin)
                                     }
                                 },
                                 onShufflePlay = {
                                     if (onlinePlaylistSongs.isNotEmpty()) {
-                                        viewModel.playOnlineSongs(onlinePlaylistSongs.shuffled(), 0)
+                                        val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
+                                        viewModel.playOnlineSongs(onlinePlaylistSongs.shuffled(), 0, origin)
                                     }
                                 },
                                 currentPlayingTitle = playbackState.currentSong?.title,
                                 currentPlayingArtist = playbackState.currentSong?.artist,
-                                isPlaying = playbackState.isPlaying
+                                isPlaying = playbackState.isPlaying,
+                                locateIndex = onlineSongsLocateIndex,
+                                locateTrigger = onlineSongsLocateTrigger
                             )
                         } else {
                             com.orbit.music.ui.components.OnlinePlaylistSquareView(
                                 platform = com.orbit.music.data.online.model.OnlinePlatform.QQ,
-                                onPlaylistClick = { openedOnlinePlaylist = it }
+                                onPlaylistClick = { viewModel.selectOnlinePlaylist(it) }
                             )
                         }
                     }
@@ -2763,11 +2927,6 @@ fun MusicLibraryScreen(
             TabletSideNavRail(
                 currentTab = libraryState.currentTab,
                 onTabSelected = { tab ->
-                    openedFolderPath = null
-                    openedAlbum = null
-                    openedArtist = null
-                    openedPlaylist = null
-                    openedOnlinePlaylist = null
                     viewModel.setTab(tab)
                 },
                 songCount = filteredSongs.size,
@@ -2818,10 +2977,7 @@ fun MusicLibraryScreen(
                             viewMode = currentActiveViewMode,
                             onCycleViewMode = { viewModel.cycleViewMode(currentPageKey) },
                             onBack = {
-                                openedFolderPath = null
-                                openedAlbum = null
-                                openedArtist = null
-                                openedPlaylist = null
+                                viewModel.clearAllDrillDown()
                             }
                         )
                     }
@@ -3084,7 +3240,7 @@ fun MusicLibraryScreen(
                     onClick = {
                         viewModel.deletePlaylist(targetPlaylist.id)
                         if (openedPlaylist?.id == targetPlaylist.id) {
-                            openedPlaylist = null
+                            viewModel.selectPlaylist(null)
                         }
                         deletingPlaylist = null
                     },

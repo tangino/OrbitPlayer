@@ -524,49 +524,65 @@ class QQMusicSource(
     }
 
     override suspend fun searchPlaylists(keyword: String, page: Int, pageSize: Int): List<OnlinePlaylist> = withContext(Dispatchers.IO) {
-        val encoded = URLEncoder.encode(keyword, "UTF-8")
-        val pageNo = page - 1
-        val url = "https://c.y.qq.com/soso/fcgi-bin/client_music_search_songlist" +
-                "?page_no=$pageNo&num_per_page=$pageSize&format=json&inCharset=utf8&outCharset=utf-8&query=$encoded"
-
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", userAgent)
-            .header("Referer", "https://y.qq.com/")
-            .header("Host", "c.y.qq.com")
-            .get()
-            .build()
-
-        val response = client.newCall(request).execute()
-        val bodyStr = response.body?.string() ?: return@withContext emptyList()
-        val root = JSONObject(bodyStr)
-        val dataObj = root.optJSONObject("data") ?: return@withContext emptyList()
-        val listArr = dataObj.optJSONArray("list") ?: JSONArray()
-        val list = mutableListOf<OnlinePlaylist>()
-
-        for (i in 0 until listArr.length()) {
-            val item = listArr.optJSONObject(i) ?: continue
-            val dissid = item.optString("dissid")
-            val dissname = item.optString("dissname")
-            val imgurl = item.optString("imgurl")
-            val listennum = item.optLong("listennum")
-            val creatorObj = item.optJSONObject("creator")
-            val creatorName = creatorObj?.optString("name")
-            val songCount = item.optInt("song_count")
-
-            list.add(
-                OnlinePlaylist(
-                    id = dissid,
-                    platform = OnlinePlatform.QQ,
-                    title = dissname,
-                    coverUrl = imgurl,
-                    playCount = listennum,
-                    trackCount = songCount,
-                    creatorName = creatorName
-                )
-            )
+        val payload = JSONObject().apply {
+            put("comm", JSONObject().apply {
+                put("ct", "19")
+                put("cv", "1873")
+                put("uin", "0")
+            })
+            put("req", JSONObject().apply {
+                put("module", "music.search.SearchCgiService")
+                put("method", "DoSearchForQQMusicDesktop")
+                put("param", JSONObject().apply {
+                    put("query", keyword)
+                    put("search_type", 3) // 3 代表歌单搜索 (0: 单曲, 1: 歌手, 2: 专辑, 3: 歌单)
+                    put("num_per_page", pageSize)
+                    put("page_num", page)
+                    put("highlight", 1)
+                    put("grp", 1)
+                })
+            })
         }
-        list
+
+        try {
+            val root = postMusicU(payload)
+            val reqObj = root.optJSONObject("req") ?: return@withContext emptyList()
+            val dataObj = reqObj.optJSONObject("data") ?: return@withContext emptyList()
+            val bodyObj = dataObj.optJSONObject("body") ?: return@withContext emptyList()
+            val songlistObj = bodyObj.optJSONObject("songlist") ?: return@withContext emptyList()
+            val listArr = songlistObj.optJSONArray("list") ?: JSONArray()
+            val list = mutableListOf<OnlinePlaylist>()
+
+            for (i in 0 until listArr.length()) {
+                val item = listArr.optJSONObject(i) ?: continue
+                val dissid = item.optString("dissid").ifEmpty { item.optString("docid") }
+                val dissname = item.optString("dissname").ifEmpty { item.optString("dissname_hilight") }
+                val imgurl = item.optString("imgurl")
+                val listennum = item.optLong("listennum")
+                val creatorObj = item.optJSONObject("creator")
+                val creatorName = creatorObj?.optString("name")
+                val creatorAvatar = creatorObj?.optString("avatarUrl")
+                val songCount = item.optInt("song_count")
+                val intro = item.optString("introduction")
+
+                list.add(
+                    OnlinePlaylist(
+                        id = dissid,
+                        platform = OnlinePlatform.QQ,
+                        title = dissname,
+                        coverUrl = imgurl,
+                        playCount = listennum,
+                        trackCount = songCount,
+                        creatorName = creatorName,
+                        creatorAvatarUrl = creatorAvatar,
+                        description = intro
+                    )
+                )
+            }
+            list
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
     override fun extractPlaylistId(urlOrText: String): String? {

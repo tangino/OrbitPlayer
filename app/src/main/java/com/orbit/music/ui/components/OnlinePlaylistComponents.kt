@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -47,35 +48,29 @@ import kotlinx.coroutines.withContext
 /**
  * 在线歌单广场内容视图（完全融入主音乐库设计语言与配色规范）
  */
+/**
+ * 在线歌单广场内容视图（完全融入主音乐库设计语言与配色规范）
+ */
 @Composable
 fun OnlinePlaylistSquareView(
     platform: OnlinePlatform,
     onPlaylistClick: (OnlinePlaylist) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    viewModel: com.orbit.music.ui.viewmodel.OnlinePlaylistViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
+        key = "online_square_${platform.name}",
+        factory = com.orbit.music.ui.viewmodel.OnlinePlaylistViewModel.Factory(platform)
+    )
 ) {
+    val uiState by viewModel.uiState.collectAsState()
     val repository = remember { OnlineMusicRepository.getInstance() }
-    val scope = rememberCoroutineScope()
-
-    var selectedTab by remember { mutableStateOf(0) } // 0: 精选推荐, 1: 热门分类, 2: 官方榜单
-    var tags by remember { mutableStateOf<List<OnlinePlaylistTag>>(emptyList()) }
-    var selectedTag by remember { mutableStateOf(OnlinePlaylistTag("全部", "全部")) }
-    var playlists by remember { mutableStateOf<List<OnlinePlaylist>>(emptyList()) }
-    var leaderboards by remember { mutableStateOf<List<OnlineLeaderboard>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(false) }
-    var isPagingLoading by remember { mutableStateOf(false) }
-    var currentPage by remember { mutableStateOf(1) }
-    var hasMore by remember { mutableStateOf(true) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    // 搜索与导入状态
-    var searchKeyword by remember { mutableStateOf("") }
-    var isSearchActive by remember { mutableStateOf(false) }
-    var isSearching by remember { mutableStateOf(false) }
-    var searchResults by remember { mutableStateOf<List<OnlinePlaylist>>(emptyList()) }
-    var showImportDialog by remember { mutableStateOf(false) }
     var showSourceManagerDialog by remember { mutableStateOf(false) }
 
     if (showSourceManagerDialog) {
+        val dialogBg = if (OrbitTheme.colors.background == Color.Transparent) {
+            if (OrbitTheme.colors.isDark) Color(0xFF101216) else Color(0xFFF8FAFC)
+        } else {
+            OrbitTheme.colors.background
+        }
         androidx.compose.ui.window.Dialog(
             onDismissRequest = { showSourceManagerDialog = false },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
@@ -83,7 +78,7 @@ fun OnlinePlaylistSquareView(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(OrbitTheme.colors.background)
+                    .background(dialogBg)
             ) {
                 com.orbit.music.ui.screens.AudioSourceManagementScreen(
                     onBack = { showSourceManagerDialog = false }
@@ -92,62 +87,13 @@ fun OnlinePlaylistSquareView(
         }
     }
 
-    // 初始加载
-    fun loadData(currentTagId: String = "全部") {
-        scope.launch {
-            isLoading = true
-            errorMessage = null
-            currentPage = 1
-            hasMore = true
-
-            val tagsRes = repository.getTags(platform)
-            tags = tagsRes.getOrDefault(emptyList())
-
-            val listRes = repository.getPlaylists(tagId = currentTagId, page = 1, platform = platform)
-            listRes.onSuccess {
-                playlists = it
-                isLoading = false
-            }.onFailure { err ->
-                errorMessage = "加载歌单失败: ${err.localizedMessage ?: "网络异常"}"
-                isLoading = false
-            }
-        }
-    }
-
-    fun loadLeaderboards() {
-        scope.launch {
-            isLoading = true
-            errorMessage = null
-            val res = repository.getLeaderboards(platform)
-            res.onSuccess {
-                leaderboards = it
-                isLoading = false
-            }.onFailure { err ->
-                errorMessage = "加载排行榜失败: ${err.localizedMessage ?: "网络异常"}"
-                isLoading = false
-            }
-        }
-    }
-
-    LaunchedEffect(platform) {
-        selectedTag = OnlinePlaylistTag("全部", "全部")
-        searchKeyword = ""
-        isSearchActive = false
-        searchResults = emptyList()
-        if (selectedTab == 2) {
-            loadLeaderboards()
-        } else {
-            loadData("全部")
-        }
-    }
-
     // 链接导入对话框
-    if (showImportDialog) {
+    if (uiState.isImportDialogOpen) {
         ImportPlaylistInlineDialog(
             repository = repository,
-            onDismiss = { showImportDialog = false },
+            onDismiss = { viewModel.closeImportDialog() },
             onPlaylistResolved = { playlist ->
-                showImportDialog = false
+                viewModel.closeImportDialog()
                 onPlaylistClick(playlist)
             }
         )
@@ -162,7 +108,7 @@ fun OnlinePlaylistSquareView(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // 次级 Tab: 精选推荐 | 热门分类 | 官方榜单
+            // 次级 Tab: 精选推荐 | 热门分类 | 官方榜单 | 我的收藏
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(20.dp))
@@ -170,23 +116,20 @@ fun OnlinePlaylistSquareView(
                     .border(0.5.dp, OrbitTheme.colors.surfaceBorder, RoundedCornerShape(20.dp))
                     .padding(2.dp)
             ) {
-                listOf("精选推荐", "热门分类", "官方榜单").forEachIndexed { index, title ->
-                    val isSelected = selectedTab == index
+                listOf("精选推荐", "热门分类", "官方榜单", "我的收藏").forEachIndexed { index, title ->
+                    val isSelected = uiState.selectedTab == index
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(16.dp))
                             .background(if (isSelected) OrbitTheme.colors.primary else Color.Transparent)
                             .clickable {
-                                selectedTab = index
-                                if (index == 2 && leaderboards.isEmpty()) {
-                                    loadLeaderboards()
-                                }
+                                viewModel.selectTab(index)
                             }
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
+                            .padding(horizontal = 9.dp, vertical = 5.dp)
                     ) {
                         Text(
                             text = title,
-                            fontSize = 12.sp,
+                            fontSize = 11.5.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                             color = if (isSelected) {
                                 if (OrbitTheme.colors.isDark) Color(0xFF101216) else Color.White
@@ -212,18 +155,18 @@ fun OnlinePlaylistSquareView(
                     )
                 }
                 IconButton(
-                    onClick = { isSearchActive = !isSearchActive },
+                    onClick = { viewModel.setSearchActive(!uiState.isSearchMode) },
                     modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
-                        imageVector = if (isSearchActive) Icons.Default.Close else Icons.Default.Search,
+                        imageVector = if (uiState.isSearchMode) Icons.Default.Close else Icons.Default.Search,
                         contentDescription = "搜索歌单",
-                        tint = if (isSearchActive) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                        tint = if (uiState.isSearchMode) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
                         modifier = Modifier.size(17.dp)
                     )
                 }
                 IconButton(
-                    onClick = { showImportDialog = true },
+                    onClick = { viewModel.openImportDialog() },
                     modifier = Modifier.size(32.dp)
                 ) {
                     Icon(
@@ -237,11 +180,11 @@ fun OnlinePlaylistSquareView(
         }
 
         // 2. 嵌入式极简搜索栏 (展开时显示)
-        AnimatedVisibility(visible = isSearchActive) {
+        AnimatedVisibility(visible = uiState.isSearchMode) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
@@ -254,61 +197,84 @@ fun OnlinePlaylistSquareView(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 10.dp)
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 10.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Search,
                             contentDescription = null,
-                            tint = OrbitTheme.colors.textSecondary,
+                            tint = OrbitTheme.colors.primary,
                             modifier = Modifier.size(16.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        TextField(
-                            value = searchKeyword,
+                        Spacer(modifier = Modifier.width(8.dp))
+                        androidx.compose.foundation.text.BasicTextField(
+                            value = uiState.searchKeyword,
                             onValueChange = {
-                                searchKeyword = it
-                                if (it.isBlank()) searchResults = emptyList()
-                            },
-                            placeholder = {
-                                Text("搜索歌单名称或关键词...", fontSize = 12.sp, color = OrbitTheme.colors.textSecondary.copy(alpha = 0.6f))
+                                viewModel.updateSearchKeyword(it)
                             },
                             singleLine = true,
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                focusedTextColor = OrbitTheme.colors.textPrimary,
-                                unfocusedTextColor = OrbitTheme.colors.textPrimary
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                color = OrbitTheme.colors.textPrimary,
+                                fontSize = 13.sp
                             ),
-                            modifier = Modifier.fillMaxWidth()
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                imeAction = androidx.compose.ui.text.input.ImeAction.Search
+                            ),
+                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                                onSearch = {
+                                    if (uiState.searchKeyword.isNotBlank()) {
+                                        viewModel.search(uiState.searchKeyword)
+                                    }
+                                }
+                            ),
+                            decorationBox = { innerTextField ->
+                                Box(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    if (uiState.searchKeyword.isEmpty()) {
+                                        Text(
+                                            text = "搜索歌单名称或关键词...",
+                                            fontSize = 13.sp,
+                                            color = OrbitTheme.colors.textSecondary.copy(alpha = 0.6f)
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
                         )
+                        if (uiState.searchKeyword.isNotEmpty()) {
+                            IconButton(
+                                onClick = { viewModel.updateSearchKeyword("") },
+                                modifier = Modifier.size(22.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear",
+                                    tint = OrbitTheme.colors.textSecondary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(
                     onClick = {
-                        if (searchKeyword.isNotBlank()) {
-                            isSearching = true
-                            scope.launch {
-                                val res = repository.searchPlaylists(searchKeyword, page = 1, platform = platform)
-                                res.onSuccess {
-                                    searchResults = it
-                                    isSearching = false
-                                }.onFailure {
-                                    isSearching = false
-                                }
-                            }
+                        if (uiState.searchKeyword.isNotBlank()) {
+                            viewModel.search(uiState.searchKeyword)
                         }
                     },
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary),
-                    contentPadding = PaddingValues(horizontal = 12.dp),
-                    modifier = Modifier.height(38.dp)
+                    contentPadding = PaddingValues(horizontal = 14.dp),
+                    modifier = Modifier.height(40.dp)
                 ) {
                     Text(
                         text = "搜索",
-                        fontSize = 12.sp,
+                        fontSize = 12.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (OrbitTheme.colors.isDark) Color(0xFF101216) else Color.White
                     )
@@ -317,12 +283,12 @@ fun OnlinePlaylistSquareView(
         }
 
         // 3. 搜索结果视图
-        if (isSearchActive && searchKeyword.isNotBlank()) {
-            if (isSearching) {
+        if (uiState.isSearchMode && uiState.searchKeyword.isNotBlank()) {
+            if (uiState.isSearching) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp, color = OrbitTheme.colors.primary)
                 }
-            } else if (searchResults.isEmpty()) {
+            } else if (uiState.searchResults.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("未找到相关歌单", fontSize = 13.sp, color = OrbitTheme.colors.textSecondary)
                 }
@@ -332,7 +298,7 @@ fun OnlinePlaylistSquareView(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(searchResults, key = { it.id }) { item ->
+                    items(uiState.searchResults, key = { it.id }) { item ->
                         OnlinePlaylistListRow(playlist = item, onClick = { onPlaylistClick(item) })
                     }
                 }
@@ -341,7 +307,7 @@ fun OnlinePlaylistSquareView(
         }
 
         // 4. 错误提示
-        if (errorMessage != null) {
+        if (uiState.errorMessage != null) {
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = OrbitTheme.colors.surfaceCard,
@@ -356,7 +322,7 @@ fun OnlinePlaylistSquareView(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = errorMessage ?: "",
+                        text = uiState.errorMessage ?: "",
                         color = Color(0xFFF43F5E),
                         fontSize = 12.sp,
                         modifier = Modifier.weight(1f)
@@ -370,7 +336,7 @@ fun OnlinePlaylistSquareView(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
                             .clickable {
-                                if (selectedTab == 2) loadLeaderboards() else loadData(selectedTag.id)
+                                if (uiState.selectedTab == 2) viewModel.loadLeaderboards() else viewModel.loadCurrentPlatformData()
                             }
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     )
@@ -379,7 +345,7 @@ fun OnlinePlaylistSquareView(
         }
 
         // 5. 分类标签横向滑动条 (仅在 Tab 1 热门分类 下展示)
-        if (selectedTab == 1 && tags.isNotEmpty()) {
+        if (uiState.selectedTab == 1 && uiState.tags.isNotEmpty()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -387,8 +353,8 @@ fun OnlinePlaylistSquareView(
                     .padding(horizontal = 16.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                tags.forEach { tag ->
-                    val isSelected = tag.id == selectedTag.id
+                uiState.tags.forEach { tag ->
+                    val isSelected = tag.id == uiState.selectedTag.id
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(14.dp))
@@ -399,8 +365,7 @@ fun OnlinePlaylistSquareView(
                                 RoundedCornerShape(14.dp)
                             )
                             .clickable {
-                                selectedTag = tag
-                                loadData(tag.id)
+                                viewModel.selectTag(tag)
                             }
                             .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
@@ -416,14 +381,14 @@ fun OnlinePlaylistSquareView(
         }
 
         // 6. 主体歌单网格与榜单
-        if (isLoading && playlists.isEmpty() && leaderboards.isEmpty()) {
+        if (uiState.isLoading && uiState.playlists.isEmpty() && uiState.leaderboards.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp, color = OrbitTheme.colors.primary)
             }
             return
         }
 
-        when (selectedTab) {
+        when (uiState.selectedTab) {
             0, 1 -> {
                 // 精选推荐 / 分类歌单 (自适应网格)
                 val gridState = rememberLazyGridState()
@@ -436,20 +401,8 @@ fun OnlinePlaylistSquareView(
                 }
 
                 LaunchedEffect(isScrolledToEnd) {
-                    if (isScrolledToEnd && !isLoading && !isPagingLoading && hasMore) {
-                        isPagingLoading = true
-                        val nextPage = currentPage + 1
-                        scope.launch {
-                            val res = repository.getPlaylists(selectedTag.id, nextPage, platform = platform)
-                            res.onSuccess { list ->
-                                playlists = playlists + list
-                                currentPage = nextPage
-                                hasMore = list.size >= 15
-                                isPagingLoading = false
-                            }.onFailure {
-                                isPagingLoading = false
-                            }
-                        }
+                    if (isScrolledToEnd && !uiState.isLoading && !uiState.isPagingLoading && uiState.hasMorePlaylists) {
+                        viewModel.loadNextPage()
                     }
                 }
 
@@ -461,11 +414,11 @@ fun OnlinePlaylistSquareView(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(playlists, key = { "${it.platform.id}_${it.id}" }) { item ->
+                    items(uiState.playlists, key = { "${it.platform.id}_${it.id}" }) { item ->
                         OnlinePlaylistCardItem(playlist = item, onClick = { onPlaylistClick(item) })
                     }
 
-                    if (isPagingLoading) {
+                    if (uiState.isPagingLoading) {
                         item {
                             Box(
                                 modifier = Modifier
@@ -486,7 +439,7 @@ fun OnlinePlaylistSquareView(
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 98.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(leaderboards, key = { "${it.platform.id}_${it.id}" }) { board ->
+                    items(uiState.leaderboards, key = { "${it.platform.id}_${it.id}" }) { board ->
                         Surface(
                             shape = RoundedCornerShape(14.dp),
                             color = OrbitTheme.colors.surfaceCard,
@@ -540,17 +493,19 @@ fun OnlinePlaylistSquareView(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(
                                     modifier = Modifier.weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     Text(
                                         text = board.title,
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = OrbitTheme.colors.textPrimary
+                                        color = OrbitTheme.colors.textPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
-                                    board.topSongsPreview.take(3).forEachIndexed { idx, songStr ->
+                                    board.topSongsPreview.take(3).forEachIndexed { idx, track ->
                                         Text(
-                                            text = "${idx + 1}. $songStr",
+                                            text = "${idx + 1}. $track",
                                             fontSize = 11.sp,
                                             color = OrbitTheme.colors.textSecondary,
                                             maxLines = 1,
@@ -559,6 +514,67 @@ fun OnlinePlaylistSquareView(
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+            3 -> {
+                // 我的收藏网络歌单视图
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val favoriteManager = remember { com.orbit.music.data.online.repository.OnlinePlaylistFavoriteManager.getInstance(context) }
+                val allFavorites by favoriteManager.favorites.collectAsState()
+                val platformFavorites = remember(allFavorites, platform) {
+                    allFavorites.filter { it.platform == platform }
+                }
+
+                if (platformFavorites.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 24.dp, vertical = 40.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.FavoriteBorder,
+                                contentDescription = null,
+                                tint = OrbitTheme.colors.textSecondary.copy(alpha = 0.45f),
+                                modifier = Modifier.size(52.dp)
+                            )
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Text(
+                                text = "暂无收藏的${platform.displayName}歌单",
+                                fontSize = 14.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = OrbitTheme.colors.textPrimary
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "在歌单广场浏览歌单并进入详情，点击收藏即可收录至此处",
+                                fontSize = 12.sp,
+                                color = OrbitTheme.colors.textSecondary.copy(alpha = 0.7f),
+                                textAlign = TextAlign.Center,
+                                lineHeight = 17.sp
+                            )
+                        }
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 140.dp),
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 98.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(platformFavorites, key = { "fav_${it.platform.id}_${it.id}" }) { item ->
+                            OnlinePlaylistCardItem(
+                                playlist = item,
+                                onClick = { onPlaylistClick(item) },
+                                isFavorite = true
+                            )
                         }
                     }
                 }
@@ -573,12 +589,20 @@ fun OnlinePlaylistSquareView(
 @Composable
 private fun OnlinePlaylistCardItem(
     playlist: OnlinePlaylist,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    isFavorite: Boolean = false
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val favoriteManager = remember { com.orbit.music.data.online.repository.OnlinePlaylistFavoriteManager.getInstance(context) }
+    val allFavorites by favoriteManager.favorites.collectAsState()
+    val itemFav = remember(allFavorites, playlist, isFavorite) {
+        if (isFavorite) true else favoriteManager.isFavorite(playlist)
+    }
+
     Surface(
         shape = RoundedCornerShape(12.dp),
         color = OrbitTheme.colors.surfaceCard,
-        border = BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder),
+        border = BorderStroke(0.5.dp, if (itemFav) Color(0xFFFF3366).copy(alpha = 0.35f) else OrbitTheme.colors.surfaceBorder),
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
@@ -598,6 +622,25 @@ private fun OnlinePlaylistCardItem(
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop
                     )
+                }
+
+                // 收藏小红心角标
+                if (itemFav) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(5.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Black.copy(alpha = 0.65f))
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Favorite,
+                            contentDescription = "已收藏",
+                            tint = Color(0xFFFF3366),
+                            modifier = Modifier.size(11.dp)
+                        )
+                    }
                 }
 
                 // 播放量毛玻璃角标
@@ -709,9 +752,19 @@ fun OnlinePlaylistDetailView(
     currentPlayingTitle: String? = null,
     currentPlayingArtist: String? = null,
     isPlaying: Boolean = false,
+    locateIndex: Int = -1,
+    locateTrigger: Long = 0L,
     modifier: Modifier = Modifier
 ) {
     var isDescExpanded by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+
+    // 监听外部定位请求，平滑滚动至当前正在播放的歌曲
+    LaunchedEffect(locateTrigger) {
+        if (locateTrigger > 0L && locateIndex >= 0 && locateIndex < songs.size) {
+            listState.animateScrollToItem(locateIndex)
+        }
+    }
 
     Column(
         modifier = modifier
@@ -847,64 +900,110 @@ fun OnlinePlaylistDetailView(
             }
         }
 
-        // 2. 播放控制条 (播放全部 / 随机播放)
-        if (songs.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = OrbitTheme.colors.primary.copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.4f)),
-                    modifier = Modifier.clickable { onPlayAll() }
+        // 2. 播放控制条 (播放全部 / 随机播放 / 收藏歌单)
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val favoriteManager = remember { com.orbit.music.data.online.repository.OnlinePlaylistFavoriteManager.getInstance(context) }
+        val allFavorites by favoriteManager.favorites.collectAsState()
+        val isFav = remember(allFavorites, playlist) {
+            favoriteManager.isFavorite(playlist)
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            if (songs.isNotEmpty()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = OrbitTheme.colors.primary.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.4f)),
+                        modifier = Modifier.clickable { onPlayAll() }
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = "播放全部",
-                            tint = OrbitTheme.colors.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "播放全部 (${songs.size})",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = OrbitTheme.colors.primary
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = "播放全部",
+                                tint = OrbitTheme.colors.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "播放全部 (${songs.size})",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = OrbitTheme.colors.primary
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = OrbitTheme.colors.surfaceCard,
+                        border = BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder),
+                        modifier = Modifier.clickable { onShufflePlay() }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Shuffle,
+                                contentDescription = "随机播放",
+                                tint = OrbitTheme.colors.textSecondary,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "随机",
+                                fontSize = 12.sp,
+                                color = OrbitTheme.colors.textSecondary
+                            )
+                        }
                     }
                 }
+            } else {
+                Spacer(modifier = Modifier.width(1.dp))
+            }
 
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = OrbitTheme.colors.surfaceCard,
-                    border = BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder),
-                    modifier = Modifier.clickable { onShufflePlay() }
+            // 收藏/取消收藏网络歌单按钮
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = if (isFav) Color(0xFFFF3366).copy(alpha = 0.15f) else OrbitTheme.colors.surfaceCard,
+                border = BorderStroke(
+                    0.5.dp,
+                    if (isFav) Color(0xFFFF3366).copy(alpha = 0.5f) else OrbitTheme.colors.surfaceBorder
+                ),
+                modifier = Modifier.clickable {
+                    favoriteManager.toggleFavorite(playlist)
+                }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Shuffle,
-                            contentDescription = "随机播放",
-                            tint = OrbitTheme.colors.textSecondary,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "随机",
-                            fontSize = 12.sp,
-                            color = OrbitTheme.colors.textSecondary
-                        )
-                    }
+                    Icon(
+                        imageVector = if (isFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = if (isFav) "已收藏歌单" else "收藏歌单",
+                        tint = if (isFav) Color(0xFFFF3366) else OrbitTheme.colors.textSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (isFav) "已收藏" else "收藏",
+                        fontSize = 12.sp,
+                        fontWeight = if (isFav) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isFav) Color(0xFFFF3366) else OrbitTheme.colors.textSecondary
+                    )
                 }
             }
         }
@@ -941,6 +1040,7 @@ fun OnlinePlaylistDetailView(
 
         // 4. 歌曲列表
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .weight(1f),

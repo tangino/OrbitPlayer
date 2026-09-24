@@ -343,8 +343,14 @@ class MusicPlayerManager private constructor(private val context: Context) {
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                val index = player.currentMediaItemIndex
+                val mediaId = mediaItem?.mediaId
                 val currentList = _playbackState.value.currentPlaylist
+                val foundIndex = if (mediaId != null) {
+                    currentList.indexOfFirst { it.id.toString() == mediaId }
+                } else {
+                    -1
+                }
+                val index = if (foundIndex >= 0) foundIndex else player.currentMediaItemIndex
                 if (index in currentList.indices) {
                     val song = currentList[index]
                     val isSameSong = _playbackState.value.currentSong?.id == song.id
@@ -517,6 +523,8 @@ class MusicPlayerManager private constructor(private val context: Context) {
 
                 try {
                     val mediaItem = createMediaItem(resolvedSong)
+                    // 在线单轨播放必须关闭底层 ExoPlayer 的 repeatMode，确保单曲播放结束时触发 STATE_ENDED，由 handlePlaybackEnded 统一调度进入下一首
+                    player.repeatMode = Player.REPEAT_MODE_OFF
                     player.playWhenReady = autoPlay
                     player.setMediaItem(mediaItem, startPositionMs)
                     player.prepare()
@@ -550,6 +558,11 @@ class MusicPlayerManager private constructor(private val context: Context) {
             // 本地歌曲分支：直接向 ExoPlayer 挂载播放列表，实现极速切歌与播放
             try {
                 val mediaItems = updatedPlaylist.map { createMediaItem(it) }
+                player.repeatMode = when (_playbackState.value.repeatMode) {
+                    RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+                    RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+                    RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+                }
                 player.playWhenReady = autoPlay
                 player.setMediaItems(mediaItems, safeIndex, startPositionMs)
                 player.prepare()
@@ -678,13 +691,17 @@ class MusicPlayerManager private constructor(private val context: Context) {
         val playlist = _playbackState.value.currentPlaylist
         if (playlist.isEmpty()) return
 
-        val currentIndex = if (player.currentMediaItemIndex in playlist.indices) {
-            player.currentMediaItemIndex
-        } else if (_playbackState.value.currentIndex in playlist.indices) {
-            _playbackState.value.currentIndex
-        } else {
-            0
-        }
+        val currentSongId = _playbackState.value.currentSong?.id
+        val resolvedIndex = if (currentSongId != null) {
+            playlist.indexOfFirst { it.id == currentSongId }.takeIf { it >= 0 }
+        } else null
+
+        val currentIndex = resolvedIndex
+            ?: if (_playbackState.value.currentIndex in playlist.indices) {
+                _playbackState.value.currentIndex
+            } else {
+                0
+            }
 
         if (currentIndex in playlist.indices) {
             if (playHistory.peekLast() != currentIndex) {
@@ -728,21 +745,25 @@ class MusicPlayerManager private constructor(private val context: Context) {
             return
         }
 
+        val currentSongId = _playbackState.value.currentSong?.id
+        val resolvedIndex = if (currentSongId != null) {
+            playlist.indexOfFirst { it.id == currentSongId }.takeIf { it >= 0 }
+        } else null
+
+        val currentIndex = resolvedIndex
+            ?: if (_playbackState.value.currentIndex in playlist.indices) {
+                _playbackState.value.currentIndex
+            } else {
+                0
+            }
+
         // 优先从历史栈返回上一首真正听过的歌（完美适配随机播放回退）
         if (playHistory.isNotEmpty()) {
             val prevIndex = playHistory.removeLast()
-            if (prevIndex in playlist.indices && prevIndex != player.currentMediaItemIndex) {
+            if (prevIndex in playlist.indices && prevIndex != currentIndex) {
                 seekToTrack(prevIndex)
                 return
             }
-        }
-
-        val currentIndex = if (player.currentMediaItemIndex in playlist.indices) {
-            player.currentMediaItemIndex
-        } else if (_playbackState.value.currentIndex in playlist.indices) {
-            _playbackState.value.currentIndex
-        } else {
-            0
         }
 
         val prevIndex = if (currentIndex - 1 < 0) playlist.size - 1 else currentIndex - 1
@@ -798,10 +819,15 @@ class MusicPlayerManager private constructor(private val context: Context) {
             RepeatMode.ALL -> RepeatMode.ONE
             RepeatMode.ONE -> RepeatMode.OFF
         }
-        player.repeatMode = when (newMode) {
-            RepeatMode.OFF -> Player.REPEAT_MODE_OFF
-            RepeatMode.ALL -> Player.REPEAT_MODE_ALL
-            RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+        val isCurrentOnline = _playbackState.value.currentSong?.let { OnlineAudioSourceManager.isOnlineSong(it) } ?: false
+        player.repeatMode = if (isCurrentOnline) {
+            Player.REPEAT_MODE_OFF
+        } else {
+            when (newMode) {
+                RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+                RepeatMode.ALL -> Player.REPEAT_MODE_ALL
+                RepeatMode.ONE -> Player.REPEAT_MODE_ONE
+            }
         }
         _playbackState.update { it.copy(repeatMode = newMode) }
         prefs.edit().putInt(KEY_REPEAT_MODE, newMode.ordinal).apply()
@@ -829,6 +855,19 @@ class MusicPlayerManager private constructor(private val context: Context) {
             player.play()
         } else if (_playbackState.value.repeatMode == RepeatMode.ALL) {
             playNext()
+        } else if (_playbackState.value.repeatMode == RepeatMode.OFF) {
+            val playlist = _playbackState.value.currentPlaylist
+            val curSongId = _playbackState.value.currentSong?.id
+            val curIndex = if (curSongId != null) {
+                playlist.indexOfFirst { it.id == curSongId }.takeIf { it >= 0 } ?: _playbackState.value.currentIndex
+            } else {
+                _playbackState.value.currentIndex
+            }
+            if (playlist.isNotEmpty() && curIndex < playlist.size - 1) {
+                playNext()
+            } else {
+                _playbackState.update { it.copy(isPlaying = false, currentPositionMs = 0L, progress = 0f) }
+            }
         }
     }
 
