@@ -207,26 +207,41 @@ class KuwoMusicSource(
             val songs = mutableListOf<OnlineSongItem>()
 
             try {
-                val url = "http://nplserver.kuwo.cn/pl.svc?op=getlistinfo&pid=$playlistId&pn=0&rn=200&encode=utf-8&keyset=pl2012&identity=kuwo&pcmp4=1"
-                val root = getApiJson(url)
-                title = root.optString("title").ifEmpty { root.optString("name").ifEmpty { title } }
-                coverUrl = root.optString("pic").ifEmpty { root.optString("hts_pic") }
-                creatorName = root.optString("uname").ifEmpty { root.optString("nickname").ifEmpty { creatorName } }
-                playCount = root.optLong("playnum", root.optLong("playcnt", 0L))
-                description = root.optString("info").ifEmpty { root.optString("intro") }
+                var currentPage = 0
+                val pageSize = 300
+                var hasMore = true
+                var totalSongs = 0
 
-                val songsArr = root.optJSONArray("musiclist")
-                if (songsArr != null) {
-                    for (i in 0 until songsArr.length()) {
+                while (hasMore && currentPage < 5) { // 支持最多拉取 1500 首歌曲
+                    val url = "http://nplserver.kuwo.cn/pl.svc?op=getlistinfo&pid=$playlistId&pn=$currentPage&rn=$pageSize&encode=utf-8&keyset=pl2012&vipver=MUSIC_9.1.1.2_BCS2"
+                    val root = getApiJson(url)
+
+                    if (currentPage == 0) {
+                        title = root.optString("title").ifEmpty { root.optString("name").ifEmpty { title } }
+                        coverUrl = root.optString("pic").ifEmpty { root.optString("hts_pic") }
+                        creatorName = root.optString("uname").ifEmpty { root.optString("nickname").ifEmpty { creatorName } }
+                        playCount = root.optLong("playnum", root.optLong("playcnt", 0L))
+                        description = root.optString("info").ifEmpty { root.optString("intro") }
+                        totalSongs = root.optInt("total", 0)
+                    }
+
+                    val songsArr = root.optJSONArray("musiclist")
+                    if (songsArr == null || songsArr.length() == 0) {
+                        hasMore = false
+                        break
+                    }
+
+                    val pageCount = songsArr.length()
+                    for (i in 0 until pageCount) {
                         val sObj = songsArr.optJSONObject(i) ?: continue
                         val id = sObj.optString("id").ifEmpty { sObj.optString("musicrid").replace("MUSIC_", "") }
                         val name = sObj.optString("name").ifEmpty { sObj.optString("song_name") }
                         val artist = sObj.optString("artist").ifEmpty { sObj.optString("singer") }
                         val album = sObj.optString("album")
                         val duration = sObj.optLong("duration", sObj.optLong("song_duration", 0L)) * 1000L
-                        val pic = sObj.optString("pic").ifEmpty { sObj.optString("pic120") }
+                        val pic = sObj.optString("pic").ifEmpty { sObj.optString("pic120") }.ifEmpty { sObj.optString("albumpic") }
 
-                        if (id.isNotEmpty() && name.isNotEmpty()) {
+                        if (id.isNotEmpty() && name.isNotEmpty() && songs.none { it.id == id }) {
                             songs.add(
                                 OnlineSongItem(
                                     id = id,
@@ -240,6 +255,11 @@ class KuwoMusicSource(
                                 )
                             )
                         }
+                    }
+
+                    currentPage++
+                    if (songs.size >= totalSongs || pageCount < pageSize) {
+                        hasMore = false
                     }
                 }
             } catch (_: Exception) {

@@ -5,7 +5,6 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.util.Base64
 import android.util.Log
-import com.whl.quickjs.android.QuickJSLoader
 import com.whl.quickjs.wrapper.JSCallFunction
 import com.whl.quickjs.wrapper.QuickJSContext
 import okhttp3.Call
@@ -55,11 +54,17 @@ class LxSourceEngine(
         fun initQuickJsOnce() {
             if (!isQuickJsInitialized) {
                 try {
-                    QuickJSLoader.init()
+                    System.loadLibrary("quickjs-android-wrapper")
                     isQuickJsInitialized = true
-                    Log.i(TAG, "QuickJSLoader initialized successfully")
+                    Log.i(TAG, "quickjs-android-wrapper loaded successfully")
                 } catch (e: Throwable) {
-                    Log.e(TAG, "QuickJSLoader initialization failed", e)
+                    try {
+                        System.loadLibrary("quickjs-wrapper")
+                        isQuickJsInitialized = true
+                        Log.i(TAG, "quickjs-wrapper loaded successfully")
+                    } catch (e2: Throwable) {
+                        Log.e(TAG, "QuickJS native library load failed", e2)
+                    }
                 }
             }
         }

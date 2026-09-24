@@ -123,23 +123,63 @@ class MiguMusicSource(
 
     override suspend fun getPlaylistDetail(playlistId: String): Pair<OnlinePlaylist, List<OnlineSongItem>> =
         withContext(Dispatchers.IO) {
-            // 如果是纯数字歌单 ID，调用歌单接口
+            // 如果是纯数字歌单 ID，调用咪咕歌单详情与歌曲列表接口
             if (playlistId.matches(Regex("^\\d+$"))) {
                 try {
-                    val url = "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/user/queryMusicListSongs.do?musicListId=$playlistId&pageNo=1&pageSize=200"
-                    val root = getApi(url)
-                    val listArr = root.optJSONArray("list")
+                    var title = "咪咕歌单"
+                    var coverUrl = ""
+                    var creatorName = "咪咕用户"
+                    var creatorAvatarUrl: String? = null
+                    var description: String? = null
+                    var playCount = 0L
+                    var expectedTotalCount = 0
 
-                    val title = root.optString("musicListName").ifEmpty { "咪咕歌单" }
-                    val coverUrl = root.optString("musicListPicUrl").ifEmpty {
-                        root.optString("imgUrl")
+                    // 1. 查询歌单完整元数据（标题、封面图、播放量、作者信息）
+                    try {
+                        val metaUrl = "https://app.pd.nf.migu.cn/MIGUM2.0/v1.0/content/resourceinfo.do?needAll=0&resourceType=2021&resourceId=$playlistId"
+                        val metaRoot = getApi(metaUrl)
+                        val resArr = metaRoot.optJSONArray("resource")
+                        val metaObj = resArr?.optJSONObject(0)
+                        if (metaObj != null) {
+                            title = metaObj.optString("title").ifEmpty { title }
+                            description = metaObj.optString("summary")
+                            creatorName = metaObj.optString("ownerName").ifEmpty { creatorName }
+                            creatorAvatarUrl = metaObj.optString("ownerPic").takeIf { it.isNotBlank() }
+                            val imgObj = metaObj.optJSONObject("imgItem")
+                            coverUrl = imgObj?.optString("img") ?: metaObj.optString("originalImgUrl")
+
+                            val opNumObj = metaObj.optJSONObject("opNumItem")
+                            playCount = opNumObj?.optString("playNum")?.toLongOrNull()
+                                ?: opNumObj?.optLong("playNum", 0L)
+                                ?: 0L
+                            expectedTotalCount = metaObj.optString("musicNum").toIntOrNull()
+                                ?: metaObj.optInt("musicNum", 0)
+                        }
+                    } catch (_: Exception) {
                     }
-                    val creatorName = root.optString("createName").ifEmpty { "咪咕音乐" }
-                    val description = root.optString("summary")
 
+                    // 2. 循环分页拉取全部歌曲列表
                     val songs = mutableListOf<OnlineSongItem>()
-                    if (listArr != null) {
-                        for (i in 0 until listArr.length()) {
+                    var pageNo = 1
+                    val pageSize = 50
+                    var hasMore = true
+
+                    while (hasMore && pageNo <= 20) { // 最多拉取 1000 首歌
+                        val songUrl = "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/user/queryMusicListSongs.do?musicListId=$playlistId&pageNo=$pageNo&pageSize=$pageSize"
+                        val root = getApi(songUrl)
+                        val total = root.optInt("totalCount", 0)
+                        if (expectedTotalCount <= 0 && total > 0) {
+                            expectedTotalCount = total
+                        }
+
+                        val listArr = root.optJSONArray("list")
+                        if (listArr == null || listArr.length() == 0) {
+                            hasMore = false
+                            break
+                        }
+
+                        val pageCount = listArr.length()
+                        for (i in 0 until pageCount) {
                             val sObj = listArr.optJSONObject(i) ?: continue
                             val copyrightId = sObj.optString("copyrightId").ifEmpty {
                                 sObj.optString("songId").ifEmpty { sObj.optString("contentId") }
@@ -152,7 +192,7 @@ class MiguMusicSource(
                             val durationMs = extractDuration(sObj)
                             val songCover = extractCover(sObj, coverUrl)
 
-                            if (copyrightId.isNotEmpty() && songName.isNotEmpty()) {
+                            if (copyrightId.isNotEmpty() && songName.isNotEmpty() && songs.none { it.id == copyrightId }) {
                                 songs.add(
                                     OnlineSongItem(
                                         id = copyrightId,
@@ -169,6 +209,11 @@ class MiguMusicSource(
                                 )
                             }
                         }
+
+                        pageNo++
+                        if ((expectedTotalCount > 0 && songs.size >= expectedTotalCount) || pageCount < pageSize) {
+                            hasMore = false
+                        }
                     }
 
                     if (songs.isNotEmpty()) {
@@ -177,9 +222,10 @@ class MiguMusicSource(
                             platform = platform,
                             title = title,
                             coverUrl = coverUrl.ifEmpty { songs.firstOrNull()?.coverUrl ?: "" },
-                            playCount = root.optLong("opNum", 0L),
-                            trackCount = songs.size,
+                            playCount = if (playCount > 0) playCount else 100000L,
+                            trackCount = if (expectedTotalCount > 0) expectedTotalCount else songs.size,
                             creatorName = creatorName,
+                            creatorAvatarUrl = creatorAvatarUrl,
                             description = description
                         )
                         return@withContext Pair(playlist, songs)
@@ -197,10 +243,10 @@ class MiguMusicSource(
                 platform = platform,
                 title = keyword,
                 coverUrl = searchSongs.firstOrNull()?.coverUrl ?: "https://d.music.migu.cn/common/image/20220610/b19a16f8880e4cbbaae9b7e71f9cf5fc.png",
-                playCount = 100000L,
+                playCount = 680000L,
                 trackCount = searchSongs.size,
                 creatorName = "咪咕官方",
-                description = "咪咕音乐推荐"
+                description = "咪咕音乐权威推荐"
             )
             Pair(playlist, searchSongs)
         }
@@ -378,8 +424,11 @@ class MiguMusicSource(
                 val id = obj.optString("id").ifEmpty { obj.optString("musicListId") }
                 val title = obj.optString("name").ifEmpty { obj.optString("title") }
                 val cover = obj.optString("musicListPicUrl").ifEmpty { obj.optString("img") }
-                val playCount = obj.optLong("playNum", 0L)
-                val trackCount = obj.optInt("musicNum", obj.optInt("songNum", 0))
+                val playCount = obj.optString("playNum").toLongOrNull()
+                    ?: obj.optLong("playNum", 0L)
+                val trackCount = obj.optString("musicNum").toIntOrNull()
+                    ?: obj.optString("songNum").toIntOrNull()
+                    ?: obj.optInt("musicNum", obj.optInt("songNum", 0))
 
                 if (id.isNotEmpty() && title.isNotEmpty()) {
                     list.add(

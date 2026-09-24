@@ -26,6 +26,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+
 enum class RepeatMode {
     OFF, ALL, ONE
 }
@@ -73,7 +77,17 @@ class MusicPlayerManager private constructor(private val context: Context) {
     private val MAX_HISTORY_SIZE = 50
     private var hasRecordedPlayForCurrentSong = false
 
+    private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+        .setUserAgent("Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+        .setConnectTimeoutMs(15000)
+        .setReadTimeoutMs(15000)
+        .setAllowCrossProtocolRedirects(true)
+        .setKeepPostFor302Redirects(true)
+
+    private val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+
     private val player: ExoPlayer = ExoPlayer.Builder(context)
+        .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
         .setAudioAttributes(
             AudioAttributes.Builder()
                 .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -492,7 +506,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
                         resolveException is java.net.SocketTimeoutException -> "网络请求超时，请稍后重试"
                         !onlineSourceManager.hasCustomScript() -> "未导入音源，请前往「设置 - 音源管理」导入第三方音源"
                         resolveException != null -> "第三方音源解析失败: ${resolveException.localizedMessage ?: "未知错误"}"
-                        else -> "第三方音源未解析到有效音频 (可能受版权保护或音源不支持)"
+                        else -> "所有广场音源均未解析到有效音频 (可能受版权保护或音源不支持)"
                     }
 
                     Log.e(TAG, "Failed to resolve direct URL for ${targetSong.title}: $errorMsg", resolveException)

@@ -222,52 +222,120 @@ class NeteaseMusicSource(
             description = desc
         )
 
-        val tracksArr = playlistObj.optJSONArray("tracks") ?: JSONArray()
-        val songs = mutableListOf<OnlineSongItem>()
-
-        for (i in 0 until tracksArr.length()) {
-            val trackObj = tracksArr.optJSONObject(i) ?: continue
-            val songId = trackObj.optLong("id").toString()
-            val songName = trackObj.optString("name").ifEmpty { trackObj.optString("title") }
-            val dt = trackObj.optLong("dt").let { if (it > 0) it else trackObj.optLong("duration") }
-            val fee = trackObj.optInt("fee") // 1: vip, 4: 购买专辑等
-            val isVip = fee == 1 || fee == 4
-
-            // 艺术家: ar 或 artists
-            val arArr = trackObj.optJSONArray("ar") ?: trackObj.optJSONArray("artists")
-            val artists = mutableListOf<String>()
-            if (arArr != null) {
-                for (a in 0 until arArr.length()) {
-                    val aObj = arArr.optJSONObject(a)
-                    val aName = aObj?.optString("name") ?: aObj?.optString("title")
-                    if (!aName.isNullOrEmpty()) artists.add(aName)
+        // 解析全部歌曲 ID 列表
+        val trackIdsArr = playlistObj.optJSONArray("trackIds")
+        val trackIds = mutableListOf<String>()
+        if (trackIdsArr != null) {
+            for (i in 0 until trackIdsArr.length()) {
+                val tidObj = trackIdsArr.optJSONObject(i)
+                val tid = tidObj?.optLong("id")?.toString() ?: continue
+                if (tid.isNotEmpty() && tid != "0") {
+                    trackIds.add(tid)
                 }
             }
-            val artistStr = if (artists.isEmpty()) "未知歌手" else artists.joinToString(", ")
+        }
 
-            // 专辑: al 或 album
-            val alObj = trackObj.optJSONObject("al") ?: trackObj.optJSONObject("album")
-            val albumName = alObj?.optString("name") ?: "未知专辑"
-            var picUrl = alObj?.optString("picUrl")
-            if (!picUrl.isNullOrEmpty() && !picUrl.contains("?param=")) {
-                picUrl = "$picUrl?param=300y300"
+        val tracksArr = playlistObj.optJSONArray("tracks") ?: JSONArray()
+        val defaultSongs = mutableListOf<OnlineSongItem>()
+        for (i in 0 until tracksArr.length()) {
+            val trackObj = tracksArr.optJSONObject(i) ?: continue
+            parseSongItem(trackObj)?.let { defaultSongs.add(it) }
+        }
+
+        // 如果存在 trackIds 并且数量大于默认 tracks，则通过批量接口获取完整歌曲列表
+        val songs = if (trackIds.size > defaultSongs.size) {
+            try {
+                val fullSongs = fetchSongDetailsByIds(trackIds)
+                if (fullSongs.isNotEmpty()) fullSongs else defaultSongs
+            } catch (e: Exception) {
+                defaultSongs
             }
-
-            songs.add(
-                OnlineSongItem(
-                    id = songId,
-                    platform = OnlinePlatform.NETEASE,
-                    title = songName,
-                    artist = artistStr,
-                    album = albumName,
-                    durationMs = dt,
-                    coverUrl = picUrl,
-                    isVip = isVip
-                )
-            )
+        } else if (defaultSongs.isNotEmpty()) {
+            defaultSongs
+        } else if (trackIds.isNotEmpty()) {
+            try {
+                fetchSongDetailsByIds(trackIds)
+            } catch (e: Exception) {
+                emptyList()
+            }
+        } else {
+            emptyList()
         }
 
         Pair(playlist, songs)
+    }
+
+    /**
+     * 根据歌曲 ID 列表分批获取所有歌曲详情
+     */
+    private suspend fun fetchSongDetailsByIds(trackIds: List<String>): List<OnlineSongItem> = withContext(Dispatchers.IO) {
+        val songMap = mutableMapOf<String, OnlineSongItem>()
+        val chunks = trackIds.chunked(500)
+        for (chunk in chunks) {
+            try {
+                val cArray = JSONArray()
+                for (id in chunk) {
+                    cArray.put(JSONObject().apply { put("id", id) })
+                }
+                val formBody = FormBody.Builder()
+                    .add("c", cArray.toString())
+                    .build()
+                val root = postApi("https://music.163.com/api/v3/song/detail", formBody)
+                val songsArr = root.optJSONArray("songs") ?: continue
+                for (i in 0 until songsArr.length()) {
+                    val trackObj = songsArr.optJSONObject(i) ?: continue
+                    val songItem = parseSongItem(trackObj) ?: continue
+                    songMap[songItem.id] = songItem
+                }
+            } catch (e: Exception) {
+                // 忽略当前分批错误，尽可能解析其它批次
+            }
+        }
+        trackIds.mapNotNull { songMap[it] }
+    }
+
+    /**
+     * 解析单首网易云歌曲 JSON 对象
+     */
+    private fun parseSongItem(trackObj: JSONObject): OnlineSongItem? {
+        val songId = trackObj.optLong("id").toString()
+        if (songId.isEmpty() || songId == "0") return null
+
+        val songName = trackObj.optString("name").ifEmpty { trackObj.optString("title") }
+        val dt = trackObj.optLong("dt").let { if (it > 0) it else trackObj.optLong("duration") }
+        val fee = trackObj.optInt("fee") // 1: vip, 4: 购买专辑等
+        val isVip = fee == 1 || fee == 4
+
+        // 艺术家: ar 或 artists
+        val arArr = trackObj.optJSONArray("ar") ?: trackObj.optJSONArray("artists")
+        val artists = mutableListOf<String>()
+        if (arArr != null) {
+            for (a in 0 until arArr.length()) {
+                val aObj = arArr.optJSONObject(a)
+                val aName = aObj?.optString("name") ?: aObj?.optString("title")
+                if (!aName.isNullOrEmpty()) artists.add(aName)
+            }
+        }
+        val artistStr = if (artists.isEmpty()) "未知歌手" else artists.joinToString(", ")
+
+        // 专辑: al 或 album
+        val alObj = trackObj.optJSONObject("al") ?: trackObj.optJSONObject("album")
+        val albumName = alObj?.optString("name") ?: "未知专辑"
+        var picUrl = alObj?.optString("picUrl")
+        if (!picUrl.isNullOrEmpty() && !picUrl.contains("?param=")) {
+            picUrl = "$picUrl?param=300y300"
+        }
+
+        return OnlineSongItem(
+            id = songId,
+            platform = OnlinePlatform.NETEASE,
+            title = songName,
+            artist = artistStr,
+            album = albumName,
+            durationMs = dt,
+            coverUrl = picUrl,
+            isVip = isVip
+        )
     }
 
     override suspend fun searchPlaylists(keyword: String, page: Int, pageSize: Int): List<OnlinePlaylist> = withContext(Dispatchers.IO) {

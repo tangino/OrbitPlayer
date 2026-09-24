@@ -110,4 +110,57 @@ class OnlineMusicSourceTest {
             }
         }
     }
+    @Test
+    fun testNeteasePlaylistDetailFetch() {
+        val source = NeteaseMusicSource()
+        try {
+            // 测试热歌榜 3778678
+            val (playlist, songs) = kotlinx.coroutines.runBlocking {
+                source.getPlaylistDetail("3778678")
+            }
+            println("Netease playlist: ${playlist.title}, songs size: ${songs.size}")
+            assertTrue("网易云热歌榜歌曲数量应大于10首", songs.size > 10)
+        } catch (e: Exception) {
+            println("Netease detail error: ${e.message}")
+            e.printStackTrace()
+            fail(e.message)
+        }
+    }
+
+    @Test
+    fun testKuwoPlaylistDetailFetch() {
+        val source = com.orbit.music.data.online.source.kuwo.KuwoMusicSource()
+        try {
+            val (playlist, songs) = kotlinx.coroutines.runBlocking {
+                source.getPlaylistDetail("3677105457")
+            }
+            println("Kuwo playlist: ${playlist.title}, total trackCount: ${playlist.trackCount}, songs size: ${songs.size}")
+            assertTrue("酷我歌单歌曲数量应大于100首", songs.size > 100)
+            assertTrue("歌单歌曲列表应非空", songs.isNotEmpty())
+            println("First song: ${songs.firstOrNull()?.title} - ${songs.firstOrNull()?.artist}")
+        } catch (e: Exception) {
+            println("Kuwo detail error: ${e.message}")
+            e.printStackTrace()
+            fail(e.message)
+        }
+    }
+
+    @Test
+    fun testMiguPlaylistAndSongFetch() {
+        val source = com.orbit.music.data.online.source.migu.MiguMusicSource()
+        try {
+            val (playlist, songs) = kotlinx.coroutines.runBlocking {
+                source.getPlaylistDetail("203413794")
+            }
+            println("Migu playlist: ${playlist.title}, trackCount: ${playlist.trackCount}, songs size: ${songs.size}")
+            assertTrue("咪咕歌单歌曲总数应大于50首", songs.size > 50)
+            val pianAi = songs.firstOrNull { it.title.contains("偏爱") }
+            assertNotNull("歌单中应包含《偏爱》", pianAi)
+            println("Found song: ${pianAi?.title} (id=${pianAi?.id})")
+        } catch (e: Exception) {
+            println("Migu detail error: ${e.message}")
+            e.printStackTrace()
+            fail(e.message)
+        }
+    }
 }
