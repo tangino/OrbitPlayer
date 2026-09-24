@@ -26,7 +26,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 enum class LibraryTab {
-    SONGS, FOLDERS, ALBUMS, ARTISTS, PLAYLISTS, NETEASE_SQUARE, QQ_SQUARE
+    SONGS, FOLDERS, ALBUMS, ARTISTS, PLAYLISTS, NETEASE_SQUARE, QQ_SQUARE, KUGOU_SQUARE, KUWO_SQUARE, MIGU_SQUARE
 }
 
 enum class LibraryViewMode {
@@ -48,6 +48,9 @@ val LibraryTab.pageKey: String
         LibraryTab.PLAYLISTS -> "tab_playlists"
         LibraryTab.NETEASE_SQUARE -> "tab_netease_square"
         LibraryTab.QQ_SQUARE -> "tab_qq_square"
+        LibraryTab.KUGOU_SQUARE -> "tab_kugou_square"
+        LibraryTab.KUWO_SQUARE -> "tab_kuwo_square"
+        LibraryTab.MIGU_SQUARE -> "tab_migu_square"
     }
 
 data class LibraryUiState(

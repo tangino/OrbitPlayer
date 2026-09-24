@@ -810,18 +810,32 @@ fun OnlinePlaylistDetailView(
                         }
 
                         // 平台标识
+                        val platformBadgeColor = when (playlist.platform) {
+                            OnlinePlatform.NETEASE -> Color(0xFFE60026)
+                            OnlinePlatform.QQ -> Color(0xFF1ECF96)
+                            OnlinePlatform.KUGOU -> Color(0xFF0088FF)
+                            OnlinePlatform.KUWO -> Color(0xFFFF9500)
+                            OnlinePlatform.MIGU -> Color(0xFFE91E63)
+                        }
+                        val platformBadgeText = when (playlist.platform) {
+                            OnlinePlatform.NETEASE -> "网易云"
+                            OnlinePlatform.QQ -> "QQ音乐"
+                            OnlinePlatform.KUGOU -> "酷狗"
+                            OnlinePlatform.KUWO -> "酷我"
+                            OnlinePlatform.MIGU -> "咪咕"
+                        }
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopStart)
                                 .padding(4.dp)
                                 .background(
-                                    color = if (playlist.platform == OnlinePlatform.NETEASE) Color(0xFFE60026) else Color(0xFF1ECF96),
+                                    color = platformBadgeColor,
                                     shape = RoundedCornerShape(3.dp)
                                 )
                                 .padding(horizontal = 4.dp, vertical = 1.dp)
                         ) {
                             Text(
-                                text = if (playlist.platform == OnlinePlatform.NETEASE) "网易云" else "QQ音乐",
+                                text = platformBadgeText,
                                 color = Color.White,
                                 fontSize = 8.5.sp,
                                 fontWeight = FontWeight.Bold

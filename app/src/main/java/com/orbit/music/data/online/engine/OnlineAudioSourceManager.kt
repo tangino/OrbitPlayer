@@ -150,6 +150,9 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
             val sourceKey = when (platform) {
                 OnlinePlatform.NETEASE -> "wy"
                 OnlinePlatform.QQ -> "tx"
+                OnlinePlatform.KUGOU -> "kg"
+                OnlinePlatform.KUWO -> "kw"
+                OnlinePlatform.MIGU -> "mg"
             }
             val musicInfo = JSONObject().apply {
                 put("name", title)
@@ -157,6 +160,8 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
                 put("albumName", album)
                 put("songmid", songId)
                 put("id", songId)
+                put("hash", songId)
+                put("copyrightId", songId)
                 put("source", sourceKey)
                 put("types", JSONArray().apply {
                     put(JSONObject().put("type", "128k"))

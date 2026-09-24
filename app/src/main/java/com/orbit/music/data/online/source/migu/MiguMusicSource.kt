@@ -1,0 +1,429 @@
+package com.orbit.music.data.online.source.migu
+
+import com.orbit.music.data.online.model.OnlineLeaderboard
+import com.orbit.music.data.online.model.OnlinePlatform
+import com.orbit.music.data.online.model.OnlinePlaylist
+import com.orbit.music.data.online.model.OnlinePlaylistTag
+import com.orbit.music.data.online.model.OnlineSongItem
+import com.orbit.music.data.online.source.IOnlineMusicSource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.json.JSONObject
+import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
+import java.util.regex.Pattern
+
+/**
+ * 咪咕音乐在线音源实现类
+ */
+class MiguMusicSource(
+    private val client: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .build()
+) : IOnlineMusicSource {
+
+    override val platform: OnlinePlatform = OnlinePlatform.MIGU
+
+    private val userAgent = "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+
+    private suspend fun getApi(url: String): JSONObject = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", userAgent)
+            .header("Referer", "https://m.music.migu.cn/")
+            .header("channel", "0146951")
+            .get()
+            .build()
+
+        val response = client.newCall(request).execute()
+        val bodyStr = response.body?.string() ?: throw IllegalStateException("咪咕网络响应为空")
+        JSONObject(bodyStr)
+    }
+
+    override suspend fun getTags(): List<OnlinePlaylistTag> = withContext(Dispatchers.IO) {
+        listOf(
+            OnlinePlaylistTag("全部", "全部", "默认"),
+            OnlinePlaylistTag("华语", "华语", "语种"),
+            OnlinePlaylistTag("欧美", "欧美", "语种"),
+            OnlinePlaylistTag("流行", "流行", "风格"),
+            OnlinePlaylistTag("摇滚", "摇滚", "风格"),
+            OnlinePlaylistTag("古风", "古风", "风格"),
+            OnlinePlaylistTag("治愈", "治愈", "情感"),
+            OnlinePlaylistTag("民谣", "民谣", "风格"),
+            OnlinePlaylistTag("ACG", "ACG", "风格"),
+            OnlinePlaylistTag("影视", "影视", "场景")
+        )
+    }
+
+    override suspend fun getPlaylists(
+        tagId: String,
+        page: Int,
+        pageSize: Int
+    ): List<OnlinePlaylist> = withContext(Dispatchers.IO) {
+        val keyword = if (tagId == "全部" || tagId == "推荐" || tagId == "0") "热门" else tagId
+        searchPlaylists(keyword, page, pageSize)
+    }
+
+    override suspend fun getLeaderboards(): List<OnlineLeaderboard> = withContext(Dispatchers.IO) {
+        listOf(
+            OnlineLeaderboard(
+                id = "咪咕音乐榜",
+                platform = platform,
+                title = "咪咕音乐榜",
+                coverUrl = "https://d.music.migu.cn/common/image/20220610/b19a16f8880e4cbbaae9b7e71f9cf5fc.png",
+                updateFrequency = "每周更新",
+                topSongsPreview = listOf("咪咕官方精选", "权威潮流推荐")
+            ),
+            OnlineLeaderboard(
+                id = "咪咕新歌榜",
+                platform = platform,
+                title = "咪咕新歌榜",
+                coverUrl = "https://d.music.migu.cn/common/image/20220610/9cf95fc0245a4a2cb588fc23f6e1f0e2.png",
+                updateFrequency = "每日更新",
+                topSongsPreview = listOf("最新热单首发", "每日新鲜出炉")
+            ),
+            OnlineLeaderboard(
+                id = "咪咕热歌榜",
+                platform = platform,
+                title = "咪咕热歌榜",
+                coverUrl = "https://d.music.migu.cn/common/image/20220610/ff7d4133405c4ea8a0efd12d59ca7868.png",
+                updateFrequency = "每日更新",
+                topSongsPreview = listOf("全网飙升传唱", "亿万用户热播")
+            ),
+            OnlineLeaderboard(
+                id = "影视金曲榜",
+                platform = platform,
+                title = "影视金曲榜",
+                coverUrl = "https://d.music.migu.cn/common/image/20220610/dfbbdafb2b7548c784fc570222a7f5ec.png",
+                updateFrequency = "每周更新",
+                topSongsPreview = listOf("热播大剧插曲", "大片原声音画")
+            ),
+            OnlineLeaderboard(
+                id = "华语新歌榜",
+                platform = platform,
+                title = "华语新歌榜",
+                coverUrl = "https://d.music.migu.cn/common/image/20220610/7c4f420cf14643038f451f2b2361a91e.png",
+                updateFrequency = "每日更新",
+                topSongsPreview = listOf("华语流行新声", "实力歌手力作")
+            ),
+            OnlineLeaderboard(
+                id = "欧美热歌榜",
+                platform = platform,
+                title = "欧美热歌榜",
+                coverUrl = "https://d.music.migu.cn/common/image/20220610/c5be2bb6735e40e69cbfae5c3e4c4ca4.png",
+                updateFrequency = "每周更新",
+                topSongsPreview = listOf("Billboard同步", "欧美流行精选")
+            )
+        )
+    }
+
+    override suspend fun getPlaylistDetail(playlistId: String): Pair<OnlinePlaylist, List<OnlineSongItem>> =
+        withContext(Dispatchers.IO) {
+            // 如果是纯数字歌单 ID，调用歌单接口
+            if (playlistId.matches(Regex("^\\d+$"))) {
+                try {
+                    val url = "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/user/queryMusicListSongs.do?musicListId=$playlistId&pageNo=1&pageSize=200"
+                    val root = getApi(url)
+                    val listArr = root.optJSONArray("list")
+
+                    val title = root.optString("musicListName").ifEmpty { "咪咕歌单" }
+                    val coverUrl = root.optString("musicListPicUrl").ifEmpty {
+                        root.optString("imgUrl")
+                    }
+                    val creatorName = root.optString("createName").ifEmpty { "咪咕音乐" }
+                    val description = root.optString("summary")
+
+                    val songs = mutableListOf<OnlineSongItem>()
+                    if (listArr != null) {
+                        for (i in 0 until listArr.length()) {
+                            val sObj = listArr.optJSONObject(i) ?: continue
+                            val copyrightId = sObj.optString("copyrightId").ifEmpty {
+                                sObj.optString("songId").ifEmpty { sObj.optString("contentId") }
+                            }
+                            val songName = sObj.optString("songName").ifEmpty {
+                                sObj.optString("title").ifEmpty { sObj.optString("name") }
+                            }
+                            val artist = extractArtist(sObj)
+                            val album = extractAlbum(sObj)
+                            val durationMs = extractDuration(sObj)
+                            val songCover = extractCover(sObj, coverUrl)
+
+                            if (copyrightId.isNotEmpty() && songName.isNotEmpty()) {
+                                songs.add(
+                                    OnlineSongItem(
+                                        id = copyrightId,
+                                        platform = platform,
+                                        title = songName,
+                                        artist = artist,
+                                        album = album,
+                                        durationMs = durationMs,
+                                        coverUrl = songCover,
+                                        isVip = sObj.optInt("vipType", 0) > 0 ||
+                                                sObj.optString("vipFlag") == "1" ||
+                                                sObj.optString("chargeAuditions") == "1"
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    if (songs.isNotEmpty()) {
+                        val playlist = OnlinePlaylist(
+                            id = playlistId,
+                            platform = platform,
+                            title = title,
+                            coverUrl = coverUrl.ifEmpty { songs.firstOrNull()?.coverUrl ?: "" },
+                            playCount = root.optLong("opNum", 0L),
+                            trackCount = songs.size,
+                            creatorName = creatorName,
+                            description = description
+                        )
+                        return@withContext Pair(playlist, songs)
+                    }
+                } catch (_: Exception) {
+                    // 降级使用搜索
+                }
+            }
+
+            // 榜单或降级：按关键词搜索歌曲
+            val keyword = playlistId
+            val searchSongs = searchSongsByKeyword(keyword, 100)
+            val playlist = OnlinePlaylist(
+                id = playlistId,
+                platform = platform,
+                title = keyword,
+                coverUrl = searchSongs.firstOrNull()?.coverUrl ?: "https://d.music.migu.cn/common/image/20220610/b19a16f8880e4cbbaae9b7e71f9cf5fc.png",
+                playCount = 100000L,
+                trackCount = searchSongs.size,
+                creatorName = "咪咕官方",
+                description = "咪咕音乐推荐"
+            )
+            Pair(playlist, searchSongs)
+        }
+
+    private suspend fun searchSongsByKeyword(keyword: String, count: Int): List<OnlineSongItem> = withContext(Dispatchers.IO) {
+        try {
+            val encoded = URLEncoder.encode(keyword, "UTF-8")
+            val switchJson = URLEncoder.encode("{\"song\":1,\"album\":0,\"singer\":0,\"tagSong\":0,\"mvSong\":0,\"songlist\":0,\"bestShow\":0}", "UTF-8")
+            val url = "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/search_all.do?text=$encoded&pageNo=1&pageSize=$count&searchSwitch=$switchJson"
+            val root = getApi(url)
+            val listArr = root.optJSONObject("songResultData")?.optJSONArray("result") ?: return@withContext emptyList()
+
+            val songs = mutableListOf<OnlineSongItem>()
+            for (i in 0 until listArr.length()) {
+                val obj = listArr.optJSONObject(i) ?: continue
+                val id = obj.optString("copyrightId").ifEmpty { obj.optString("id") }
+                val title = obj.optString("name").ifEmpty { obj.optString("songName") }
+                val artist = extractArtist(obj)
+                val album = extractAlbum(obj)
+                val durationMs = extractDuration(obj)
+                val cover = extractCover(obj, "")
+
+                if (id.isNotEmpty() && title.isNotEmpty()) {
+                    songs.add(
+                        OnlineSongItem(
+                            id = id,
+                            platform = platform,
+                            title = title,
+                            artist = artist,
+                            album = album,
+                            durationMs = durationMs,
+                            coverUrl = cover,
+                            isVip = obj.optString("vipType") == "1" || obj.optString("chargeAuditions") == "1"
+                        )
+                    )
+                }
+            }
+            songs
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun extractArtist(obj: JSONObject): String {
+        // 1. artists 数组（如 queryMusicListSongs: [{"name": "告五人"}]）
+        obj.optJSONArray("artists")?.let { arr ->
+            val names = mutableListOf<String>()
+            for (i in 0 until arr.length()) {
+                val name = arr.optJSONObject(i)?.optString("name")
+                if (!name.isNullOrBlank()) names.add(name.trim())
+            }
+            if (names.isNotEmpty()) return names.joinToString(" & ")
+        }
+
+        // 2. singers 数组（如 search_all: [{"name": "任贤齐"}]）
+        obj.optJSONArray("singers")?.let { arr ->
+            val names = mutableListOf<String>()
+            for (i in 0 until arr.length()) {
+                val name = arr.optJSONObject(i)?.optString("name")
+                if (!name.isNullOrBlank()) names.add(name.trim())
+            }
+            if (names.isNotEmpty()) return names.joinToString(" & ")
+        }
+
+        // 3. singerImg Map 对象
+        obj.optJSONObject("singerImg")?.let { sImgMap ->
+            val keys = sImgMap.keys()
+            val names = mutableListOf<String>()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val sObj = sImgMap.optJSONObject(key)
+                val name = sObj?.optString("singerName")
+                if (!name.isNullOrBlank()) names.add(name.trim())
+            }
+            if (names.isNotEmpty()) return names.joinToString(" & ")
+        }
+
+        // 4. 直接字段 singer / singerName / artist
+        val direct = obj.optString("singerName").ifEmpty {
+            obj.optString("singer").ifEmpty {
+                obj.optString("artist")
+            }
+        }
+        return if (direct.isNotBlank()) direct.trim() else "未知歌手"
+    }
+
+    private fun extractAlbum(obj: JSONObject): String {
+        // 1. albums 数组（如 search_all: [{"name": "滚石30精选"}]）
+        obj.optJSONArray("albums")?.let { arr ->
+            val name = arr.optJSONObject(0)?.optString("name")
+            if (!name.isNullOrBlank()) return name.trim()
+        }
+
+        // 2. 直接字段 album / albumName
+        val albumStr = obj.optString("album").ifEmpty { obj.optString("albumName") }
+        if (albumStr.isNotBlank() && albumStr != "null") {
+            return albumStr.trim()
+        }
+
+        return "单曲"
+    }
+
+    private fun extractCover(obj: JSONObject, defaultCover: String): String {
+        // 1. imgItems 数组
+        obj.optJSONArray("imgItems")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val img = arr.optJSONObject(i)?.optString("img")
+                if (!img.isNullOrBlank()) return img
+            }
+        }
+
+        // 2. landscapImg
+        val landscape = obj.optString("landscapImg")
+        if (landscape.isNotBlank()) return landscape
+
+        // 3. albumPicUrl / cover / imgUrl / pic
+        val albumPic = obj.optString("albumPicUrl").ifEmpty {
+            obj.optString("cover").ifEmpty {
+                obj.optString("imgUrl").ifEmpty {
+                    obj.optString("pic")
+                }
+            }
+        }
+        if (albumPic.isNotBlank()) return albumPic
+
+        // 4. singerImg 中的 miguImgItems
+        obj.optJSONObject("singerImg")?.let { sImgMap ->
+            val keys = sImgMap.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val sObj = sImgMap.optJSONObject(key)
+                val miguItems = sObj?.optJSONArray("miguImgItems")
+                if (miguItems != null && miguItems.length() > 0) {
+                    val img = miguItems.optJSONObject(0)?.optString("img")
+                    if (!img.isNullOrBlank()) return img
+                }
+            }
+        }
+
+        return defaultCover
+    }
+
+    private fun extractDuration(obj: JSONObject): Long {
+        val durationSec = obj.optLong("duration", 0L)
+        if (durationSec > 0) return durationSec * 1000L
+
+        val lengthStr = obj.optString("length") // 如 "00:04:30"
+        if (lengthStr.isNotBlank() && lengthStr.contains(":")) {
+            val parts = lengthStr.split(":")
+            var sec = 0L
+            for (part in parts) {
+                sec = sec * 60 + (part.toLongOrNull() ?: 0L)
+            }
+            return sec * 1000L
+        }
+        return 0L
+    }
+
+    override suspend fun searchPlaylists(
+        keyword: String,
+        page: Int,
+        pageSize: Int
+    ): List<OnlinePlaylist> = withContext(Dispatchers.IO) {
+        try {
+            val encoded = URLEncoder.encode(keyword, "UTF-8")
+            val switchJson = URLEncoder.encode("{\"song\":0,\"album\":0,\"singer\":0,\"tagSong\":0,\"mvSong\":0,\"songlist\":1,\"bestShow\":0}", "UTF-8")
+            val url = "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/search_all.do?text=$encoded&pageNo=$page&pageSize=$pageSize&searchSwitch=$switchJson"
+            val root = getApi(url)
+            val listArr = root.optJSONObject("songListResultData")?.optJSONArray("result")
+                ?: return@withContext fallbackIfEmpty(page)
+
+            val list = mutableListOf<OnlinePlaylist>()
+            for (i in 0 until listArr.length()) {
+                val obj = listArr.optJSONObject(i) ?: continue
+                val id = obj.optString("id").ifEmpty { obj.optString("musicListId") }
+                val title = obj.optString("name").ifEmpty { obj.optString("title") }
+                val cover = obj.optString("musicListPicUrl").ifEmpty { obj.optString("img") }
+                val playCount = obj.optLong("playNum", 0L)
+                val trackCount = obj.optInt("musicNum", obj.optInt("songNum", 0))
+
+                if (id.isNotEmpty() && title.isNotEmpty()) {
+                    list.add(
+                        OnlinePlaylist(
+                            id = id,
+                            platform = platform,
+                            title = title,
+                            coverUrl = cover,
+                            playCount = playCount,
+                            trackCount = trackCount,
+                            creatorName = obj.optString("userName").ifEmpty { "咪咕音乐" },
+                            description = obj.optString("summary").ifEmpty { obj.optString("intro") }
+                        )
+                    )
+                }
+            }
+            if (list.isEmpty()) fallbackIfEmpty(page) else list
+        } catch (e: Exception) {
+            fallbackIfEmpty(page)
+        }
+    }
+
+    private fun fallbackIfEmpty(page: Int): List<OnlinePlaylist> {
+        if (page > 1) return emptyList()
+        return listOf(
+            OnlinePlaylist("咪咕音乐榜", platform, "咪咕音乐榜", "https://d.music.migu.cn/common/image/20220610/b19a16f8880e4cbbaae9b7e71f9cf5fc.png", 500000L, 100, "咪咕官方", "权威潮流推荐"),
+            OnlinePlaylist("咪咕新歌榜", platform, "咪咕新歌榜", "https://d.music.migu.cn/common/image/20220610/9cf95fc0245a4a2cb588fc23f6e1f0e2.png", 320000L, 100, "咪咕官方", "最新热单首发"),
+            OnlinePlaylist("咪咕热歌榜", platform, "咪咕热歌榜", "https://d.music.migu.cn/common/image/20220610/ff7d4133405c4ea8a0efd12d59ca7868.png", 880000L, 100, "咪咕官方", "全网飙升传唱"),
+            OnlinePlaylist("影视金曲榜", platform, "影视金曲榜", "https://d.music.migu.cn/common/image/20220610/dfbbdafb2b7548c784fc570222a7f5ec.png", 210000L, 100, "咪咕官方", "热播大剧插曲"),
+            OnlinePlaylist("华语新歌榜", platform, "华语新歌榜", "https://d.music.migu.cn/common/image/20220610/7c4f420cf14643038f451f2b2361a91e.png", 430000L, 100, "咪咕官方", "华语流行新声"),
+            OnlinePlaylist("欧美热歌榜", platform, "欧美热歌榜", "https://d.music.migu.cn/common/image/20220610/c5be2bb6735e40e69cbfae5c3e4c4ca4.png", 150000L, 100, "咪咕官方", "Billboard同步")
+        )
+    }
+
+    override fun extractPlaylistId(urlOrText: String): String? {
+        val trimmed = urlOrText.trim()
+        val matcher = Pattern.compile("(?:playlist/|musicListId=|id=|playlistId=)(\\d+)").matcher(trimmed)
+        if (matcher.find()) {
+            return matcher.group(1)
+        }
+        if (trimmed.matches(Regex("^\\d{4,12}$"))) {
+            return trimmed
+        }
+        return null
+    }
+}
+

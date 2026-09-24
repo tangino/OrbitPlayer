@@ -32,11 +32,17 @@ class OnlineMusicRepository private constructor() {
 
     private val neteaseSource = NeteaseMusicSource()
     private val qqSource = QQMusicSource()
+    private val kugouSource = com.orbit.music.data.online.source.kugou.KugouMusicSource()
+    private val kuwoSource = com.orbit.music.data.online.source.kuwo.KuwoMusicSource()
+    private val miguSource = com.orbit.music.data.online.source.migu.MiguMusicSource()
 
     // 平台实例映射表
     private val sources = mapOf<OnlinePlatform, IOnlineMusicSource>(
         OnlinePlatform.NETEASE to neteaseSource,
-        OnlinePlatform.QQ to qqSource
+        OnlinePlatform.QQ to qqSource,
+        OnlinePlatform.KUGOU to kugouSource,
+        OnlinePlatform.KUWO to kuwoSource,
+        OnlinePlatform.MIGU to miguSource
     )
 
     // 当前选中的平台
@@ -145,6 +151,21 @@ class OnlineMusicRepository private constructor() {
         if (trimmed.contains("163.com") || trimmed.contains("163cn.tv")) {
             neteaseSource.extractPlaylistId(trimmed)?.let {
                 return Pair(OnlinePlatform.NETEASE, it)
+            }
+        }
+        if (trimmed.contains("kugou.com")) {
+            kugouSource.extractPlaylistId(trimmed)?.let {
+                return Pair(OnlinePlatform.KUGOU, it)
+            }
+        }
+        if (trimmed.contains("kuwo.cn")) {
+            kuwoSource.extractPlaylistId(trimmed)?.let {
+                return Pair(OnlinePlatform.KUWO, it)
+            }
+        }
+        if (trimmed.contains("migu.cn")) {
+            miguSource.extractPlaylistId(trimmed)?.let {
+                return Pair(OnlinePlatform.MIGU, it)
             }
         }
         // 若没有识别到域名，尝试用当前平台的正则提取数字 ID

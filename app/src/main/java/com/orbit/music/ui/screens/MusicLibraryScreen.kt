@@ -182,7 +182,19 @@ fun MusicLibraryScreen(
             val res = repo.getPlaylistDetail(op.id, op.platform)
             res.onSuccess { (detail, songs) ->
                 if (libraryState.selectedOnlinePlaylist?.id == detail.id) {
-                    viewModel.selectOnlinePlaylist(detail)
+                    val fallbackTitles = setOf("咪咕歌单", "酷我歌单", "酷狗歌单", "QQ音乐歌单", "网易云歌单", "在线歌单")
+                    val fallbackCreators = setOf("咪咕音乐", "酷我用户", "酷我音乐", "酷狗音乐", "QQ音乐", "网易云音乐", "未知作者")
+                    val finalTitle = if (detail.title.isNotBlank() && !fallbackTitles.contains(detail.title)) detail.title else op.title
+                    val finalCover = if (op.coverUrl.isNotBlank()) op.coverUrl else detail.coverUrl
+                    val finalCreator = if (!op.creatorName.isNullOrBlank() && !fallbackCreators.contains(op.creatorName)) op.creatorName else detail.creatorName
+                    val finalDesc = if (!detail.description.isNullOrBlank()) detail.description else op.description
+                    val merged = detail.copy(
+                        title = finalTitle,
+                        coverUrl = finalCover,
+                        creatorName = finalCreator,
+                        description = finalDesc
+                    )
+                    viewModel.selectOnlinePlaylist(merged)
                 }
                 onlinePlaylistSongs = songs
                 isOnlineDetailLoading = false
@@ -336,10 +348,12 @@ fun MusicLibraryScreen(
                 val targetPlaylist = origin.onlinePlaylist
                 viewModel.clearAllDrillDown()
                 viewModel.selectOnlinePlaylist(targetPlaylist)
-                val targetTab = if (targetPlaylist.platform == com.orbit.music.data.online.model.OnlinePlatform.NETEASE) {
-                    LibraryTab.NETEASE_SQUARE
-                } else {
-                    LibraryTab.QQ_SQUARE
+                val targetTab = when (targetPlaylist.platform) {
+                    com.orbit.music.data.online.model.OnlinePlatform.NETEASE -> LibraryTab.NETEASE_SQUARE
+                    com.orbit.music.data.online.model.OnlinePlatform.QQ -> LibraryTab.QQ_SQUARE
+                    com.orbit.music.data.online.model.OnlinePlatform.KUGOU -> LibraryTab.KUGOU_SQUARE
+                    com.orbit.music.data.online.model.OnlinePlatform.KUWO -> LibraryTab.KUWO_SQUARE
+                    com.orbit.music.data.online.model.OnlinePlatform.MIGU -> LibraryTab.MIGU_SQUARE
                 }
                 if (libraryState.currentTab != targetTab) {
                     viewModel.setTab(targetTab)
@@ -519,9 +533,13 @@ fun MusicLibraryScreen(
         }
     }
 
-    val isOnlineTabOrOnlineDrillDown = libraryState.currentTab == LibraryTab.NETEASE_SQUARE ||
-            libraryState.currentTab == LibraryTab.QQ_SQUARE ||
-            openedOnlinePlaylist != null
+    val isOnlineTabOrOnlineDrillDown = libraryState.currentTab in listOf(
+        LibraryTab.NETEASE_SQUARE,
+        LibraryTab.QQ_SQUARE,
+        LibraryTab.KUGOU_SQUARE,
+        LibraryTab.KUWO_SQUARE,
+        LibraryTab.MIGU_SQUARE
+    ) || openedOnlinePlaylist != null
 
     // 全 Tab 通用 Pinch 手势控制器与修饰符（绑定当前页面的独立视图模式，网络歌曲列表及广场禁用 Pinch 缩放）
     val pinchTransitionState = rememberPinchTransitionState()
@@ -943,7 +961,7 @@ fun MusicLibraryScreen(
                         horizontalArrangement = Arrangement.spacedBy(3.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (libraryState.currentTab != LibraryTab.NETEASE_SQUARE && libraryState.currentTab != LibraryTab.QQ_SQUARE) {
+                        if (!isOnlineTabOrOnlineDrillDown) {
                             // 1. 搜索开关
                             IconButton(
                                 onClick = { viewModel.toggleSearch() },
@@ -1027,10 +1045,19 @@ fun MusicLibraryScreen(
             // 2. 现代 Segmented Pill 胶囊标签栏 (下钻时隐藏)
             if (!isDrillDown) {
                 var showOnlinePlatformMenu by remember { mutableStateOf(false) }
-                val isOnlineTabSelected = libraryState.currentTab == LibraryTab.NETEASE_SQUARE || libraryState.currentTab == LibraryTab.QQ_SQUARE
+                val isOnlineTabSelected = libraryState.currentTab in listOf(
+                    LibraryTab.NETEASE_SQUARE,
+                    LibraryTab.QQ_SQUARE,
+                    LibraryTab.KUGOU_SQUARE,
+                    LibraryTab.KUWO_SQUARE,
+                    LibraryTab.MIGU_SQUARE
+                )
                 val onlineTabLabel = when (libraryState.currentTab) {
                     LibraryTab.NETEASE_SQUARE -> "网易云广场"
                     LibraryTab.QQ_SQUARE -> "QQ音乐广场"
+                    LibraryTab.KUGOU_SQUARE -> "酷狗音乐广场"
+                    LibraryTab.KUWO_SQUARE -> "酷我音乐广场"
+                    LibraryTab.MIGU_SQUARE -> "咪咕音乐广场"
                     else -> "在线歌单"
                 }
 
@@ -1090,7 +1117,7 @@ fun MusicLibraryScreen(
                         }
                     }
 
-                    // 🌐 网络平台下拉选择胶囊
+                    // 🌐 在线歌单多平台下拉选择胶囊
                     Box {
                         val pillBgColor = if (isOnlineTabSelected) {
                             OrbitTheme.colors.primary.copy(alpha = 0.16f)
@@ -1143,62 +1170,45 @@ fun MusicLibraryScreen(
                                 .background(OrbitTheme.colors.surfaceCard)
                                 .border(0.5.dp, OrbitTheme.colors.surfaceBorder, RoundedCornerShape(12.dp))
                         ) {
-                            DropdownMenuItem(
-                                text = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(18.dp)
-                                                .background(Color(0xFFE60026), RoundedCornerShape(4.dp)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text("网", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = "网易云广场",
-                                            fontSize = 13.sp,
-                                            fontWeight = if (libraryState.currentTab == LibraryTab.NETEASE_SQUARE) FontWeight.Bold else FontWeight.Medium,
-                                            color = if (libraryState.currentTab == LibraryTab.NETEASE_SQUARE) OrbitTheme.colors.primary else OrbitTheme.colors.textPrimary
-                                        )
-                                    }
-                                },
-                                trailingIcon = if (libraryState.currentTab == LibraryTab.NETEASE_SQUARE) {
-                                    { Icon(Icons.Default.Check, contentDescription = null, tint = OrbitTheme.colors.primary, modifier = Modifier.size(16.dp)) }
-                                } else null,
-                                onClick = {
-                                    viewModel.setTab(LibraryTab.NETEASE_SQUARE)
-                                    showOnlinePlatformMenu = false
-                                }
+                            val platformsList = listOf(
+                                Triple(LibraryTab.NETEASE_SQUARE, "网易云广场", Color(0xFFE60026) to "网"),
+                                Triple(LibraryTab.QQ_SQUARE, "QQ音乐广场", Color(0xFF1ECF96) to "Q"),
+                                Triple(LibraryTab.KUGOU_SQUARE, "酷狗音乐广场", Color(0xFF0088FF) to "狗"),
+                                Triple(LibraryTab.KUWO_SQUARE, "酷我音乐广场", Color(0xFFFF9500) to "我"),
+                                Triple(LibraryTab.MIGU_SQUARE, "咪咕音乐广场", Color(0xFFE91E63) to "咕")
                             )
-                            DropdownMenuItem(
-                                text = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(18.dp)
-                                                .background(Color(0xFF1ECF96), RoundedCornerShape(4.dp)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text("Q", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+
+                            platformsList.forEach { (tabItem, label, badge) ->
+                                val isCur = libraryState.currentTab == tabItem
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(18.dp)
+                                                    .background(badge.first, RoundedCornerShape(4.dp)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(badge.second, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = label,
+                                                fontSize = 13.sp,
+                                                fontWeight = if (isCur) FontWeight.Bold else FontWeight.Medium,
+                                                color = if (isCur) OrbitTheme.colors.primary else OrbitTheme.colors.textPrimary
+                                            )
                                         }
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text(
-                                            text = "QQ音乐广场",
-                                            fontSize = 13.sp,
-                                            fontWeight = if (libraryState.currentTab == LibraryTab.QQ_SQUARE) FontWeight.Bold else FontWeight.Medium,
-                                            color = if (libraryState.currentTab == LibraryTab.QQ_SQUARE) OrbitTheme.colors.primary else OrbitTheme.colors.textPrimary
-                                        )
+                                    },
+                                    trailingIcon = if (isCur) {
+                                        { Icon(Icons.Default.Check, contentDescription = null, tint = OrbitTheme.colors.primary, modifier = Modifier.size(16.dp)) }
+                                    } else null,
+                                    onClick = {
+                                        viewModel.setTab(tabItem)
+                                        showOnlinePlatformMenu = false
                                     }
-                                },
-                                trailingIcon = if (libraryState.currentTab == LibraryTab.QQ_SQUARE) {
-                                    { Icon(Icons.Default.Check, contentDescription = null, tint = OrbitTheme.colors.primary, modifier = Modifier.size(16.dp)) }
-                                } else null,
-                                onClick = {
-                                    viewModel.setTab(LibraryTab.QQ_SQUARE)
-                                    showOnlinePlatformMenu = false
-                                }
-                            )
+                                )
+                            }
                         }
                     }
                 }
@@ -2904,6 +2914,120 @@ fun MusicLibraryScreen(
                             )
                         }
                     }
+
+                    LibraryTab.KUGOU_SQUARE -> {
+                        // 8. 酷狗音乐在线歌单广场
+                        if (openedOnlinePlaylist != null) {
+                            com.orbit.music.ui.components.OnlinePlaylistDetailView(
+                                playlist = openedOnlinePlaylist!!,
+                                songs = onlinePlaylistSongs,
+                                isLoading = isOnlineDetailLoading,
+                                errorMessage = onlineDetailError,
+                                onSongClick = { index, song ->
+                                    val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
+                                    viewModel.playOnlineSongs(onlinePlaylistSongs, index, origin)
+                                },
+                                onPlayAll = {
+                                    if (onlinePlaylistSongs.isNotEmpty()) {
+                                        val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
+                                        viewModel.playOnlineSongs(onlinePlaylistSongs, 0, origin)
+                                    }
+                                },
+                                onShufflePlay = {
+                                    if (onlinePlaylistSongs.isNotEmpty()) {
+                                        val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
+                                        viewModel.playOnlineSongs(onlinePlaylistSongs.shuffled(), 0, origin)
+                                    }
+                                },
+                                currentPlayingTitle = playbackState.currentSong?.title,
+                                currentPlayingArtist = playbackState.currentSong?.artist,
+                                isPlaying = playbackState.isPlaying,
+                                locateIndex = onlineSongsLocateIndex,
+                                locateTrigger = onlineSongsLocateTrigger
+                            )
+                        } else {
+                            com.orbit.music.ui.components.OnlinePlaylistSquareView(
+                                platform = com.orbit.music.data.online.model.OnlinePlatform.KUGOU,
+                                onPlaylistClick = { viewModel.selectOnlinePlaylist(it) }
+                            )
+                        }
+                    }
+
+                    LibraryTab.KUWO_SQUARE -> {
+                        // 9. 酷我音乐在线歌单广场
+                        if (openedOnlinePlaylist != null) {
+                            com.orbit.music.ui.components.OnlinePlaylistDetailView(
+                                playlist = openedOnlinePlaylist!!,
+                                songs = onlinePlaylistSongs,
+                                isLoading = isOnlineDetailLoading,
+                                errorMessage = onlineDetailError,
+                                onSongClick = { index, song ->
+                                    val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
+                                    viewModel.playOnlineSongs(onlinePlaylistSongs, index, origin)
+                                },
+                                onPlayAll = {
+                                    if (onlinePlaylistSongs.isNotEmpty()) {
+                                        val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
+                                        viewModel.playOnlineSongs(onlinePlaylistSongs, 0, origin)
+                                    }
+                                },
+                                onShufflePlay = {
+                                    if (onlinePlaylistSongs.isNotEmpty()) {
+                                        val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
+                                        viewModel.playOnlineSongs(onlinePlaylistSongs.shuffled(), 0, origin)
+                                    }
+                                },
+                                currentPlayingTitle = playbackState.currentSong?.title,
+                                currentPlayingArtist = playbackState.currentSong?.artist,
+                                isPlaying = playbackState.isPlaying,
+                                locateIndex = onlineSongsLocateIndex,
+                                locateTrigger = onlineSongsLocateTrigger
+                            )
+                        } else {
+                            com.orbit.music.ui.components.OnlinePlaylistSquareView(
+                                platform = com.orbit.music.data.online.model.OnlinePlatform.KUWO,
+                                onPlaylistClick = { viewModel.selectOnlinePlaylist(it) }
+                            )
+                        }
+                    }
+
+                    LibraryTab.MIGU_SQUARE -> {
+                        // 10. 咪咕音乐在线歌单广场
+                        if (openedOnlinePlaylist != null) {
+                            com.orbit.music.ui.components.OnlinePlaylistDetailView(
+                                playlist = openedOnlinePlaylist!!,
+                                songs = onlinePlaylistSongs,
+                                isLoading = isOnlineDetailLoading,
+                                errorMessage = onlineDetailError,
+                                onSongClick = { index, song ->
+                                    val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
+                                    viewModel.playOnlineSongs(onlinePlaylistSongs, index, origin)
+                                },
+                                onPlayAll = {
+                                    if (onlinePlaylistSongs.isNotEmpty()) {
+                                        val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
+                                        viewModel.playOnlineSongs(onlinePlaylistSongs, 0, origin)
+                                    }
+                                },
+                                onShufflePlay = {
+                                    if (onlinePlaylistSongs.isNotEmpty()) {
+                                        val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
+                                        viewModel.playOnlineSongs(onlinePlaylistSongs.shuffled(), 0, origin)
+                                    }
+                                },
+                                currentPlayingTitle = playbackState.currentSong?.title,
+                                currentPlayingArtist = playbackState.currentSong?.artist,
+                                isPlaying = playbackState.isPlaying,
+                                locateIndex = onlineSongsLocateIndex,
+                                locateTrigger = onlineSongsLocateTrigger
+                            )
+                        } else {
+                            com.orbit.music.ui.components.OnlinePlaylistSquareView(
+                                platform = com.orbit.music.data.online.model.OnlinePlatform.MIGU,
+                                onPlaylistClick = { viewModel.selectOnlinePlaylist(it) }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -4268,6 +4392,9 @@ private fun getTabTitle(tab: LibraryTab): String {
         LibraryTab.PLAYLISTS -> stringResource(R.string.tab_playlists)
         LibraryTab.NETEASE_SQUARE -> "网易云广场"
         LibraryTab.QQ_SQUARE -> "QQ音乐广场"
+        LibraryTab.KUGOU_SQUARE -> "酷狗音乐广场"
+        LibraryTab.KUWO_SQUARE -> "酷我音乐广场"
+        LibraryTab.MIGU_SQUARE -> "咪咕音乐广场"
     }
 }
 
@@ -4395,6 +4522,9 @@ private fun TabletSideNavRail(
                         LibraryTab.PLAYLISTS -> Icons.AutoMirrored.Filled.PlaylistPlay to playlistCount
                         LibraryTab.NETEASE_SQUARE -> Icons.Default.CloudQueue to -1
                         LibraryTab.QQ_SQUARE -> Icons.Default.MusicNote to -1
+                        LibraryTab.KUGOU_SQUARE -> Icons.Default.Headphones to -1
+                        LibraryTab.KUWO_SQUARE -> Icons.Default.Radio to -1
+                        LibraryTab.MIGU_SQUARE -> Icons.Default.GraphicEq to -1
                     }
 
                     if (isExpanded) {

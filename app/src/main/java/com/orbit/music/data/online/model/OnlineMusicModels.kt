@@ -5,7 +5,10 @@ package com.orbit.music.data.online.model
  */
 enum class OnlinePlatform(val id: String, val displayName: String) {
     NETEASE("netease", "网易云音乐"),
-    QQ("qq", "QQ 音乐")
+    QQ("qq", "QQ 音乐"),
+    KUGOU("kugou", "酷狗音乐"),
+    KUWO("kuwo", "酷我音乐"),
+    MIGU("migu", "咪咕音乐")
 }
 
 /**
