@@ -754,14 +754,26 @@ fun OnlinePlaylistDetailView(
     isPlaying: Boolean = false,
     locateIndex: Int = -1,
     locateTrigger: Long = 0L,
+    isSearching: Boolean = false,
+    searchQuery: String = "",
+    onSearchQueryChange: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var isDescExpanded by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
+    val filteredSongs = remember(songs, searchQuery) {
+        val q = searchQuery.trim()
+        if (q.isBlank()) songs else songs.filter {
+            it.title.contains(q, ignoreCase = true) ||
+            it.artist.contains(q, ignoreCase = true) ||
+            it.album.contains(q, ignoreCase = true)
+        }
+    }
+
     // 监听外部定位请求，平滑滚动至当前正在播放的歌曲
     LaunchedEffect(locateTrigger) {
-        if (locateTrigger > 0L && locateIndex >= 0 && locateIndex < songs.size) {
+        if (locateTrigger > 0L && locateIndex >= 0 && locateIndex < filteredSongs.size) {
             listState.animateScrollToItem(locateIndex)
         }
     }
@@ -914,7 +926,63 @@ fun OnlinePlaylistDetailView(
             }
         }
 
-        // 2. 播放控制条 (播放全部 / 随机播放 / 收藏歌单)
+        // 2. 歌单内即时搜索输入框
+        AnimatedVisibility(
+            visible = isSearching,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                placeholder = {
+                    Text(
+                        text = "搜索歌单内歌曲",
+                        fontSize = 13.sp,
+                        color = OrbitTheme.colors.textSecondary
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = OrbitTheme.colors.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(
+                            onClick = { onSearchQueryChange("") },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Clear",
+                                tint = OrbitTheme.colors.textSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = OrbitTheme.colors.surfaceCard,
+                    unfocusedContainerColor = OrbitTheme.colors.surfaceCard,
+                    focusedBorderColor = OrbitTheme.colors.primary.copy(alpha = 0.7f),
+                    unfocusedBorderColor = Color.Transparent,
+                    cursorColor = OrbitTheme.colors.primary,
+                    focusedTextColor = OrbitTheme.colors.textPrimary,
+                    unfocusedTextColor = OrbitTheme.colors.textPrimary
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp)
+            )
+        }
+
+        // 3. 播放控制条 (播放全部 / 随机播放 / 收藏歌单)
         val context = androidx.compose.ui.platform.LocalContext.current
         val favoriteManager = remember { com.orbit.music.data.online.repository.OnlinePlaylistFavoriteManager.getInstance(context) }
         val allFavorites by favoriteManager.favorites.collectAsState()
@@ -927,69 +995,69 @@ fun OnlinePlaylistDetailView(
                 .fillMaxWidth()
                 .padding(vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (songs.isNotEmpty()) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = OrbitTheme.colors.primary.copy(alpha = 0.15f),
-                        border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.4f)),
-                        modifier = Modifier.clickable { onPlayAll() }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "播放全部",
-                                tint = OrbitTheme.colors.primary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "播放全部 (${songs.size})",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = OrbitTheme.colors.primary
-                            )
-                        }
+            if (filteredSongs.isNotEmpty()) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = OrbitTheme.colors.primary.copy(alpha = 0.15f),
+                    border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.4f)),
+                    modifier = Modifier.clickable {
+                        if (filteredSongs.isNotEmpty()) onSongClick(0, filteredSongs.first())
                     }
-
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        color = OrbitTheme.colors.surfaceCard,
-                        border = BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder),
-                        modifier = Modifier.clickable { onShufflePlay() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Shuffle,
-                                contentDescription = "随机播放",
-                                tint = OrbitTheme.colors.textSecondary,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "随机",
-                                fontSize = 12.sp,
-                                color = OrbitTheme.colors.textSecondary
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "播放全部",
+                            tint = OrbitTheme.colors.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "播放全部 (${filteredSongs.size})",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = OrbitTheme.colors.primary
+                        )
                     }
                 }
-            } else {
-                Spacer(modifier = Modifier.width(1.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = OrbitTheme.colors.surfaceCard,
+                    border = BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder),
+                    modifier = Modifier.clickable {
+                        if (filteredSongs.isNotEmpty()) {
+                            val randomIdx = (0 until filteredSongs.size).random()
+                            onSongClick(randomIdx, filteredSongs[randomIdx])
+                        }
+                    }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shuffle,
+                            contentDescription = "随机播放",
+                            tint = OrbitTheme.colors.textSecondary,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "随机",
+                            fontSize = 12.sp,
+                            color = OrbitTheme.colors.textSecondary
+                        )
+                    }
+                }
             }
 
-            // 收藏/取消收藏网络歌单按钮
+            // 收藏/取消收藏网络歌单按钮 (紧邻随机播放按钮)
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = if (isFav) Color(0xFFFF3366).copy(alpha = 0.15f) else OrbitTheme.colors.surfaceCard,
@@ -1022,7 +1090,7 @@ fun OnlinePlaylistDetailView(
             }
         }
 
-        // 3. 加载与错误提示
+        // 4. 加载与错误提示
         if (isLoading) {
             Box(
                 modifier = Modifier
@@ -1052,40 +1120,63 @@ fun OnlinePlaylistDetailView(
             }
         }
 
-        // 4. 歌曲列表
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .weight(1f),
-            contentPadding = PaddingValues(bottom = 98.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            itemsIndexed(songs, key = { index, item -> "${item.id}_$index" }) { index, song ->
-                val isCurrent = currentPlayingTitle == song.title &&
-                        (currentPlayingArtist == null || currentPlayingArtist == song.artist)
+        // 5. 歌曲列表
+        if (filteredSongs.isEmpty() && !isLoading && errorMessage == null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Default.SearchOff,
+                        contentDescription = null,
+                        tint = OrbitTheme.colors.textSecondary.copy(alpha = 0.4f),
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = if (searchQuery.isNotBlank()) "未找到与 \"$searchQuery\" 相关的歌曲" else "歌单中暂无歌曲",
+                        fontSize = 13.sp,
+                        color = OrbitTheme.colors.textSecondary
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f),
+                contentPadding = PaddingValues(bottom = 98.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                itemsIndexed(filteredSongs, key = { index, item -> "${item.id}_$index" }) { index, song ->
+                    val isCurrent = currentPlayingTitle == song.title &&
+                            (currentPlayingArtist == null || currentPlayingArtist == song.artist)
 
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = if (isCurrent) OrbitTheme.colors.primary.copy(alpha = 0.1f) else Color.Transparent,
-                    border = if (isCurrent) BorderStroke(0.5.dp, OrbitTheme.colors.primary.copy(alpha = 0.3f)) else null,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSongClick(index, song) }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (isCurrent) OrbitTheme.colors.primary.copy(alpha = 0.1f) else Color.Transparent,
+                        border = if (isCurrent) BorderStroke(0.5.dp, OrbitTheme.colors.primary.copy(alpha = 0.3f)) else null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSongClick(index, song) }
                     ) {
-                        Text(
-                            text = (index + 1).toString().padStart(2, '0'),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isCurrent) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary.copy(alpha = 0.6f),
-                            modifier = Modifier.width(28.dp)
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = (index + 1).toString().padStart(2, '0'),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isCurrent) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary.copy(alpha = 0.6f),
+                                modifier = Modifier.width(28.dp)
+                            )
 
-                        if (!song.coverUrl.isNullOrEmpty()) {
+                            if (!song.coverUrl.isNullOrEmpty()) {
                             AsyncImage(
                                 model = song.coverUrl,
                                 contentDescription = null,
@@ -1153,6 +1244,7 @@ fun OnlinePlaylistDetailView(
             }
         }
     }
+}
 }
 
 /**

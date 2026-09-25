@@ -591,7 +591,7 @@ private fun OnlineArtistRowItem(
 }
 
 /**
- * 在线歌手详情视图（包含歌手基本信息写真、单曲 Tab 与专辑 Tab）
+ * 在线歌手详情视图（包含歌手基本信息写真、单曲 Tab 与专辑 Tab，支持即时搜索与播放控制）
  */
 @Composable
 fun OnlineArtistDetailView(
@@ -602,6 +602,9 @@ fun OnlineArtistDetailView(
     currentPlayingTitle: String? = null,
     currentPlayingArtist: String? = null,
     isPlaying: Boolean = false,
+    isSearching: Boolean = false,
+    searchQuery: String = "",
+    onSearchQueryChange: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val repository = remember { OnlineMusicRepository.getInstance() }
@@ -614,6 +617,21 @@ fun OnlineArtistDetailView(
     var isLoadingAlbums by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var currentArtistInfo by remember { mutableStateOf(artist) }
+
+    val filteredSongs = remember(songs, searchQuery) {
+        val q = searchQuery.trim()
+        if (q.isBlank()) songs else songs.filter {
+            it.title.contains(q, ignoreCase = true) ||
+            it.album.contains(q, ignoreCase = true)
+        }
+    }
+
+    val filteredAlbums = remember(albums, searchQuery) {
+        val q = searchQuery.trim()
+        if (q.isBlank()) albums else albums.filter {
+            it.title.contains(q, ignoreCase = true)
+        }
+    }
 
     // 加载歌手单曲与专辑
     LaunchedEffect(artist.id) {
@@ -721,11 +739,11 @@ fun OnlineArtistDetailView(
                 ) {
                     Button(
                         onClick = {
-                            if (songs.isNotEmpty()) {
-                                onSongClick(0, songs.first(), songs)
+                            if (filteredSongs.isNotEmpty()) {
+                                onSongClick(0, filteredSongs.first(), filteredSongs)
                             }
                         },
-                        enabled = songs.isNotEmpty(),
+                        enabled = filteredSongs.isNotEmpty(),
                         shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
@@ -750,12 +768,12 @@ fun OnlineArtistDetailView(
 
                     OutlinedButton(
                         onClick = {
-                            if (songs.isNotEmpty()) {
-                                val randomIdx = (0 until songs.size).random()
-                                onSongClick(randomIdx, songs[randomIdx], songs)
+                            if (filteredSongs.isNotEmpty()) {
+                                val randomIdx = (0 until filteredSongs.size).random()
+                                onSongClick(randomIdx, filteredSongs[randomIdx], filteredSongs)
                             }
                         },
-                        enabled = songs.isNotEmpty(),
+                        enabled = filteredSongs.isNotEmpty(),
                         shape = RoundedCornerShape(10.dp),
                         border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f)),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = OrbitTheme.colors.primary),
@@ -789,7 +807,7 @@ fun OnlineArtistDetailView(
                 .padding(vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            listOf("歌曲 (${songs.size})", "专辑 (${albums.size})").forEachIndexed { index, title ->
+            listOf("歌曲 (${filteredSongs.size})", "专辑 (${filteredAlbums.size})").forEachIndexed { index, title ->
                 val isSelected = selectedTab == index
                 Box(
                     modifier = Modifier
@@ -813,9 +831,65 @@ fun OnlineArtistDetailView(
             }
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        // 3. 歌手详情内即时搜索输入框
+        AnimatedVisibility(
+            visible = isSearching,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                placeholder = {
+                    Text(
+                        text = if (selectedTab == 0) "搜索歌手单曲" else "搜索歌手专辑",
+                        fontSize = 13.sp,
+                        color = OrbitTheme.colors.textSecondary
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = OrbitTheme.colors.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(
+                            onClick = { onSearchQueryChange("") },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Clear",
+                                tint = OrbitTheme.colors.textSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = OrbitTheme.colors.surfaceCard,
+                    unfocusedContainerColor = OrbitTheme.colors.surfaceCard,
+                    focusedBorderColor = OrbitTheme.colors.primary.copy(alpha = 0.7f),
+                    unfocusedBorderColor = Color.Transparent,
+                    cursorColor = OrbitTheme.colors.primary,
+                    focusedTextColor = OrbitTheme.colors.textPrimary,
+                    unfocusedTextColor = OrbitTheme.colors.textPrimary
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            )
+        }
 
-        // 3. 内容区
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // 4. 内容区
         if (isLoadingSongs && songs.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp, color = OrbitTheme.colors.primary)
@@ -825,9 +899,13 @@ fun OnlineArtistDetailView(
 
         if (selectedTab == 0) {
             // 歌曲列表
-            if (songs.isEmpty()) {
+            if (filteredSongs.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("暂未找到该歌手的歌曲", fontSize = 13.sp, color = OrbitTheme.colors.textSecondary)
+                    Text(
+                        text = if (searchQuery.isNotBlank()) "未找到与 \"$searchQuery\" 相关的歌曲" else "暂未找到该歌手的歌曲",
+                        fontSize = 13.sp,
+                        color = OrbitTheme.colors.textSecondary
+                    )
                 }
             } else {
                 LazyColumn(
@@ -835,7 +913,7 @@ fun OnlineArtistDetailView(
                     contentPadding = PaddingValues(bottom = 98.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    itemsIndexed(songs, key = { index, song -> "${song.id}_$index" }) { index, song ->
+                    itemsIndexed(filteredSongs, key = { index, song -> "${song.id}_$index" }) { index, song ->
                         val isCurrent = currentPlayingTitle == song.title &&
                                 (currentPlayingArtist.isNullOrBlank() || song.artist == currentPlayingArtist)
                         OnlineSongListItem(
@@ -843,16 +921,20 @@ fun OnlineArtistDetailView(
                             song = song,
                             isCurrentPlaying = isCurrent,
                             isPlaying = isPlaying && isCurrent,
-                            onClick = { onSongClick(index, song, songs) }
+                            onClick = { onSongClick(index, song, filteredSongs) }
                         )
                     }
                 }
             }
         } else {
             // 专辑列表网格
-            if (albums.isEmpty()) {
+            if (filteredAlbums.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("暂未找到该歌手的专辑", fontSize = 13.sp, color = OrbitTheme.colors.textSecondary)
+                    Text(
+                        text = if (searchQuery.isNotBlank()) "未找到与 \"$searchQuery\" 相关的专辑" else "暂未找到该歌手的专辑",
+                        fontSize = 13.sp,
+                        color = OrbitTheme.colors.textSecondary
+                    )
                 }
             } else {
                 LazyVerticalGrid(
@@ -862,7 +944,7 @@ fun OnlineArtistDetailView(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(albums, key = { it.id }) { album ->
+                    items(filteredAlbums, key = { it.id }) { album ->
                         OnlineAlbumCardItem(album = album, onClick = { onAlbumClick(album) })
                     }
                 }
@@ -932,6 +1014,7 @@ private fun OnlineAlbumCardItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+
                 if (!album.publishTime.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
@@ -958,6 +1041,9 @@ fun OnlineAlbumDetailView(
     currentPlayingTitle: String? = null,
     currentPlayingArtist: String? = null,
     isPlaying: Boolean = false,
+    isSearching: Boolean = false,
+    searchQuery: String = "",
+    onSearchQueryChange: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val repository = remember { OnlineMusicRepository.getInstance() }
@@ -967,6 +1053,14 @@ fun OnlineAlbumDetailView(
     var currentAlbum by remember { mutableStateOf(album) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val filteredSongs = remember(songs, searchQuery) {
+        val q = searchQuery.trim()
+        if (q.isBlank()) songs else songs.filter {
+            it.title.contains(q, ignoreCase = true) ||
+            it.artist.contains(q, ignoreCase = true)
+        }
+    }
 
     LaunchedEffect(album.id) {
         isLoading = true
@@ -1071,11 +1165,11 @@ fun OnlineAlbumDetailView(
                 ) {
                     Button(
                         onClick = {
-                            if (songs.isNotEmpty()) {
-                                onSongClick(0, songs.first(), songs)
+                            if (filteredSongs.isNotEmpty()) {
+                                onSongClick(0, filteredSongs.first(), filteredSongs)
                             }
                         },
-                        enabled = songs.isNotEmpty(),
+                        enabled = filteredSongs.isNotEmpty(),
                         shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
@@ -1100,12 +1194,12 @@ fun OnlineAlbumDetailView(
 
                     OutlinedButton(
                         onClick = {
-                            if (songs.isNotEmpty()) {
-                                val randomIdx = (0 until songs.size).random()
-                                onSongClick(randomIdx, songs[randomIdx], songs)
+                            if (filteredSongs.isNotEmpty()) {
+                                val randomIdx = (0 until filteredSongs.size).random()
+                                onSongClick(randomIdx, filteredSongs[randomIdx], filteredSongs)
                             }
                         },
-                        enabled = songs.isNotEmpty(),
+                        enabled = filteredSongs.isNotEmpty(),
                         shape = RoundedCornerShape(10.dp),
                         border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f)),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = OrbitTheme.colors.primary),
@@ -1132,25 +1226,80 @@ fun OnlineAlbumDetailView(
             }
         }
 
-        // 2. 曲目列表
-        if (isLoading && songs.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp, color = OrbitTheme.colors.primary)
-            }
-            return
+        // 2. 专辑内即时搜索输入框
+        AnimatedVisibility(
+            visible = isSearching,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                placeholder = {
+                    Text(
+                        text = "搜索专辑曲目",
+                        fontSize = 13.sp,
+                        color = OrbitTheme.colors.textSecondary
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = OrbitTheme.colors.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(
+                            onClick = { onSearchQueryChange("") },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Clear",
+                                tint = OrbitTheme.colors.textSecondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = OrbitTheme.colors.surfaceCard,
+                    unfocusedContainerColor = OrbitTheme.colors.surfaceCard,
+                    focusedBorderColor = OrbitTheme.colors.primary.copy(alpha = 0.7f),
+                    unfocusedBorderColor = Color.Transparent,
+                    cursorColor = OrbitTheme.colors.primary,
+                    focusedTextColor = OrbitTheme.colors.textPrimary,
+                    unfocusedTextColor = OrbitTheme.colors.textPrimary
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp)
+            )
         }
 
-        if (songs.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("暂未获取到专辑曲目", fontSize = 13.sp, color = OrbitTheme.colors.textSecondary)
+        // 3. 歌曲列表
+        if (filteredSongs.isEmpty() && !isLoading && errorMessage == null) {
+            Box(modifier = Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
+                Text(
+                    text = if (searchQuery.isNotBlank()) "未找到与 \"$searchQuery\" 相关的歌曲" else "专辑中暂无曲目",
+                    fontSize = 13.sp,
+                    color = OrbitTheme.colors.textSecondary
+                )
             }
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .weight(1f),
                 contentPadding = PaddingValues(bottom = 98.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                itemsIndexed(songs, key = { index, song -> "${song.id}_$index" }) { index, song ->
+                itemsIndexed(filteredSongs, key = { index, song -> "${song.id}_$index" }) { index, song ->
                     val isCurrent = currentPlayingTitle == song.title &&
                             (currentPlayingArtist.isNullOrBlank() || song.artist == currentPlayingArtist)
                     OnlineSongListItem(
@@ -1158,7 +1307,7 @@ fun OnlineAlbumDetailView(
                         song = song,
                         isCurrentPlaying = isCurrent,
                         isPlaying = isPlaying && isCurrent,
-                        onClick = { onSongClick(index, song, songs) }
+                        onClick = { onSongClick(index, song, filteredSongs) }
                     )
                 }
             }

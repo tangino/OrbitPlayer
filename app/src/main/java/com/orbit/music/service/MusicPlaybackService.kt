@@ -15,6 +15,9 @@ import android.util.Log
 import android.widget.RemoteViews
 import androidx.annotation.OptIn
 import androidx.core.app.NotificationCompat
+import android.view.KeyEvent
+import androidx.media3.common.ForwardingPlayer
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -35,6 +38,7 @@ import kotlinx.coroutines.withContext
  * 1. 采用自定义 RemoteViews 左右布局（左侧高保真大缩略图，右侧歌曲信息与控制条）
  * 2. 播放控制按键（上一曲、播放/暂停圆形大按键、下一曲）强制统一为程序专属荧光青高亮色 (#00E5FF)
  * 3. 彻底避免 Android 系统厂商 ROM 对 Action 进行灰色/黑色遮罩篡改
+ * 4. 通过 ForwardingPlayer 与 MediaSession.Callback 全面拦截车机/蓝牙 AVRCP / MediaButton 切歌指令
  */
 class MusicPlaybackService : MediaSessionService() {
 
@@ -61,10 +65,130 @@ class MusicPlaybackService : MediaSessionService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        // 构造 Media3 MediaSession
-        mediaSession = MediaSession.Builder(this, playerManager.exoPlayer)
+        // 构造 ForwardingPlayer 确保车机/蓝牙查询可用操作时始终支持上一曲/下一曲，并将切歌指令重定向至 PlayerManager
+        val forwardingPlayer = object : ForwardingPlayer(playerManager.exoPlayer) {
+            override fun getAvailableCommands(): Player.Commands {
+                return super.getAvailableCommands().buildUpon()
+                    .add(Player.COMMAND_SEEK_TO_NEXT)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+                    .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                    .add(Player.COMMAND_PLAY_PAUSE)
+                    .add(Player.COMMAND_STOP)
+                    .build()
+            }
+
+            override fun isCommandAvailable(command: Int): Boolean {
+                return when (command) {
+                    Player.COMMAND_SEEK_TO_NEXT,
+                    Player.COMMAND_SEEK_TO_PREVIOUS,
+                    Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+                    Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> {
+                        playerManager.playbackState.value.currentPlaylist.isNotEmpty()
+                    }
+                    else -> super.isCommandAvailable(command)
+                }
+            }
+
+            override fun hasNextMediaItem(): Boolean {
+                return playerManager.playbackState.value.currentPlaylist.isNotEmpty()
+            }
+
+            override fun hasPreviousMediaItem(): Boolean {
+                return playerManager.playbackState.value.currentPlaylist.isNotEmpty()
+            }
+
+            override fun seekToNext() {
+                Log.d(TAG, "ForwardingPlayer: seekToNext triggered from external controller/bluetooth")
+                playerManager.playNext()
+            }
+
+            override fun seekToNextMediaItem() {
+                Log.d(TAG, "ForwardingPlayer: seekToNextMediaItem triggered from external controller/bluetooth")
+                playerManager.playNext()
+            }
+
+            override fun seekToPrevious() {
+                Log.d(TAG, "ForwardingPlayer: seekToPrevious triggered from external controller/bluetooth")
+                playerManager.playPrevious()
+            }
+
+            override fun seekToPreviousMediaItem() {
+                Log.d(TAG, "ForwardingPlayer: seekToPreviousMediaItem triggered from external controller/bluetooth")
+                playerManager.playPrevious()
+            }
+        }
+
+        // 构造 Media3 MediaSession 并配置完备的回调以处理车载/蓝牙各种控制协议
+        val sessionCallback = object : MediaSession.Callback {
+            override fun onConnect(
+                session: MediaSession,
+                controller: MediaSession.ControllerInfo
+            ): MediaSession.ConnectionResult {
+                val baseResult = super.onConnect(session, controller)
+                val availablePlayerCommands = baseResult.availablePlayerCommands.buildUpon()
+                    .add(Player.COMMAND_SEEK_TO_NEXT)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+                    .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                    .add(Player.COMMAND_PLAY_PAUSE)
+                    .add(Player.COMMAND_STOP)
+                    .build()
+                return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                    .setAvailablePlayerCommands(availablePlayerCommands)
+                    .build()
+            }
+
+            override fun onMediaButtonEvent(
+                session: MediaSession,
+                controllerInfo: MediaSession.ControllerInfo,
+                intent: Intent
+            ): Boolean {
+                val keyEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+                }
+                if (keyEvent != null && keyEvent.action == KeyEvent.ACTION_DOWN) {
+                    Log.d(TAG, "MediaSession onMediaButtonEvent keyCode: ${keyEvent.keyCode}")
+                    when (keyEvent.keyCode) {
+                        KeyEvent.KEYCODE_MEDIA_NEXT,
+                        KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
+                        KeyEvent.KEYCODE_MEDIA_STEP_FORWARD,
+                        KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD -> {
+                            playerManager.playNext()
+                            return true
+                        }
+                        KeyEvent.KEYCODE_MEDIA_PREVIOUS,
+                        KeyEvent.KEYCODE_MEDIA_REWIND,
+                        KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD,
+                        KeyEvent.KEYCODE_MEDIA_SKIP_BACKWARD -> {
+                            playerManager.playPrevious()
+                            return true
+                        }
+                        KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                            playerManager.play()
+                            return true
+                        }
+                        KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                            playerManager.pause()
+                            return true
+                        }
+                        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                        KeyEvent.KEYCODE_HEADSETHOOK -> {
+                            playerManager.togglePlayPause()
+                            return true
+                        }
+                    }
+                }
+                return super.onMediaButtonEvent(session, controllerInfo, intent)
+            }
+        }
+
+        mediaSession = MediaSession.Builder(this, forwardingPlayer)
             .setSessionActivity(openAppIntent)
-            .setCallback(object : MediaSession.Callback {})
+            .setCallback(sessionCallback)
             .build()
 
         // 初始拉起前台
