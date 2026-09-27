@@ -16,6 +16,9 @@ import com.orbit.music.data.model.PlaybackOrigin
 import com.orbit.music.data.model.Song
 import com.orbit.music.data.model.SongAttitude
 import com.orbit.music.data.repository.MusicRepository
+import com.orbit.music.data.repository.PlayedPlaylistManager
+import com.orbit.music.data.repository.PlayedPlaylistEntry
+import com.orbit.music.data.repository.PlaylistCategory
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -111,10 +114,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val repository = MusicRepository.getInstance(application)
     private val playerManager = MusicPlayerManager.getInstance(application)
+    private val playedPlaylistManager = PlayedPlaylistManager.getInstance(application)
     private val prefs: SharedPreferences = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val _libraryUiState = MutableStateFlow(LibraryUiState())
     val libraryUiState: StateFlow<LibraryUiState> = _libraryUiState.asStateFlow()
+
+    private val _playbackOrigin = MutableStateFlow<PlaybackOrigin>(PlaybackOrigin.AllSongs)
+    val playbackOrigin: StateFlow<PlaybackOrigin> = _playbackOrigin.asStateFlow()
+
+    val currentPlayedPlaylist: StateFlow<PlayedPlaylistEntry?> = playedPlaylistManager.currentPlaylist
+    val previousPlayedPlaylist: StateFlow<PlayedPlaylistEntry?> = playedPlaylistManager.previousPlaylist
 
     val playbackState: StateFlow<PlaybackState> = playerManager.playbackState
     val visualizerFlow = playerManager.visualizerManager.visualizerFlow
@@ -223,6 +233,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 if (songs.isNotEmpty()) {
                     playerManager.attachFullQueueIfRestored(songs)
                 }
+            }
+        }
+
+        viewModelScope.launch {
+            combine(playerManager.playbackState, _playbackOrigin) { state, origin ->
+                Pair(state.currentSong, origin)
+            }.collect { (song, origin) ->
+                playedPlaylistManager.updateCurrentSong(song, origin)
             }
         }
     }
@@ -476,17 +494,15 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    private val _playbackOrigin = MutableStateFlow<PlaybackOrigin>(PlaybackOrigin.AllSongs)
-    val playbackOrigin: StateFlow<PlaybackOrigin> = _playbackOrigin.asStateFlow()
-
     fun setPlaybackOrigin(origin: PlaybackOrigin) {
         _playbackOrigin.value = origin
     }
 
     fun playSong(songs: List<Song>, index: Int, origin: PlaybackOrigin? = null) {
-        if (origin != null) {
-            _playbackOrigin.value = origin
-        }
+        val actualOrigin = origin ?: PlaybackOrigin.AllSongs
+        _playbackOrigin.value = actualOrigin
+        val cur = if (index in songs.indices) songs[index] else songs.firstOrNull()
+        playedPlaylistManager.recordPlayedByOrigin(actualOrigin, cur, songs)
         playerManager.playSongList(songs, index)
     }
 
@@ -495,10 +511,110 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         startIndex: Int = 0,
         origin: PlaybackOrigin? = null
     ) {
-        if (origin != null) {
-            _playbackOrigin.value = origin
+        val actualOrigin = origin ?: PlaybackOrigin.AllSongs
+        _playbackOrigin.value = actualOrigin
+        val curOnline = if (startIndex in songs.indices) songs[startIndex] else songs.firstOrNull()
+        val curSong = curOnline?.let {
+            Song(
+                id = -1L,
+                title = it.title,
+                artist = it.artist,
+                album = it.album,
+                albumId = 0L,
+                durationMs = it.durationMs,
+                path = "online://${it.platform.name}/${it.id}",
+                size = 0L,
+                albumArtUri = it.coverUrl,
+                folderPath = "",
+                year = 0,
+                mimeType = "audio/mpeg"
+            )
         }
+        val convertedSongs = songs.map {
+            Song(
+                id = -1L,
+                title = it.title,
+                artist = it.artist,
+                album = it.album,
+                albumId = 0L,
+                durationMs = it.durationMs,
+                path = "online://${it.platform.name}/${it.id}",
+                size = 0L,
+                albumArtUri = it.coverUrl,
+                folderPath = "",
+                year = 0,
+                mimeType = "audio/mpeg"
+            )
+        }
+        playedPlaylistManager.recordPlayedByOrigin(actualOrigin, curSong, convertedSongs)
         playerManager.playOnlineSongList(songs, startIndex)
+    }
+
+    /**
+     * 一键播放指定的历史/当前歌单条目
+     */
+    fun playPlayedPlaylist(entry: PlayedPlaylistEntry, onOnlineError: ((String) -> Unit)? = null) {
+        when (entry.category) {
+            PlaylistCategory.LOCAL_FAVORITE -> {
+                val songs = favoriteSongs.value
+                if (songs.isNotEmpty()) {
+                    playSong(
+                        songs = songs,
+                        index = 0,
+                        origin = PlaybackOrigin.PlaylistOrigin(
+                            Playlist(id = -999L, name = entry.title, songCount = songs.size, createdAt = 0L)
+                        )
+                    )
+                }
+            }
+            PlaylistCategory.LOCAL_DISLIKED -> {
+                val songs = dislikedSongs.value
+                if (songs.isNotEmpty()) {
+                    playSong(
+                        songs = songs,
+                        index = 0,
+                        origin = PlaybackOrigin.PlaylistOrigin(
+                            Playlist(id = -998L, name = entry.title, songCount = songs.size, createdAt = 0L)
+                        )
+                    )
+                }
+            }
+            PlaylistCategory.LOCAL_CUSTOM -> {
+                val playlistId = entry.id.toLongOrNull() ?: return
+                viewModelScope.launch {
+                    val songs = getSongsInPlaylist(playlistId)
+                    if (songs.isNotEmpty()) {
+                        playSong(
+                            songs = songs,
+                            index = 0,
+                            origin = PlaybackOrigin.PlaylistOrigin(
+                                Playlist(id = playlistId, name = entry.title, songCount = songs.size, createdAt = 0L)
+                            )
+                        )
+                    }
+                }
+            }
+            PlaylistCategory.ONLINE -> {
+                val platform = entry.platform ?: return
+                viewModelScope.launch {
+                    val repo = com.orbit.music.data.online.repository.OnlineMusicRepository.getInstance()
+                    val res = repo.getPlaylistDetail(entry.id, platform)
+                    res.onSuccess { (detail, songs) ->
+                        if (songs.isNotEmpty()) {
+                            playOnlineSongs(
+                                songs = songs,
+                                startIndex = 0,
+                                origin = PlaybackOrigin.OnlinePlaylistOrigin(detail)
+                            )
+                        } else {
+                            onOnlineError?.invoke("歌单内暂无曲目")
+                        }
+                    }.onFailure { err ->
+                        onOnlineError?.invoke(err.localizedMessage ?: "获取在线歌单失败")
+                    }
+                }
+            }
+        }
     }
 
     fun togglePlayPause() = playerManager.togglePlayPause()

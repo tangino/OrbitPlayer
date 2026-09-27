@@ -618,6 +618,18 @@ fun OnlineArtistDetailView(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var currentArtistInfo by remember { mutableStateOf(artist) }
 
+    // 分页状态
+    var songPage by remember { mutableStateOf(1) }
+    var hasMoreSongs by remember { mutableStateOf(true) }
+    var isPagingLoadingSongs by remember { mutableStateOf(false) }
+
+    var albumPage by remember { mutableStateOf(1) }
+    var hasMoreAlbums by remember { mutableStateOf(true) }
+    var isPagingLoadingAlbums by remember { mutableStateOf(false) }
+
+    val songListState = rememberLazyListState()
+    val albumGridState = rememberLazyGridState()
+
     val filteredSongs = remember(songs, searchQuery) {
         val q = searchQuery.trim()
         if (q.isBlank()) songs else songs.filter {
@@ -633,11 +645,15 @@ fun OnlineArtistDetailView(
         }
     }
 
-    // 加载歌手单曲与专辑
+    // 加载歌手单曲与专辑初始数据
     LaunchedEffect(artist.id) {
         isLoadingSongs = true
         isLoadingAlbums = true
         errorMessage = null
+        songPage = 1
+        albumPage = 1
+        hasMoreSongs = true
+        hasMoreAlbums = true
 
         scope.launch {
             val detailRes = repository.getArtistDetail(artist.id, OnlinePlatform.QQ)
@@ -645,6 +661,8 @@ fun OnlineArtistDetailView(
                 currentArtistInfo = detail.artist
                 songs = detail.hotSongs
                 albums = detail.albums
+                hasMoreSongs = detail.hotSongs.isNotEmpty()
+                hasMoreAlbums = detail.albums.isNotEmpty()
                 isLoadingSongs = false
                 isLoadingAlbums = false
             }.onFailure { err ->
@@ -652,6 +670,90 @@ fun OnlineArtistDetailView(
                 isLoadingSongs = false
                 isLoadingAlbums = false
             }
+        }
+    }
+
+    // 分页加载更多歌曲
+    fun loadMoreSongs() {
+        if (isLoadingSongs || isPagingLoadingSongs || !hasMoreSongs || searchQuery.isNotBlank()) return
+        val nextPage = songPage + 1
+        isPagingLoadingSongs = true
+
+        scope.launch {
+            val res = repository.getArtistSongs(
+                artistId = artist.id,
+                page = nextPage,
+                pageSize = 30,
+                platform = OnlinePlatform.QQ
+            )
+            res.onSuccess { list ->
+                val newItems = list.filter { n -> songs.none { it.id == n.id } }
+                if (newItems.isEmpty()) {
+                    hasMoreSongs = false
+                } else {
+                    songs = songs + newItems
+                    songPage = nextPage
+                    hasMoreSongs = list.size >= 15
+                }
+                isPagingLoadingSongs = false
+            }.onFailure {
+                isPagingLoadingSongs = false
+            }
+        }
+    }
+
+    // 分页加载更多专辑
+    fun loadMoreAlbums() {
+        if (isLoadingAlbums || isPagingLoadingAlbums || !hasMoreAlbums || searchQuery.isNotBlank()) return
+        val nextPage = albumPage + 1
+        isPagingLoadingAlbums = true
+
+        scope.launch {
+            val res = repository.getArtistAlbums(
+                artistId = artist.id,
+                page = nextPage,
+                pageSize = 30,
+                platform = OnlinePlatform.QQ
+            )
+            res.onSuccess { list ->
+                val newItems = list.filter { n -> albums.none { it.id == n.id } }
+                if (newItems.isEmpty()) {
+                    hasMoreAlbums = false
+                } else {
+                    albums = albums + newItems
+                    albumPage = nextPage
+                    hasMoreAlbums = list.size >= 10
+                }
+                isPagingLoadingAlbums = false
+            }.onFailure {
+                isPagingLoadingAlbums = false
+            }
+        }
+    }
+
+    // 滚动到底部自动加载更多单曲
+    val shouldLoadMoreSongs by remember {
+        derivedStateOf {
+            val lastVisibleItem = songListState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+            lastVisibleItem.index >= songListState.layoutInfo.totalItemsCount - 3
+        }
+    }
+    LaunchedEffect(shouldLoadMoreSongs) {
+        if (shouldLoadMoreSongs && !isPagingLoadingSongs && hasMoreSongs && searchQuery.isBlank() && !isLoadingSongs) {
+            loadMoreSongs()
+        }
+    }
+
+    // 滚动到底部自动加载更多专辑
+    val shouldLoadMoreAlbums by remember {
+        derivedStateOf {
+            val lastVisibleItem = albumGridState.layoutInfo.visibleItemsInfo.lastOrNull() ?: return@derivedStateOf false
+            lastVisibleItem.index >= albumGridState.layoutInfo.totalItemsCount - 3
+        }
+    }
+    LaunchedEffect(shouldLoadMoreAlbums) {
+        if (shouldLoadMoreAlbums && !isPagingLoadingAlbums && hasMoreAlbums && searchQuery.isBlank() && !isLoadingAlbums) {
+            loadMoreAlbums()
         }
     }
 
@@ -722,8 +824,10 @@ fun OnlineArtistDetailView(
                             fontWeight = FontWeight.Medium
                         )
 
+                        val totalSongsCount = if (currentArtistInfo.songCount > 0) currentArtistInfo.songCount else songs.size
+                        val totalAlbumsCount = if (currentArtistInfo.albumCount > 0) currentArtistInfo.albumCount else albums.size
                         Text(
-                            text = "收录 ${songs.size} 首歌曲 · ${albums.size} 张专辑",
+                            text = "收录 $totalSongsCount 首歌曲 · $totalAlbumsCount 张专辑",
                             fontSize = 11.5.sp,
                             color = OrbitTheme.colors.textSecondary
                         )
@@ -909,6 +1013,7 @@ fun OnlineArtistDetailView(
                 }
             } else {
                 LazyColumn(
+                    state = songListState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 98.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -923,6 +1028,45 @@ fun OnlineArtistDetailView(
                             isPlaying = isPlaying && isCurrent,
                             onClick = { onSongClick(index, song, filteredSongs) }
                         )
+                    }
+
+                    if (searchQuery.isBlank()) {
+                        item(key = "song_load_more_footer") {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 14.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isPagingLoadingSongs) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                            color = OrbitTheme.colors.primary
+                                        )
+                                        Text(
+                                            text = "正在加载更多歌曲...",
+                                            fontSize = 12.sp,
+                                            color = OrbitTheme.colors.textSecondary
+                                        )
+                                    }
+                                } else if (!hasMoreSongs && filteredSongs.isNotEmpty()) {
+                                    Text(
+                                        text = "已加载全部歌曲 (${filteredSongs.size})",
+                                        fontSize = 12.sp,
+                                        color = OrbitTheme.colors.textSecondary.copy(alpha = 0.6f)
+                                    )
+                                } else if (hasMoreSongs && filteredSongs.isNotEmpty()) {
+                                    TextButton(onClick = { loadMoreSongs() }) {
+                                        Text("点击加载更多歌曲", fontSize = 12.sp, color = OrbitTheme.colors.primary)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -939,6 +1083,7 @@ fun OnlineArtistDetailView(
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 140.dp),
+                    state = albumGridState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(top = 4.dp, bottom = 98.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -946,6 +1091,48 @@ fun OnlineArtistDetailView(
                 ) {
                     items(filteredAlbums, key = { it.id }) { album ->
                         OnlineAlbumCardItem(album = album, onClick = { onAlbumClick(album) })
+                    }
+
+                    if (searchQuery.isBlank()) {
+                        item(
+                            key = "album_load_more_footer",
+                            span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 14.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isPagingLoadingAlbums) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                            color = OrbitTheme.colors.primary
+                                        )
+                                        Text(
+                                            text = "正在加载更多专辑...",
+                                            fontSize = 12.sp,
+                                            color = OrbitTheme.colors.textSecondary
+                                        )
+                                    }
+                                } else if (!hasMoreAlbums && filteredAlbums.isNotEmpty()) {
+                                    Text(
+                                        text = "已加载全部专辑 (${filteredAlbums.size})",
+                                        fontSize = 12.sp,
+                                        color = OrbitTheme.colors.textSecondary.copy(alpha = 0.6f)
+                                    )
+                                } else if (hasMoreAlbums && filteredAlbums.isNotEmpty()) {
+                                    TextButton(onClick = { loadMoreAlbums() }) {
+                                        Text("点击加载更多专辑", fontSize = 12.sp, color = OrbitTheme.colors.primary)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
