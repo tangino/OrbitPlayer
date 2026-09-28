@@ -48,6 +48,14 @@ interface IOnlineMusicSource {
     suspend fun searchPlaylists(keyword: String, page: Int = 1, pageSize: Int = 20): List<OnlinePlaylist>
 
     /**
+     * 搜索单曲歌曲
+     * @param keyword 搜索关键词（歌曲名、歌手名或两者组合）
+     * @param page 页码
+     * @param pageSize 每页条数
+     */
+    suspend fun searchSongs(keyword: String, page: Int = 1, pageSize: Int = 30): List<OnlineSongItem> = emptyList()
+
+    /**
      * 从分享链接/字符串中提取解析歌单 ID
      */
     fun extractPlaylistId(urlOrText: String): String?

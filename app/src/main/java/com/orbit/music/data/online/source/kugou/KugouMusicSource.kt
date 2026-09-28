@@ -374,17 +374,26 @@ class KugouMusicSource(
         }
         if (songCover.isBlank()) {
             val authorAvatar = sObj.optJSONArray("authors")?.optJSONObject(0)?.optString("sizable_avatar")
+                ?: sObj.optJSONArray("authors")?.optJSONObject(0)?.optString("avatar")
             if (!authorAvatar.isNullOrBlank()) {
                 songCover = authorAvatar.replace("{size}", "400")
             }
         }
         if (songCover.isBlank()) {
-            val img = sObj.optString("imgurl")
+            val img = sObj.optString("imgurl").ifEmpty {
+                sObj.optString("img").ifEmpty {
+                    sObj.optString("image").ifEmpty {
+                        sObj.optString("cover").ifEmpty {
+                            sObj.optString("singer_sizable_cover")
+                        }
+                    }
+                }
+            }
             if (img.isNotBlank()) {
                 songCover = img.replace("{size}", "400")
             }
         }
-        if (songCover.isBlank()) {
+        if (songCover.isBlank() && defaultCover.isNotBlank()) {
             songCover = defaultCover
         }
 
@@ -394,12 +403,19 @@ class KugouMusicSource(
                 sObj.optInt("pkg_price", 0) > 0 ||
                 sObj.optInt("pay_type", 0) > 0
 
+        val albumId = sObj.optString("album_id").ifEmpty {
+            sObj.optJSONObject("album_info")?.optString("album_id")?.ifEmpty {
+                sObj.optJSONObject("trans_param")?.optString("cpy_album_id")
+            }
+        }
+
         return OnlineSongItem(
             id = id,
             platform = platform,
             title = songName,
             artist = singerName,
             album = albumName,
+            albumId = albumId?.takeIf { it.isNotBlank() && it != "0" },
             durationMs = durationMs,
             coverUrl = songCover,
             isVip = isVip
@@ -445,6 +461,81 @@ class KugouMusicSource(
         }
     }
 
+    override suspend fun searchSongs(
+        keyword: String,
+        page: Int,
+        pageSize: Int
+    ): List<OnlineSongItem> = withContext(Dispatchers.IO) {
+        val encoded = URLEncoder.encode(keyword, "UTF-8")
+        val list = mutableListOf<OnlineSongItem>()
+
+        // 优先使用官方移动端搜索接口
+        try {
+            val url = "http://mobilecdn.kugou.com/api/v3/search/song?keyword=$encoded&page=$page&pagesize=$pageSize"
+            val root = getApi(url)
+            val infoArr = root.optJSONObject("data")?.optJSONArray("info")
+            if (infoArr != null && infoArr.length() > 0) {
+                for (i in 0 until infoArr.length()) {
+                    val sObj = infoArr.optJSONObject(i) ?: continue
+                    val songItem = parseKugouSongItem(sObj, "")
+                    if (songItem != null) {
+                        list.add(songItem)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        if (list.isNotEmpty()) return@withContext list
+
+        // 备用接口降级
+        try {
+            val url = "http://songsearch.kugou.com/song_search_v2?keyword=$encoded&page=$page&pagesize=$pageSize&platform=WebFilter"
+            val root = getApi(url)
+            val infoArr = root.optJSONObject("data")?.optJSONArray("lists")
+            if (infoArr != null) {
+                for (i in 0 until infoArr.length()) {
+                    val sObj = infoArr.optJSONObject(i) ?: continue
+                    val hash = sObj.optString("FileHash").ifEmpty { sObj.optString("HQFileHash").ifEmpty { sObj.optString("SQFileHash") } }
+                    val audioId = sObj.optString("Audioid").ifEmpty { sObj.optString("Scid") }
+                    val id = hash.ifEmpty { audioId }
+                    val songName = sObj.optString("SongName")
+                    val singerName = sObj.optString("SingerName")
+                    val albumName = sObj.optString("AlbumName")
+                    val duration = sObj.optLong("Duration", 0L) * 1000L
+                    val isVip = sObj.optInt("Privilege", 0) > 0 || sObj.optInt("PayType", 0) > 0
+
+                    var cover = sObj.optString("Image").ifEmpty {
+                        sObj.optString("AlbumImage").ifEmpty {
+                            sObj.optString("SingerImage").ifEmpty {
+                                sObj.optString("Cover")
+                            }
+                        }
+                    }
+                    if (cover.isNotEmpty()) {
+                        cover = cover.replace("{size}", "400")
+                    }
+
+                    if (id.isNotEmpty() && songName.isNotEmpty()) {
+                        list.add(
+                            OnlineSongItem(
+                                id = id,
+                                platform = platform,
+                                title = songName,
+                                artist = singerName.ifEmpty { "未知歌手" },
+                                album = albumName.ifEmpty { "单曲" },
+                                durationMs = duration,
+                                coverUrl = cover,
+                                isVip = isVip
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        list
+    }
+
     override fun extractPlaylistId(urlOrText: String): String? {
         val trimmed = urlOrText.trim()
         val matcher = Pattern.compile("(?:specialid=|plist/list/|special/|id=)(\\d+)").matcher(trimmed)
@@ -455,5 +546,65 @@ class KugouMusicSource(
             return trimmed
         }
         return null
+    }
+
+    override suspend fun getAlbumDetail(albumId: String): Pair<com.orbit.music.data.online.model.OnlineAlbum, List<OnlineSongItem>> = withContext(Dispatchers.IO) {
+        var albumTitle = "酷狗专辑"
+        var singerName = "未知歌手"
+        var coverUrl = ""
+        var publishTime: String? = null
+        var company: String? = null
+        var desc: String? = null
+        var songCount = 0
+
+        // 1. 获取专辑信息
+        try {
+            val infoUrl = "http://mobilecdn.kugou.com/api/v3/album/info?albumid=$albumId"
+            val root = getApi(infoUrl)
+            val dataObj = root.optJSONObject("data")
+            if (dataObj != null) {
+                albumTitle = dataObj.optString("albumname").ifEmpty { dataObj.optString("album_name") }
+                singerName = dataObj.optString("singername").ifEmpty { dataObj.optString("author_name") }
+                val img = dataObj.optString("imgurl").ifEmpty { dataObj.optString("sizable_cover") }
+                if (img.isNotEmpty()) {
+                    coverUrl = img.replace("{size}", "500")
+                }
+                publishTime = dataObj.optString("publish_time").ifEmpty { dataObj.optString("publishtime") }
+                company = dataObj.optString("company")
+                desc = dataObj.optString("intro").ifEmpty { dataObj.optString("description") }
+                songCount = dataObj.optInt("songcount", 0)
+            }
+        } catch (_: Exception) {}
+
+        // 2. 获取专辑曲目
+        val songs = mutableListOf<OnlineSongItem>()
+        try {
+            val songUrl = "http://mobilecdn.kugou.com/api/v3/album/song?albumid=$albumId&page=1&pagesize=100"
+            val root = getApi(songUrl)
+            val infoArr = root.optJSONObject("data")?.optJSONArray("info")
+            if (infoArr != null) {
+                for (i in 0 until infoArr.length()) {
+                    val sObj = infoArr.optJSONObject(i) ?: continue
+                    val songItem = parseKugouSongItem(sObj, coverUrl)
+                    if (songItem != null) {
+                        songs.add(songItem)
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        val album = com.orbit.music.data.online.model.OnlineAlbum(
+            id = albumId,
+            platform = platform,
+            title = albumTitle.ifEmpty { "专辑 $albumId" },
+            coverUrl = coverUrl,
+            artist = singerName.ifEmpty { "未知歌手" },
+            songCount = if (songCount > 0) songCount else songs.size,
+            publishTime = publishTime,
+            company = company,
+            description = desc
+        )
+
+        Pair(album, songs)
     }
 }

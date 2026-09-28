@@ -585,6 +585,163 @@ class QQMusicSource(
         }
     }
 
+    override suspend fun searchSongs(
+        keyword: String,
+        page: Int,
+        pageSize: Int
+    ): List<OnlineSongItem> = withContext(Dispatchers.IO) {
+        val payload = JSONObject().apply {
+            put("comm", JSONObject().apply {
+                put("ct", "19")
+                put("cv", "1873")
+                put("uin", "0")
+            })
+            put("search", JSONObject().apply {
+                put("module", "music.search.SearchCgiService")
+                put("method", "DoSearchForQQMusicDesktop")
+                put("param", JSONObject().apply {
+                    put("query", keyword)
+                    put("search_type", 0) // 0: 单曲搜索
+                    put("num_per_page", pageSize)
+                    put("page_num", page)
+                    put("highlight", 1)
+                })
+            })
+        }
+
+        val list = mutableListOf<OnlineSongItem>()
+
+        try {
+            val root = postMusicU(payload)
+            val listArr = root.optJSONObject("search")?.optJSONObject("data")?.optJSONObject("body")?.optJSONObject("song")?.optJSONArray("list")
+                ?: root.optJSONObject("req")?.optJSONObject("data")?.optJSONObject("body")?.optJSONObject("song")?.optJSONArray("list")
+                ?: JSONArray()
+            for (i in 0 until listArr.length()) {
+                val sObj = listArr.optJSONObject(i) ?: continue
+                val songMid = sObj.optString("mid").ifEmpty { sObj.optString("songmid") }
+                var songName = sObj.optString("name").ifEmpty { sObj.optString("title") }
+                if (songName.isEmpty()) songName = sObj.optString("songname")
+
+                val singerArr = sObj.optJSONArray("singer")
+                val singerNames = mutableListOf<String>()
+                if (singerArr != null) {
+                    for (j in 0 until singerArr.length()) {
+                        val s = singerArr.optJSONObject(j) ?: continue
+                        val sName = s.optString("name")
+                        if (sName.isNotEmpty()) {
+                            singerNames.add(sName)
+                        }
+                    }
+                }
+
+                val albumObj = sObj.optJSONObject("album")
+                val albumName = albumObj?.optString("name") ?: sObj.optString("albumname")
+                val albumMid = albumObj?.optString("mid")?.ifEmpty { albumObj.optString("pmid") }
+                    ?: sObj.optString("albummid")
+
+                var coverUrl = ""
+                if (albumMid.isNotEmpty() && albumMid != "00000000000000" && albumMid != "0") {
+                    coverUrl = "https://y.gtimg.cn/music/photo_new/T002R300x300M000$albumMid.jpg"
+                }
+                if (coverUrl.isEmpty() && singerArr != null && singerArr.length() > 0) {
+                    val firstSingerMid = singerArr.optJSONObject(0)?.optString("mid")
+                        ?: singerArr.optJSONObject(0)?.optString("pmid") ?: ""
+                    if (firstSingerMid.isNotEmpty() && firstSingerMid != "00000000000000" && firstSingerMid != "0") {
+                        coverUrl = "https://y.gtimg.cn/music/photo_new/T001R300x300M000$firstSingerMid.jpg"
+                    }
+                }
+                if (coverUrl.isEmpty()) {
+                    val vsPic = sObj.optString("pic").ifEmpty { sObj.optString("image") }
+                    if (vsPic.isNotEmpty()) {
+                        coverUrl = vsPic
+                    }
+                }
+
+                val interval = sObj.optLong("interval", 0L) * 1000L
+                val payObj = sObj.optJSONObject("pay")
+                val isVip = payObj?.optInt("pay_play", 0) == 1 || sObj.optInt("pay_play", 0) == 1
+
+                if (songMid.isNotEmpty() && songName.isNotEmpty()) {
+                    list.add(
+                        OnlineSongItem(
+                            id = songMid,
+                            platform = platform,
+                            title = songName,
+                            artist = if (singerNames.isNotEmpty()) singerNames.joinToString(", ") else "未知歌手",
+                            album = albumName.ifEmpty { "单曲" },
+                            albumId = albumMid.takeIf { it.isNotBlank() && it != "00000000000000" && it != "0" },
+                            durationMs = interval,
+                            coverUrl = coverUrl,
+                            isVip = isVip
+                        )
+                    )
+                }
+            }
+        } catch (_: Exception) {}
+
+        if (list.isEmpty()) {
+            try {
+                val encoded = URLEncoder.encode(keyword, "UTF-8")
+                val url = "https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=$encoded&p=$page&n=$pageSize&format=json&t=0"
+                val req = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", userAgent)
+                    .header("Referer", "https://y.qq.com/")
+                    .build()
+                val resp = client.newCall(req).execute().body?.string()
+                if (resp != null) {
+                    val root = JSONObject(resp)
+                    val sArr = root.optJSONObject("data")?.optJSONObject("song")?.optJSONArray("list")
+                    if (sArr != null) {
+                        for (i in 0 until sArr.length()) {
+                            val sObj = sArr.optJSONObject(i) ?: continue
+                            val songMid = sObj.optString("songmid").ifEmpty { sObj.optString("mid") }
+                            val songName = sObj.optString("songname").ifEmpty { sObj.optString("name") }
+                            val singerArr = sObj.optJSONArray("singer")
+                            val singerNames = mutableListOf<String>()
+                            if (singerArr != null) {
+                                for (j in 0 until singerArr.length()) {
+                                    singerArr.optJSONObject(j)?.optString("name")?.let { singerNames.add(it) }
+                                }
+                            }
+                            val albumName = sObj.optString("albumname")
+                            val albumMid = sObj.optString("albummid")
+                            var coverUrl = if (albumMid.isNotEmpty() && albumMid != "00000000000000" && albumMid != "0") {
+                                "https://y.gtimg.cn/music/photo_new/T002R300x300M000$albumMid.jpg"
+                            } else ""
+                            if (coverUrl.isEmpty() && singerArr != null && singerArr.length() > 0) {
+                                val firstMid = singerArr.optJSONObject(0)?.optString("mid") ?: ""
+                                if (firstMid.isNotEmpty() && firstMid != "00000000000000" && firstMid != "0") {
+                                    coverUrl = "https://y.gtimg.cn/music/photo_new/T001R300x300M000$firstMid.jpg"
+                                }
+                            }
+                            val interval = sObj.optLong("interval", 0L) * 1000L
+                            val payplay = sObj.optInt("payplay", 0)
+
+                            if (songMid.isNotEmpty() && songName.isNotEmpty()) {
+                                list.add(
+                                    OnlineSongItem(
+                                        id = songMid,
+                                        platform = platform,
+                                        title = songName,
+                                        artist = if (singerNames.isNotEmpty()) singerNames.joinToString(", ") else "未知歌手",
+                                        album = albumName.ifEmpty { "单曲" },
+                                        albumId = albumMid.takeIf { it.isNotBlank() && it != "00000000000000" && it != "0" },
+                                        durationMs = interval,
+                                        coverUrl = coverUrl,
+                                        isVip = payplay == 1
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        list
+    }
+
     override fun extractPlaylistId(urlOrText: String): String? {
         val trimmed = urlOrText.trim()
         // 纯数字 ID

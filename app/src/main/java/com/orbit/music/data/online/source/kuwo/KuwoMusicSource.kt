@@ -291,10 +291,15 @@ class KuwoMusicSource(
             Pair(playlist, songs)
         }
 
-    private suspend fun searchSongsByTitle(keyword: String, count: Int): List<OnlineSongItem> = withContext(Dispatchers.IO) {
+    override suspend fun searchSongs(
+        keyword: String,
+        page: Int,
+        pageSize: Int
+    ): List<OnlineSongItem> = withContext(Dispatchers.IO) {
         try {
             val encoded = URLEncoder.encode(keyword, "UTF-8")
-            val url = "http://search.kuwo.cn/r.s?all=$encoded&ft=music&itemset=web_2013&client=kt&pn=0&rn=$count&rformat=json&encoding=utf8"
+            val pn = page - 1
+            val url = "http://search.kuwo.cn/r.s?all=$encoded&ft=music&itemset=web_2013&client=kt&pn=$pn&rn=$pageSize&rformat=json&encoding=utf8"
             val root = getApiJson(url)
             val listArr = root.optJSONArray("abslist") ?: return@withContext emptyList()
 
@@ -302,11 +307,42 @@ class KuwoMusicSource(
             for (i in 0 until listArr.length()) {
                 val obj = listArr.optJSONObject(i) ?: continue
                 val id = obj.optString("MUSICRID").replace("MUSIC_", "").ifEmpty { obj.optString("id") }
-                val title = obj.optString("SONGNAME").ifEmpty { obj.optString("name") }
-                val artist = obj.optString("ARTIST").ifEmpty { obj.optString("artist") }
-                val album = obj.optString("ALBUM").ifEmpty { obj.optString("album") }
+                val rawTitle = obj.optString("SONGNAME").ifEmpty { obj.optString("name") }
+                val title = cleanKuwoText(rawTitle)
+                val artist = cleanKuwoText(obj.optString("ARTIST").ifEmpty { obj.optString("artist") })
+                val album = cleanKuwoText(obj.optString("ALBUM").ifEmpty { obj.optString("album") })
                 val duration = obj.optLong("DURATION", 0L) * 1000L
-                val pic = obj.optString("pic").ifEmpty { obj.optString("web_pic") }
+
+                // 1. 优先提取完整 URL 封面
+                var pic = obj.optString("pic").ifEmpty {
+                    obj.optString("web_pic").ifEmpty {
+                        obj.optString("picpath").ifEmpty {
+                            obj.optString("img")
+                        }
+                    }
+                }
+                // 2. 解析短路径专辑封面 web_albumpic_short / albumpic
+                if (pic.isEmpty() || !pic.startsWith("http")) {
+                    val albumShort = obj.optString("web_albumpic_short").ifEmpty { obj.optString("albumpic") }
+                    if (albumShort.isNotEmpty()) {
+                        val formatted = albumShort.replace("120/", "500/").replace("70/", "500/")
+                        pic = if (formatted.startsWith("/")) "https://img1.kuwo.cn/star/albumcover$formatted"
+                              else "https://img1.kuwo.cn/star/albumcover/$formatted"
+                    }
+                }
+                // 3. 解析短路径歌手头像 web_artistpic_short / web_artistpic / artistpic
+                if (pic.isEmpty() || !pic.startsWith("http")) {
+                    val artistShort = obj.optString("web_artistpic_short").ifEmpty {
+                        obj.optString("web_artistpic").ifEmpty { obj.optString("artistpic") }
+                    }
+                    if (artistShort.isNotEmpty()) {
+                        val formatted = artistShort.replace("120/", "500/").replace("70/", "500/")
+                        pic = if (formatted.startsWith("/")) "https://img1.kuwo.cn/star/starheads$formatted"
+                              else "https://img1.kuwo.cn/star/starheads/$formatted"
+                    }
+                }
+
+                val albumId = obj.optString("ALBUMID").ifEmpty { obj.optString("albumid") }
 
                 if (id.isNotEmpty() && title.isNotEmpty()) {
                     songs.add(
@@ -316,6 +352,7 @@ class KuwoMusicSource(
                             title = title,
                             artist = artist.ifEmpty { "未知歌手" },
                             album = album.ifEmpty { "热歌" },
+                            albumId = albumId.takeIf { it.isNotBlank() && it != "0" },
                             durationMs = duration,
                             coverUrl = pic,
                             isVip = obj.optString("pay").isNotEmpty() && obj.optString("pay") != "0"
@@ -327,6 +364,20 @@ class KuwoMusicSource(
         } catch (e: Exception) {
             emptyList()
         }
+    }
+
+    private fun cleanKuwoText(str: String): String {
+        return str.replace("&nbsp;", " ")
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&#039;", "'")
+            .trim()
+    }
+
+    private suspend fun searchSongsByTitle(keyword: String, count: Int): List<OnlineSongItem> {
+        return searchSongs(keyword, 1, count)
     }
 
     private suspend fun getRankDetail(rankId: String): Pair<OnlinePlaylist, List<OnlineSongItem>> =
@@ -431,6 +482,75 @@ class KuwoMusicSource(
             return trimmed
         }
         return null
+    }
+
+    override suspend fun getAlbumDetail(albumId: String): Pair<com.orbit.music.data.online.model.OnlineAlbum, List<OnlineSongItem>> = withContext(Dispatchers.IO) {
+        val url = "http://search.kuwo.cn/r.s?pn=0&rn=100&albumid=$albumId&ft=music&itemset=web_2013&client=kt&rformat=json&encoding=utf8"
+        val root = getApiJson(url)
+        val albumName = root.optString("name").ifEmpty { root.optString("album") }
+        val artistName = root.optString("artist").ifEmpty { root.optString("artist_name") }
+        var cover = root.optString("pic").ifEmpty { root.optString("albumpic") }
+        if (cover.isNotEmpty() && !cover.startsWith("http")) {
+            val formatted = cover.replace("120/", "500/")
+            cover = if (formatted.startsWith("/")) "https://img1.kuwo.cn/star/albumcover$formatted"
+                    else "https://img1.kuwo.cn/star/albumcover/$formatted"
+        }
+        val pubTime = root.optString("pub").ifEmpty { root.optString("publish_time") }
+        val info = root.optString("info").ifEmpty { root.optString("intro") }
+
+        val listArr = root.optJSONArray("musiclist") ?: root.optJSONArray("abslist") ?: JSONArray()
+        val songs = mutableListOf<OnlineSongItem>()
+
+        for (i in 0 until listArr.length()) {
+            val obj = listArr.optJSONObject(i) ?: continue
+            val id = obj.optString("MUSICRID").replace("MUSIC_", "").ifEmpty { obj.optString("id").ifEmpty { obj.optString("musicrid") } }
+            val rawTitle = obj.optString("SONGNAME").ifEmpty { obj.optString("name").ifEmpty { obj.optString("songname") } }
+            val title = cleanKuwoText(rawTitle)
+            val artist = cleanKuwoText(obj.optString("ARTIST").ifEmpty { obj.optString("artist").ifEmpty { artistName } })
+            val album = cleanKuwoText(obj.optString("ALBUM").ifEmpty { obj.optString("album").ifEmpty { albumName } })
+            val duration = obj.optLong("DURATION", 0L) * 1000L
+
+            var pic = obj.optString("pic").ifEmpty { obj.optString("web_pic") }
+            if (pic.isEmpty() || !pic.startsWith("http")) {
+                val albumShort = obj.optString("web_albumpic_short").ifEmpty { obj.optString("albumpic") }
+                if (albumShort.isNotEmpty()) {
+                    val formatted = albumShort.replace("120/", "500/").replace("70/", "500/")
+                    pic = if (formatted.startsWith("/")) "https://img1.kuwo.cn/star/albumcover$formatted"
+                          else "https://img1.kuwo.cn/star/albumcover/$formatted"
+                } else {
+                    pic = cover
+                }
+            }
+
+            if (id.isNotEmpty() && title.isNotEmpty()) {
+                songs.add(
+                    OnlineSongItem(
+                        id = id,
+                        platform = platform,
+                        title = title,
+                        artist = artist.ifEmpty { "未知歌手" },
+                        album = album.ifEmpty { albumName.ifEmpty { "专辑" } },
+                        albumId = albumId,
+                        durationMs = duration,
+                        coverUrl = pic,
+                        isVip = obj.optString("pay").isNotEmpty() && obj.optString("pay") != "0"
+                    )
+                )
+            }
+        }
+
+        val albumObj = com.orbit.music.data.online.model.OnlineAlbum(
+            id = albumId,
+            platform = platform,
+            title = albumName.ifEmpty { "专辑 $albumId" },
+            coverUrl = cover,
+            artist = artistName.ifEmpty { "未知歌手" },
+            songCount = songs.size,
+            publishTime = pubTime,
+            description = info
+        )
+
+        Pair(albumObj, songs)
     }
 }
 

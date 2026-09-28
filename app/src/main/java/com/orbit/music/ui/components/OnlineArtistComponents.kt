@@ -72,6 +72,7 @@ fun OnlineArtistSquareView(
     var isSearchMode by remember { mutableStateOf(false) }
     var isSearching by remember { mutableStateOf(false) }
     var searchResults by remember { mutableStateOf<List<OnlineArtist>>(emptyList()) }
+    var showSongSearchDialog by remember { mutableStateOf(false) }
 
     // 初始化加载分类与热门歌手
     fun loadInitialArtists(categoryKey: String = "all_all_all") {
@@ -159,6 +160,19 @@ fun OnlineArtistSquareView(
         }
     }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // 全网歌曲搜索对话框
+    if (showSongSearchDialog) {
+        OnlineSongSearchDialog(
+            initialKeyword = searchKeyword,
+            onDismiss = { showSongSearchDialog = false },
+            onPlaySong = { songs, index ->
+                com.orbit.music.audio.MusicPlayerManager.getInstance(context).playOnlineSongList(songs, index)
+            }
+        )
+    }
+
     Column(modifier = modifier.fillMaxSize()) {
         // 1. 顶部操作栏（分类胶囊与搜索按钮）
         Row(
@@ -175,22 +189,55 @@ fun OnlineArtistSquareView(
                 color = OrbitTheme.colors.textPrimary
             )
 
-            IconButton(
-                onClick = {
-                    isSearchMode = !isSearchMode
-                    if (!isSearchMode) {
-                        searchKeyword = ""
-                        searchResults = emptyList()
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                // 全网搜歌入口胶囊
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = OrbitTheme.colors.primary.copy(alpha = 0.15f),
+                    border = BorderStroke(0.6.dp, OrbitTheme.colors.primary.copy(alpha = 0.4f)),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable {
+                            showSongSearchDialog = true
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.TravelExplore,
+                            contentDescription = "全网搜歌",
+                            tint = OrbitTheme.colors.primary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "全网搜歌",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = OrbitTheme.colors.primary
+                        )
                     }
-                },
-                modifier = Modifier.size(34.dp)
-            ) {
-                Icon(
-                    imageVector = if (isSearchMode) Icons.Default.Close else Icons.Default.Search,
-                    contentDescription = "搜索歌手",
-                    tint = if (isSearchMode) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                    modifier = Modifier.size(19.dp)
-                )
+                }
+
+                IconButton(
+                    onClick = {
+                        isSearchMode = !isSearchMode
+                        if (!isSearchMode) {
+                            searchKeyword = ""
+                            searchResults = emptyList()
+                        }
+                    },
+                    modifier = Modifier.size(34.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isSearchMode) Icons.Default.Close else Icons.Default.Search,
+                        contentDescription = "搜索歌手",
+                        tint = if (isSearchMode) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
             }
         }
 
@@ -1253,7 +1300,13 @@ fun OnlineAlbumDetailView(
         isLoading = true
         errorMessage = null
         scope.launch {
-            val res = repository.getAlbumDetail(album.id, OnlinePlatform.QQ)
+            val res = repository.resolveAlbumDetail(
+                platform = album.platform,
+                albumId = album.id,
+                albumTitle = album.title,
+                artist = album.artist,
+                defaultCover = album.coverUrl
+            )
             res.onSuccess { (alb, trackList) ->
                 currentAlbum = alb
                 songs = trackList
@@ -1597,3 +1650,99 @@ private fun OnlineSongListItem(
         }
     }
 }
+
+/**
+ * 全网在线专辑详情弹窗
+ */
+@Composable
+fun OnlineAlbumDetailDialog(
+    album: com.orbit.music.data.online.model.OnlineAlbum,
+    onDismiss: () -> Unit,
+    onSongClick: (index: Int, song: OnlineSongItem, allSongs: List<OnlineSongItem>) -> Unit,
+    currentPlayingTitle: String? = null,
+    currentPlayingArtist: String? = null,
+    isPlaying: Boolean = false
+) {
+    val dialogBg = if (OrbitTheme.colors.background == Color.Transparent) {
+        if (OrbitTheme.colors.isDark) Color(0xFF111318) else Color(0xFFF8FAFC)
+    } else {
+        OrbitTheme.colors.background
+    }
+
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        val isDark = OrbitTheme.colors.isDark
+        val view = androidx.compose.ui.platform.LocalView.current
+        androidx.compose.runtime.SideEffect {
+            var parent = view.parent
+            while (parent != null) {
+                if (parent is androidx.compose.ui.window.DialogWindowProvider) {
+                    val window = parent.window
+                    androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+                    window.statusBarColor = android.graphics.Color.TRANSPARENT
+                    window.navigationBarColor = android.graphics.Color.TRANSPARENT
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        window.isStatusBarContrastEnforced = false
+                        window.isNavigationBarContrastEnforced = false
+                    }
+                    val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+                    insetsController.isAppearanceLightStatusBars = !isDark
+                    insetsController.isAppearanceLightNavigationBars = !isDark
+                    break
+                }
+                parent = parent.parent
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(dialogBg)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .systemBarsPadding()
+            ) {
+                // 顶部返回栏
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "返回",
+                            tint = OrbitTheme.colors.textPrimary
+                        )
+                    }
+                    Text(
+                        text = "专辑详情 · ${album.platform.displayName}",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = OrbitTheme.colors.textPrimary,
+                        modifier = Modifier.padding(start = 4.dp)
+                    )
+                }
+
+                OnlineAlbumDetailView(
+                    album = album,
+                    onBack = onDismiss,
+                    onSongClick = onSongClick,
+                    currentPlayingTitle = currentPlayingTitle,
+                    currentPlayingArtist = currentPlayingArtist,
+                    isPlaying = isPlaying,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+    }
+}
+

@@ -29,7 +29,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 enum class LibraryTab {
-    SONGS, FOLDERS, ALBUMS, ARTISTS, PLAYLISTS, NETEASE_SQUARE, QQ_SQUARE, KUGOU_SQUARE, KUWO_SQUARE, MIGU_SQUARE, ONLINE_ARTISTS
+    SONGS, FOLDERS, ALBUMS, ARTISTS, PLAYLISTS, NETEASE_SQUARE, QQ_SQUARE, KUGOU_SQUARE, KUWO_SQUARE, MIGU_SQUARE, ONLINE_ARTISTS, ONLINE_SEARCH
 }
 
 enum class LibraryViewMode {
@@ -55,6 +55,7 @@ val LibraryTab.pageKey: String
         LibraryTab.KUWO_SQUARE -> "tab_kuwo_square"
         LibraryTab.MIGU_SQUARE -> "tab_migu_square"
         LibraryTab.ONLINE_ARTISTS -> "tab_online_artists"
+        LibraryTab.ONLINE_SEARCH -> "tab_online_search"
     }
 
 data class LibraryUiState(
@@ -68,6 +69,7 @@ data class LibraryUiState(
     val selectedArtist: ArtistItem? = null,
     val selectedPlaylist: Playlist? = null,
     val selectedOnlinePlaylist: com.orbit.music.data.online.model.OnlinePlaylist? = null,
+    val selectedOnlineAlbum: com.orbit.music.data.online.model.OnlineAlbum? = null,
     val isNowPlayingExpanded: Boolean = false
 ) {
     val viewMode: LibraryViewMode
@@ -78,6 +80,7 @@ data class LibraryUiState(
                 selectedArtist != null -> "detail_artist"
                 selectedPlaylist != null -> "detail_playlist"
                 selectedOnlinePlaylist != null -> "detail_online_playlist"
+                selectedOnlineAlbum != null -> "detail_online_album"
                 else -> currentTab.pageKey
             }
             return pageViewModes[key] ?: defaultModeFor(key)
@@ -398,17 +401,62 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _libraryUiState.update { it.copy(selectedAlbum = album) }
     }
 
+    val activeOnlineAlbumForDialog = MutableStateFlow<com.orbit.music.data.online.model.OnlineAlbum?>(null)
+
+    fun openOnlineAlbum(album: com.orbit.music.data.online.model.OnlineAlbum) {
+        _libraryUiState.update { it.copy(selectedAlbum = null, isNowPlayingExpanded = false) }
+        activeOnlineAlbumForDialog.value = album
+    }
+
+    fun openOnlineAlbumBySong(song: Song) {
+        val platform = when {
+            song.path.contains("netease") || song.folderPath.contains("网易云") || song.path.contains("music.126.net") -> com.orbit.music.data.online.model.OnlinePlatform.NETEASE
+            song.path.contains("qq") || song.folderPath.contains("QQ") || song.path.contains("qqmusic") || song.path.contains("stream.qqmusic") -> com.orbit.music.data.online.model.OnlinePlatform.QQ
+            song.path.contains("kugou") || song.folderPath.contains("酷狗") -> com.orbit.music.data.online.model.OnlinePlatform.KUGOU
+            song.path.contains("kuwo") || song.folderPath.contains("酷我") -> com.orbit.music.data.online.model.OnlinePlatform.KUWO
+            song.path.contains("migu") || song.folderPath.contains("咪咕") -> com.orbit.music.data.online.model.OnlinePlatform.MIGU
+            else -> com.orbit.music.data.online.repository.OnlineMusicRepository.getInstance().currentPlatform.value
+        }
+        val album = com.orbit.music.data.online.model.OnlineAlbum(
+            id = if (song.albumId != 0L && song.albumId != song.id) song.albumId.toString() else "",
+            platform = platform,
+            title = song.album.ifEmpty { "专辑" },
+            coverUrl = song.albumArtUri ?: "",
+            artist = song.artist.ifEmpty { "未知歌手" }
+        )
+        _libraryUiState.update { it.copy(selectedAlbum = null, isNowPlayingExpanded = false) }
+        activeOnlineAlbumForDialog.value = album
+    }
+
+    fun openOnlineAlbumBySongItem(songItem: com.orbit.music.data.online.model.OnlineSongItem) {
+        val album = com.orbit.music.data.online.model.OnlineAlbum(
+            id = songItem.albumId ?: "",
+            platform = songItem.platform,
+            title = songItem.album.ifEmpty { "专辑" },
+            coverUrl = songItem.coverUrl ?: "",
+            artist = songItem.artist.ifEmpty { "未知歌手" }
+        )
+        _libraryUiState.update { it.copy(selectedAlbum = null, isNowPlayingExpanded = false) }
+        activeOnlineAlbumForDialog.value = album
+    }
+
+    fun dismissOnlineAlbumDialog() {
+        activeOnlineAlbumForDialog.value = null
+    }
+
     fun openAlbum(song: Song) {
+        if (com.orbit.music.data.online.engine.OnlineAudioSourceManager.isOnlineSong(song)) {
+            openOnlineAlbumBySong(song)
+            return
+        }
         val albumTitle = song.album.trim().ifEmpty { "Unknown Album" }
         val allAlbumsList = albums.value
         val targetAlbum = allAlbumsList.find { it.title.equals(albumTitle, ignoreCase = true) }
-            ?: AlbumItem(
-                id = song.albumId,
-                title = albumTitle,
-                artist = song.artist,
-                songCount = 1,
-                albumArtUri = song.albumArtUri
-            )
+        if (targetAlbum == null) {
+            // 本地未找到该专辑，回退到在线搜索该专辑
+            openOnlineAlbumBySong(song)
+            return
+        }
         _libraryUiState.update {
             it.copy(
                 currentTab = LibraryTab.ALBUMS,
@@ -417,6 +465,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 selectedArtist = null,
                 selectedPlaylist = null,
                 selectedOnlinePlaylist = null,
+                selectedOnlineAlbum = null,
                 isNowPlayingExpanded = false
             )
         }
@@ -434,6 +483,10 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _libraryUiState.update { it.copy(selectedOnlinePlaylist = onlinePlaylist) }
     }
 
+    fun selectOnlineAlbum(onlineAlbum: com.orbit.music.data.online.model.OnlineAlbum?) {
+        _libraryUiState.update { it.copy(selectedOnlineAlbum = onlineAlbum) }
+    }
+
     fun clearAllDrillDown() {
         _libraryUiState.update {
             it.copy(
@@ -441,9 +494,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 selectedAlbum = null,
                 selectedArtist = null,
                 selectedPlaylist = null,
-                selectedOnlinePlaylist = null
+                selectedOnlinePlaylist = null,
+                selectedOnlineAlbum = null
             )
         }
+    }
+
+    fun playOnlineSongs(songs: List<com.orbit.music.data.online.model.OnlineSongItem>, startIndex: Int = 0) {
+        playerManager.playOnlineSongList(songs, startIndex)
     }
 
     fun setNowPlayingExpanded(expanded: Boolean) {

@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
@@ -251,11 +252,15 @@ class MiguMusicSource(
             Pair(playlist, searchSongs)
         }
 
-    private suspend fun searchSongsByKeyword(keyword: String, count: Int): List<OnlineSongItem> = withContext(Dispatchers.IO) {
+    override suspend fun searchSongs(
+        keyword: String,
+        page: Int,
+        pageSize: Int
+    ): List<OnlineSongItem> = withContext(Dispatchers.IO) {
         try {
             val encoded = URLEncoder.encode(keyword, "UTF-8")
             val switchJson = URLEncoder.encode("{\"song\":1,\"album\":0,\"singer\":0,\"tagSong\":0,\"mvSong\":0,\"songlist\":0,\"bestShow\":0}", "UTF-8")
-            val url = "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/search_all.do?text=$encoded&pageNo=1&pageSize=$count&searchSwitch=$switchJson"
+            val url = "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/search_all.do?text=$encoded&pageNo=$page&pageSize=$pageSize&searchSwitch=$switchJson"
             val root = getApi(url)
             val listArr = root.optJSONObject("songResultData")?.optJSONArray("result") ?: return@withContext emptyList()
 
@@ -269,6 +274,9 @@ class MiguMusicSource(
                 val durationMs = extractDuration(obj)
                 val cover = extractCover(obj, "")
 
+                val albumId = obj.optJSONArray("albums")?.optJSONObject(0)?.optString("id")
+                    ?: obj.optString("albumId")
+
                 if (id.isNotEmpty() && title.isNotEmpty()) {
                     songs.add(
                         OnlineSongItem(
@@ -277,6 +285,7 @@ class MiguMusicSource(
                             title = title,
                             artist = artist,
                             album = album,
+                            albumId = albumId.takeIf { it.isNotBlank() && it != "0" },
                             durationMs = durationMs,
                             coverUrl = cover,
                             isVip = obj.optString("vipType") == "1" || obj.optString("chargeAuditions") == "1"
@@ -288,6 +297,10 @@ class MiguMusicSource(
         } catch (e: Exception) {
             emptyList()
         }
+    }
+
+    private suspend fun searchSongsByKeyword(keyword: String, count: Int): List<OnlineSongItem> {
+        return searchSongs(keyword, 1, count)
     }
 
     private fun extractArtist(obj: JSONObject): String {
@@ -350,29 +363,59 @@ class MiguMusicSource(
     }
 
     private fun extractCover(obj: JSONObject, defaultCover: String): String {
-        // 1. imgItems 数组
+        // 1. 本层 imgItems 数组
         obj.optJSONArray("imgItems")?.let { arr ->
             for (i in 0 until arr.length()) {
                 val img = arr.optJSONObject(i)?.optString("img")
-                if (!img.isNullOrBlank()) return img
+                if (!img.isNullOrBlank()) return formatMiguImg(img)
             }
         }
 
-        // 2. landscapImg
-        val landscape = obj.optString("landscapImg")
-        if (landscape.isNotBlank()) return landscape
+        // 2. albums[0] 内部的 imgItems 或 albumPicUrl
+        obj.optJSONArray("albums")?.optJSONObject(0)?.let { albumObj ->
+            albumObj.optJSONArray("imgItems")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val img = arr.optJSONObject(i)?.optString("img")
+                    if (!img.isNullOrBlank()) return formatMiguImg(img)
+                }
+            }
+            val albPic = albumObj.optString("albumPicUrl").ifEmpty { albumObj.optString("cover") }
+            if (albPic.isNotBlank()) return formatMiguImg(albPic)
+        }
 
-        // 3. albumPicUrl / cover / imgUrl / pic
+        // 3. landscapImg
+        val landscape = obj.optString("landscapImg")
+        if (landscape.isNotBlank()) return formatMiguImg(landscape)
+
+        // 4. albumPicUrl / cover / imgUrl / pic / largePic / mediumPic
         val albumPic = obj.optString("albumPicUrl").ifEmpty {
             obj.optString("cover").ifEmpty {
                 obj.optString("imgUrl").ifEmpty {
-                    obj.optString("pic")
+                    obj.optString("pic").ifEmpty {
+                        obj.optString("largePic").ifEmpty {
+                            obj.optString("mediumPic").ifEmpty {
+                                obj.optString("smallPic")
+                            }
+                        }
+                    }
                 }
             }
         }
-        if (albumPic.isNotBlank()) return albumPic
+        if (albumPic.isNotBlank()) return formatMiguImg(albumPic)
 
-        // 4. singerImg 中的 miguImgItems
+        // 5. singers[0] 内部的 imgItems 或 singerPicUrl
+        obj.optJSONArray("singers")?.optJSONObject(0)?.let { singerObj ->
+            singerObj.optJSONArray("imgItems")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    val img = arr.optJSONObject(i)?.optString("img")
+                    if (!img.isNullOrBlank()) return formatMiguImg(img)
+                }
+            }
+            val sPic = singerObj.optString("singerPicUrl").ifEmpty { singerObj.optString("pic") }
+            if (sPic.isNotBlank()) return formatMiguImg(sPic)
+        }
+
+        // 6. singerImg 中的 miguImgItems
         obj.optJSONObject("singerImg")?.let { sImgMap ->
             val keys = sImgMap.keys()
             while (keys.hasNext()) {
@@ -381,12 +424,20 @@ class MiguMusicSource(
                 val miguItems = sObj?.optJSONArray("miguImgItems")
                 if (miguItems != null && miguItems.length() > 0) {
                     val img = miguItems.optJSONObject(0)?.optString("img")
-                    if (!img.isNullOrBlank()) return img
+                    if (!img.isNullOrBlank()) return formatMiguImg(img)
                 }
             }
         }
 
         return defaultCover
+    }
+
+    private fun formatMiguImg(url: String): String {
+        val trimmed = url.trim()
+        if (trimmed.startsWith("//")) {
+            return "https:$trimmed"
+        }
+        return trimmed
     }
 
     private fun extractDuration(obj: JSONObject): Long {
@@ -473,6 +524,64 @@ class MiguMusicSource(
             return trimmed
         }
         return null
+    }
+
+    override suspend fun getAlbumDetail(albumId: String): Pair<com.orbit.music.data.online.model.OnlineAlbum, List<OnlineSongItem>> = withContext(Dispatchers.IO) {
+        val url = "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/resourceinfo.do?resourceId=$albumId&resourceType=2"
+        val root = getApi(url)
+        val resArr = root.optJSONArray("resource")
+        val resObj = if (resArr != null && resArr.length() > 0) {
+            resArr.optJSONObject(0) ?: JSONObject()
+        } else {
+            root.optJSONObject("resource") ?: root.optJSONObject("data") ?: JSONObject()
+        }
+
+        val title = resObj.optString("title").ifEmpty { resObj.optString("albumName") }
+        val artist = extractArtist(resObj)
+        val cover = extractCover(resObj, "")
+        val pubTime = resObj.optString("publishTime").ifEmpty { resObj.optString("publishDate") }
+        val intro = resObj.optString("summary").ifEmpty { resObj.optString("intro") }
+
+        val songItemsArr = resObj.optJSONArray("songItems") ?: root.optJSONArray("songItems") ?: JSONArray()
+        val songs = mutableListOf<OnlineSongItem>()
+
+        for (i in 0 until songItemsArr.length()) {
+            val obj = songItemsArr.optJSONObject(i) ?: continue
+            val id = obj.optString("copyrightId").ifEmpty { obj.optString("id").ifEmpty { obj.optString("songId") } }
+            val songTitle = obj.optString("songName").ifEmpty { obj.optString("name") }
+            val songArtist = extractArtist(obj).ifEmpty { artist }
+            val songCover = extractCover(obj, cover)
+            val durationMs = extractDuration(obj)
+
+            if (id.isNotEmpty() && songTitle.isNotEmpty()) {
+                songs.add(
+                    OnlineSongItem(
+                        id = id,
+                        platform = platform,
+                        title = songTitle,
+                        artist = songArtist,
+                        album = title.ifEmpty { "专辑" },
+                        albumId = albumId,
+                        durationMs = durationMs,
+                        coverUrl = songCover,
+                        isVip = obj.optString("vipType") == "1"
+                    )
+                )
+            }
+        }
+
+        val album = com.orbit.music.data.online.model.OnlineAlbum(
+            id = albumId,
+            platform = platform,
+            title = title.ifEmpty { "专辑 $albumId" },
+            coverUrl = cover,
+            artist = artist.ifEmpty { "未知歌手" },
+            songCount = songs.size,
+            publishTime = pubTime,
+            description = intro
+        )
+
+        Pair(album, songs)
     }
 }
 

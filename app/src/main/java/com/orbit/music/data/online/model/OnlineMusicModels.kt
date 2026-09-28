@@ -44,6 +44,7 @@ data class OnlineSongItem(
     val title: String,
     val artist: String,
     val album: String,
+    val albumId: String? = null,
     val durationMs: Long = 0,
     val coverUrl: String? = null,
     val isVip: Boolean = false

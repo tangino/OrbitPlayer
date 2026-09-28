@@ -3,8 +3,10 @@ package com.orbit.music.ui.screens
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.rotate
 import androidx.compose.material.icons.automirrored.filled.MenuOpen
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -568,7 +570,8 @@ fun MusicLibraryScreen(
         LibraryTab.KUGOU_SQUARE,
         LibraryTab.KUWO_SQUARE,
         LibraryTab.MIGU_SQUARE,
-        LibraryTab.ONLINE_ARTISTS
+        LibraryTab.ONLINE_ARTISTS,
+        LibraryTab.ONLINE_SEARCH
     ) || openedOnlinePlaylist != null || openedOnlineArtist != null || openedOnlineAlbum != null || openedPlaylist != null
 
     // 全 Tab 通用 Pinch 手势控制器与修饰符（绑定当前页面的独立视图模式，网络歌曲列表、广场及歌单/歌手详情禁用 Pinch 缩放）
@@ -1090,7 +1093,8 @@ fun MusicLibraryScreen(
                     LibraryTab.KUGOU_SQUARE,
                     LibraryTab.KUWO_SQUARE,
                     LibraryTab.MIGU_SQUARE,
-                    LibraryTab.ONLINE_ARTISTS
+                    LibraryTab.ONLINE_ARTISTS,
+                    LibraryTab.ONLINE_SEARCH
                 )
                 val onlineTabLabel = when (libraryState.currentTab) {
                     LibraryTab.NETEASE_SQUARE -> "网易云广场"
@@ -1099,6 +1103,7 @@ fun MusicLibraryScreen(
                     LibraryTab.KUWO_SQUARE -> "酷我音乐广场"
                     LibraryTab.MIGU_SQUARE -> "咪咕音乐广场"
                     LibraryTab.ONLINE_ARTISTS -> "歌手库"
+                    LibraryTab.ONLINE_SEARCH -> "全网搜歌"
                     else -> "在线广场"
                 }
 
@@ -1217,7 +1222,8 @@ fun MusicLibraryScreen(
                                 Triple(LibraryTab.KUGOU_SQUARE, "酷狗音乐广场", Color(0xFF0088FF) to "狗"),
                                 Triple(LibraryTab.KUWO_SQUARE, "酷我音乐广场", Color(0xFFFF9500) to "我"),
                                 Triple(LibraryTab.MIGU_SQUARE, "咪咕音乐广场", Color(0xFFE91E63) to "咕"),
-                                Triple(LibraryTab.ONLINE_ARTISTS, "歌手库", Color(0xFF8B5CF6) to "歌")
+                                Triple(LibraryTab.ONLINE_ARTISTS, "歌手库", Color(0xFF8B5CF6) to "歌"),
+                                Triple(LibraryTab.ONLINE_SEARCH, "全网搜歌", Color(0xFF3B82F6) to "搜")
                             )
 
                             platformsList.forEach { (tabItem, label, badge) ->
@@ -1869,6 +1875,39 @@ fun MusicLibraryScreen(
                                                     fontSize = 12.sp
                                                 )
                                             }
+                                        } else {
+                                            Button(
+                                                onClick = {
+                                                    viewModel.openOnlineAlbum(
+                                                        com.orbit.music.data.online.model.OnlineAlbum(
+                                                            id = if (currentAlbum.id > 0) currentAlbum.id.toString() else "",
+                                                            platform = com.orbit.music.data.online.repository.OnlineMusicRepository.getInstance().currentPlatform.value,
+                                                            title = currentAlbum.title,
+                                                            artist = currentAlbum.artist,
+                                                            coverUrl = albumArtUri ?: ""
+                                                        )
+                                                    )
+                                                },
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = OrbitTheme.colors.primary,
+                                                    contentColor = if (OrbitTheme.colors.isDark) DarkBackground else Color.White
+                                                ),
+                                                shape = RoundedCornerShape(20.dp),
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                                modifier = Modifier.height(32.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.CloudQueue,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = "在线查找此专辑",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 12.sp
+                                                )
+                                            }
                                         }
 
                                         Spacer(modifier = Modifier.weight(1f))
@@ -1982,6 +2021,37 @@ fun MusicLibraryScreen(
                                             color = OrbitTheme.colors.textSecondary.copy(alpha = 0.7f),
                                             textAlign = TextAlign.Center
                                         )
+                                    } else if (baseAlbumSongs.isEmpty()) {
+                                        Spacer(modifier = Modifier.height(14.dp))
+                                        OutlinedButton(
+                                            onClick = {
+                                                viewModel.openOnlineAlbum(
+                                                    com.orbit.music.data.online.model.OnlineAlbum(
+                                                        id = if (currentAlbum.id > 0) currentAlbum.id.toString() else "",
+                                                        platform = com.orbit.music.data.online.repository.OnlineMusicRepository.getInstance().currentPlatform.value,
+                                                        title = currentAlbum.title,
+                                                        artist = currentAlbum.artist,
+                                                        coverUrl = albumArtUri ?: ""
+                                                    )
+                                                )
+                                            },
+                                            shape = RoundedCornerShape(16.dp),
+                                            border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.6f))
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.CloudQueue,
+                                                contentDescription = null,
+                                                tint = OrbitTheme.colors.primary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "全网检索此专辑歌曲",
+                                                color = OrbitTheme.colors.primary,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -3156,6 +3226,7 @@ fun MusicLibraryScreen(
                             val previousPlayedPlaylist by viewModel.previousPlayedPlaylist.collectAsState()
                             val currentPlaybackOrigin by viewModel.playbackOrigin.collectAsState()
                             var selectedPlaylistGroup by rememberSaveable { mutableStateOf("ALL") }
+                            var collapsedPlaylistGroups by rememberSaveable { mutableStateOf(setOf<String>()) }
                             var loadingOnlinePlaylistId by remember { mutableStateOf<String?>(null) }
 
                             val q = libraryState.searchQuery.trim()
@@ -3251,31 +3322,6 @@ fun MusicLibraryScreen(
                                     .padding(start = 16.dp, end = 16.dp, top = 8.dp)
                                     .then(pinchGestureModifier)
                             ) {
-                                // 顶部操作栏：新建本地歌单按钮
-                                Button(
-                                    onClick = {
-                                        newPlaylistName = ""
-                                        showNewPlaylistDialog = true
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.fillMaxWidth().height(44.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Add,
-                                        contentDescription = null,
-                                        tint = if (OrbitTheme.colors.isDark) DarkBackground else Color.White
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = stringResource(R.string.create_new_playlist),
-                                        color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-
-                                Spacer(modifier = Modifier.height(10.dp))
-
                                 // 分类切换/过滤药丸（横向滑动）
                                 val filterCategories = listOf(
                                     Triple("ALL", "全部", totalPlaylistsCount),
@@ -3376,7 +3422,7 @@ fun MusicLibraryScreen(
                                     val emptySubtitle = if (q.isNotBlank()) {
                                         stringResource(R.string.search_no_results_desc)
                                     } else when (selectedPlaylistGroup) {
-                                        "LOCAL" -> "点击上方「新建歌单」按钮即可创建专属本地歌单"
+                                        "LOCAL" -> "点击下方按钮即可创建专属本地歌单"
                                         else -> "在对应平台的在线歌单广场点击收藏，即可汇聚在此处统一收听"
                                     }
 
@@ -3415,7 +3461,32 @@ fun MusicLibraryScreen(
                                                 color = OrbitTheme.colors.textSecondary,
                                                 textAlign = TextAlign.Center
                                             )
-                                            if (selectedPlaylistGroup in listOf("NETEASE", "QQ", "KUGOU", "KUWO", "MIGU") && q.isBlank()) {
+                                            if (selectedPlaylistGroup in listOf("LOCAL", "ALL") && localTotalCount == 0 && q.isBlank()) {
+                                                Spacer(modifier = Modifier.height(16.dp))
+                                                Button(
+                                                    onClick = {
+                                                        newPlaylistName = ""
+                                                        showNewPlaylistDialog = true
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary.copy(alpha = 0.2f)),
+                                                    border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f)),
+                                                    shape = RoundedCornerShape(20.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Add,
+                                                        contentDescription = null,
+                                                        tint = OrbitTheme.colors.primary,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(
+                                                        text = stringResource(R.string.create_new_playlist),
+                                                        color = OrbitTheme.colors.primary,
+                                                        fontSize = 12.5.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
+                                            } else if (selectedPlaylistGroup in listOf("NETEASE", "QQ", "KUGOU", "KUWO", "MIGU") && q.isBlank()) {
                                                 Spacer(modifier = Modifier.height(16.dp))
                                                 val targetTab = when (selectedPlaylistGroup) {
                                                     "NETEASE" -> LibraryTab.NETEASE_SQUARE
@@ -3544,98 +3615,142 @@ fun MusicLibraryScreen(
                                         }
 
                                         // ==========================================
-                                        // 1. 本地歌单分区 (LOCAL PLAYLISTS SECTION)
+                                        // 1. 本地歌单列表 (LOCAL PLAYLISTS)
                                         // ==========================================
                                         if (selectedPlaylistGroup in listOf("ALL", "LOCAL") && localTotalCount > 0) {
-                                            // 本地歌单分组 Header
-                                            if (selectedPlaylistGroup == "ALL") {
-                                                item {
+                                            val isLocalCollapsed = collapsedPlaylistGroups.contains("LOCAL")
+                                            item(key = "header_local_group") {
+                                                val rotationAngle by animateFloatAsState(
+                                                    targetValue = if (isLocalCollapsed) -90f else 0f,
+                                                    label = "collapse_anim_local"
+                                                )
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .clickable {
+                                                            collapsedPlaylistGroups = if (isLocalCollapsed) {
+                                                                collapsedPlaylistGroups - "LOCAL"
+                                                            } else {
+                                                                collapsedPlaylistGroups + "LOCAL"
+                                                            }
+                                                        }
+                                                        .padding(vertical = 8.dp, horizontal = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                ) {
                                                     Row(
-                                                        modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .padding(vertical = 4.dp),
-                                                        verticalAlignment = Alignment.CenterVertically
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                     ) {
                                                         Box(
                                                             modifier = Modifier
-                                                                .size(4.dp, 14.dp)
+                                                                .width(4.dp)
+                                                                .height(16.dp)
                                                                 .clip(RoundedCornerShape(2.dp))
                                                                 .background(OrbitTheme.colors.primary)
                                                         )
-                                                        Spacer(modifier = Modifier.width(8.dp))
                                                         Text(
                                                             text = "本地歌单",
-                                                            fontSize = 13.5.sp,
+                                                            fontSize = 14.sp,
                                                             fontWeight = FontWeight.Bold,
                                                             color = OrbitTheme.colors.textPrimary
                                                         )
-                                                        Spacer(modifier = Modifier.width(6.dp))
-                                                        Text(
-                                                            text = "$localTotalCount",
-                                                            fontSize = 11.5.sp,
-                                                            fontWeight = FontWeight.SemiBold,
-                                                            color = OrbitTheme.colors.textSecondary
+                                                        Surface(
+                                                            shape = CircleShape,
+                                                            color = OrbitTheme.colors.primary.copy(alpha = 0.15f)
+                                                        ) {
+                                                            Text(
+                                                                text = "$localTotalCount",
+                                                                fontSize = 11.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = OrbitTheme.colors.primary,
+                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                    ) {
+                                                        TextButton(
+                                                            onClick = {
+                                                                newPlaylistName = ""
+                                                                showNewPlaylistDialog = true
+                                                            },
+                                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                            modifier = Modifier.height(28.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Add,
+                                                                contentDescription = null,
+                                                                tint = OrbitTheme.colors.primary,
+                                                                modifier = Modifier.size(14.dp)
+                                                            )
+                                                            Spacer(modifier = Modifier.width(2.dp))
+                                                            Text(
+                                                                text = "新建歌单",
+                                                                fontSize = 11.5.sp,
+                                                                color = OrbitTheme.colors.primary,
+                                                                fontWeight = FontWeight.Medium
+                                                            )
+                                                        }
+                                                        Icon(
+                                                            imageVector = Icons.Default.KeyboardArrowDown,
+                                                            contentDescription = if (isLocalCollapsed) "展开" else "折叠",
+                                                            tint = OrbitTheme.colors.textSecondary,
+                                                            modifier = Modifier
+                                                                .size(20.dp)
+                                                                .rotate(rotationAngle)
                                                         )
                                                     }
                                                 }
                                             }
 
-                                            if (useTabletLayout) {
-                                                // 平板模式：双列展示本地歌单
-                                                if (favMatches && dislikedMatches) {
-                                                    item {
-                                                        Row(
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                                        ) {
-                                                            FavoritePlaylistItemCard(
-                                                                favTitle = favTitle,
-                                                                songCount = favoriteSongs.size,
-                                                                onClick = {
-                                                                    viewModel.selectPlaylist(
-                                                                        Playlist(
-                                                                            id = FAVORITE_PLAYLIST_ID,
-                                                                            name = favTitle,
-                                                                            songCount = favoriteSongs.size,
-                                                                            createdAt = 0L
-                                                                        )
-                                                                    )
-                                                                },
-                                                                onPlayAll = {
-                                                                    viewModel.playSong(
-                                                                        favoriteSongs,
-                                                                        0,
-                                                                        PlaybackOrigin.PlaylistOrigin(
+                                            if (!isLocalCollapsed) {
+                                                if (useTabletLayout) {
+                                                    // 平板模式：双列展示本地歌单
+                                                    if (favMatches && dislikedMatches) {
+                                                        item {
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                                            ) {
+                                                                FavoritePlaylistItemCard(
+                                                                    favTitle = favTitle,
+                                                                    songCount = favoriteSongs.size,
+                                                                    onClick = {
+                                                                        viewModel.selectPlaylist(
                                                                             Playlist(
                                                                                 id = FAVORITE_PLAYLIST_ID,
-                                                                                name = context.getString(R.string.favorite_songs),
+                                                                                name = favTitle,
                                                                                 songCount = favoriteSongs.size,
                                                                                 createdAt = 0L
                                                                             )
                                                                         )
-                                                                    )
-                                                                },
-                                                                modifier = Modifier.weight(1f)
-                                                            )
-
-                                                            DislikedPlaylistItemCard(
-                                                                dislikedTitle = dislikedTitle,
-                                                                songCount = dislikedSongs.size,
-                                                                onClick = {
-                                                                    viewModel.selectPlaylist(
-                                                                        Playlist(
-                                                                            id = DISLIKED_PLAYLIST_ID,
-                                                                            name = dislikedTitle,
-                                                                            songCount = dislikedSongs.size,
-                                                                            createdAt = 0L
+                                                                    },
+                                                                    onPlayAll = {
+                                                                        viewModel.playSong(
+                                                                            favoriteSongs,
+                                                                            0,
+                                                                            PlaybackOrigin.PlaylistOrigin(
+                                                                                Playlist(
+                                                                                    id = FAVORITE_PLAYLIST_ID,
+                                                                                    name = context.getString(R.string.favorite_songs),
+                                                                                    songCount = favoriteSongs.size,
+                                                                                    createdAt = 0L
+                                                                                )
+                                                                            )
                                                                         )
-                                                                    )
-                                                                },
-                                                                onPlayAll = {
-                                                                    viewModel.playSong(
-                                                                        dislikedSongs,
-                                                                        0,
-                                                                        PlaybackOrigin.PlaylistOrigin(
+                                                                    },
+                                                                    modifier = Modifier.weight(1f)
+                                                                )
+
+                                                                DislikedPlaylistItemCard(
+                                                                    dislikedTitle = dislikedTitle,
+                                                                    songCount = dislikedSongs.size,
+                                                                    onClick = {
+                                                                        viewModel.selectPlaylist(
                                                                             Playlist(
                                                                                 id = DISLIKED_PLAYLIST_ID,
                                                                                 name = dislikedTitle,
@@ -3643,13 +3758,151 @@ fun MusicLibraryScreen(
                                                                                 createdAt = 0L
                                                                             )
                                                                         )
-                                                                    )
+                                                                    },
+                                                                    onPlayAll = {
+                                                                        viewModel.playSong(
+                                                                            dislikedSongs,
+                                                                            0,
+                                                                            PlaybackOrigin.PlaylistOrigin(
+                                                                                Playlist(
+                                                                                    id = DISLIKED_PLAYLIST_ID,
+                                                                                    name = dislikedTitle,
+                                                                                    songCount = dislikedSongs.size,
+                                                                                    createdAt = 0L
+                                                                                )
+                                                                            )
+                                                                        )
+                                                                    },
+                                                                    modifier = Modifier.weight(1f)
+                                                                )
+                                                            }
+                                                        }
+                                                    } else {
+                                                        if (favMatches) {
+                                                            item {
+                                                                FavoritePlaylistItemCard(
+                                                                    favTitle = favTitle,
+                                                                    songCount = favoriteSongs.size,
+                                                                    onClick = {
+                                                                        viewModel.selectPlaylist(
+                                                                            Playlist(
+                                                                                id = FAVORITE_PLAYLIST_ID,
+                                                                                name = favTitle,
+                                                                                songCount = favoriteSongs.size,
+                                                                                createdAt = 0L
+                                                                            )
+                                                                        )
+                                                                    },
+                                                                    onPlayAll = {
+                                                                        viewModel.playSong(
+                                                                            favoriteSongs,
+                                                                            0,
+                                                                            PlaybackOrigin.PlaylistOrigin(
+                                                                                Playlist(
+                                                                                    id = FAVORITE_PLAYLIST_ID,
+                                                                                    name = context.getString(R.string.favorite_songs),
+                                                                                    songCount = favoriteSongs.size,
+                                                                                    createdAt = 0L
+                                                                                )
+                                                                            )
+                                                                        )
+                                                                    },
+                                                                    modifier = Modifier.fillMaxWidth()
+                                                                )
+                                                            }
+                                                        }
+                                                        if (dislikedMatches) {
+                                                            item {
+                                                                DislikedPlaylistItemCard(
+                                                                    dislikedTitle = dislikedTitle,
+                                                                    songCount = dislikedSongs.size,
+                                                                    onClick = {
+                                                                        viewModel.selectPlaylist(
+                                                                            Playlist(
+                                                                                id = DISLIKED_PLAYLIST_ID,
+                                                                                name = dislikedTitle,
+                                                                                songCount = dislikedSongs.size,
+                                                                                createdAt = 0L
+                                                                            )
+                                                                        )
+                                                                    },
+                                                                    onPlayAll = {
+                                                                        viewModel.playSong(
+                                                                            dislikedSongs,
+                                                                            0,
+                                                                            PlaybackOrigin.PlaylistOrigin(
+                                                                                Playlist(
+                                                                                    id = DISLIKED_PLAYLIST_ID,
+                                                                                    name = dislikedTitle,
+                                                                                    songCount = dislikedSongs.size,
+                                                                                    createdAt = 0L
+                                                                                )
+                                                                            )
+                                                                        )
+                                                                    },
+                                                                    modifier = Modifier.fillMaxWidth()
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+
+                                                    // 自建歌单两两一组双列展示
+                                                    val localChunks = filteredLocalPlaylists.chunked(2)
+                                                    items(localChunks, key = { chunk -> "local_chunk_${chunk.map { it.id }.joinToString("_")}" }) { pair ->
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                                        ) {
+                                                            val p1 = pair[0]
+                                                            LocalPlaylistItemCard(
+                                                                playlist = p1,
+                                                                onClick = { viewModel.selectPlaylist(p1) },
+                                                                onPlay = {
+                                                                    coroutineScope.launch {
+                                                                        val songs = viewModel.getSongsInPlaylist(p1.id)
+                                                                        if (songs.isNotEmpty()) {
+                                                                            viewModel.playSong(songs, 0, PlaybackOrigin.PlaylistOrigin(p1))
+                                                                        }
+                                                                    }
+                                                                },
+                                                                onRename = {
+                                                                    renamingPlaylist = p1
+                                                                    renamePlaylistName = p1.name
+                                                                },
+                                                                onDelete = {
+                                                                    deletingPlaylist = p1
                                                                 },
                                                                 modifier = Modifier.weight(1f)
                                                             )
+                                                            if (pair.size > 1) {
+                                                                val p2 = pair[1]
+                                                                LocalPlaylistItemCard(
+                                                                    playlist = p2,
+                                                                    onClick = { viewModel.selectPlaylist(p2) },
+                                                                    onPlay = {
+                                                                        coroutineScope.launch {
+                                                                            val songs = viewModel.getSongsInPlaylist(p2.id)
+                                                                            if (songs.isNotEmpty()) {
+                                                                                viewModel.playSong(songs, 0, PlaybackOrigin.PlaylistOrigin(p2))
+                                                                            }
+                                                                        }
+                                                                    },
+                                                                    onRename = {
+                                                                        renamingPlaylist = p2
+                                                                        renamePlaylistName = p2.name
+                                                                    },
+                                                                    onDelete = {
+                                                                        deletingPlaylist = p2
+                                                                    },
+                                                                    modifier = Modifier.weight(1f)
+                                                                )
+                                                            } else {
+                                                                Spacer(modifier = Modifier.weight(1f))
+                                                            }
                                                         }
                                                     }
                                                 } else {
+                                                    // 手机单列展示
                                                     if (favMatches) {
                                                         item {
                                                             FavoritePlaylistItemCard(
@@ -3683,6 +3936,7 @@ fun MusicLibraryScreen(
                                                             )
                                                         }
                                                     }
+
                                                     if (dislikedMatches) {
                                                         item {
                                                             DislikedPlaylistItemCard(
@@ -3716,160 +3970,35 @@ fun MusicLibraryScreen(
                                                             )
                                                         }
                                                     }
-                                                }
 
-                                                // 自建歌单两两一组双列展示
-                                                val localChunks = filteredLocalPlaylists.chunked(2)
-                                                items(localChunks, key = { chunk -> "local_chunk_${chunk.map { it.id }.joinToString("_")}" }) { pair ->
-                                                    Row(
-                                                        modifier = Modifier.fillMaxWidth(),
-                                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                                    ) {
-                                                        val p1 = pair[0]
+                                                    items(filteredLocalPlaylists, key = { "local_${it.id}" }) { playlist ->
                                                         LocalPlaylistItemCard(
-                                                            playlist = p1,
-                                                            onClick = { viewModel.selectPlaylist(p1) },
+                                                            playlist = playlist,
+                                                            onClick = { viewModel.selectPlaylist(playlist) },
                                                             onPlay = {
                                                                 coroutineScope.launch {
-                                                                    val songs = viewModel.getSongsInPlaylist(p1.id)
+                                                                    val songs = viewModel.getSongsInPlaylist(playlist.id)
                                                                     if (songs.isNotEmpty()) {
-                                                                        viewModel.playSong(songs, 0, PlaybackOrigin.PlaylistOrigin(p1))
+                                                                        viewModel.playSong(songs, 0, PlaybackOrigin.PlaylistOrigin(playlist))
                                                                     }
                                                                 }
                                                             },
                                                             onRename = {
-                                                                renamingPlaylist = p1
-                                                                renamePlaylistName = p1.name
+                                                                renamingPlaylist = playlist
+                                                                renamePlaylistName = playlist.name
                                                             },
                                                             onDelete = {
-                                                                deletingPlaylist = p1
-                                                            },
-                                                            modifier = Modifier.weight(1f)
-                                                        )
-                                                        if (pair.size > 1) {
-                                                            val p2 = pair[1]
-                                                            LocalPlaylistItemCard(
-                                                                playlist = p2,
-                                                                onClick = { viewModel.selectPlaylist(p2) },
-                                                                onPlay = {
-                                                                    coroutineScope.launch {
-                                                                        val songs = viewModel.getSongsInPlaylist(p2.id)
-                                                                        if (songs.isNotEmpty()) {
-                                                                            viewModel.playSong(songs, 0, PlaybackOrigin.PlaylistOrigin(p2))
-                                                                        }
-                                                                    }
-                                                                },
-                                                                onRename = {
-                                                                    renamingPlaylist = p2
-                                                                    renamePlaylistName = p2.name
-                                                                },
-                                                                onDelete = {
-                                                                    deletingPlaylist = p2
-                                                                },
-                                                                modifier = Modifier.weight(1f)
-                                                            )
-                                                        } else {
-                                                            Spacer(modifier = Modifier.weight(1f))
-                                                        }
-                                                    }
-                                                }
-                                            } else {
-                                                // 手机单列展示
-                                                if (favMatches) {
-                                                    item {
-                                                        FavoritePlaylistItemCard(
-                                                            favTitle = favTitle,
-                                                            songCount = favoriteSongs.size,
-                                                            onClick = {
-                                                                viewModel.selectPlaylist(
-                                                                    Playlist(
-                                                                        id = FAVORITE_PLAYLIST_ID,
-                                                                        name = favTitle,
-                                                                        songCount = favoriteSongs.size,
-                                                                        createdAt = 0L
-                                                                    )
-                                                                )
-                                                            },
-                                                            onPlayAll = {
-                                                                viewModel.playSong(
-                                                                    favoriteSongs,
-                                                                    0,
-                                                                    PlaybackOrigin.PlaylistOrigin(
-                                                                        Playlist(
-                                                                            id = FAVORITE_PLAYLIST_ID,
-                                                                            name = context.getString(R.string.favorite_songs),
-                                                                            songCount = favoriteSongs.size,
-                                                                            createdAt = 0L
-                                                                        )
-                                                                    )
-                                                                )
+                                                                deletingPlaylist = playlist
                                                             },
                                                             modifier = Modifier.fillMaxWidth()
                                                         )
                                                     }
-                                                }
-
-                                                if (dislikedMatches) {
-                                                    item {
-                                                        DislikedPlaylistItemCard(
-                                                            dislikedTitle = dislikedTitle,
-                                                            songCount = dislikedSongs.size,
-                                                            onClick = {
-                                                                viewModel.selectPlaylist(
-                                                                    Playlist(
-                                                                        id = DISLIKED_PLAYLIST_ID,
-                                                                        name = dislikedTitle,
-                                                                        songCount = dislikedSongs.size,
-                                                                        createdAt = 0L
-                                                                    )
-                                                                )
-                                                            },
-                                                            onPlayAll = {
-                                                                viewModel.playSong(
-                                                                    dislikedSongs,
-                                                                    0,
-                                                                    PlaybackOrigin.PlaylistOrigin(
-                                                                        Playlist(
-                                                                            id = DISLIKED_PLAYLIST_ID,
-                                                                            name = dislikedTitle,
-                                                                            songCount = dislikedSongs.size,
-                                                                            createdAt = 0L
-                                                                        )
-                                                                    )
-                                                                )
-                                                            },
-                                                            modifier = Modifier.fillMaxWidth()
-                                                        )
-                                                    }
-                                                }
-
-                                                items(filteredLocalPlaylists, key = { "local_${it.id}" }) { playlist ->
-                                                    LocalPlaylistItemCard(
-                                                        playlist = playlist,
-                                                        onClick = { viewModel.selectPlaylist(playlist) },
-                                                        onPlay = {
-                                                            coroutineScope.launch {
-                                                                val songs = viewModel.getSongsInPlaylist(playlist.id)
-                                                                if (songs.isNotEmpty()) {
-                                                                    viewModel.playSong(songs, 0, PlaybackOrigin.PlaylistOrigin(playlist))
-                                                                }
-                                                            }
-                                                        },
-                                                        onRename = {
-                                                            renamingPlaylist = playlist
-                                                            renamePlaylistName = playlist.name
-                                                        },
-                                                        onDelete = {
-                                                            deletingPlaylist = playlist
-                                                        },
-                                                        modifier = Modifier.fillMaxWidth()
-                                                    )
                                                 }
                                             }
                                         }
 
                                         // ==========================================
-                                        // 2. 各平台在线收藏歌单分组 (ONLINE PLATFORMS)
+                                        // 2. 各平台在线收藏歌单列表 (ONLINE PLATFORMS)
                                         // ==========================================
                                         val platformsWithFavorites = listOf(
                                             Triple(OnlinePlatform.NETEASE, neteaseFavorites, Color(0xFFE60026)),
@@ -3879,151 +4008,188 @@ fun MusicLibraryScreen(
                                             Triple(OnlinePlatform.MIGU, miguFavorites, Color(0xFFE91E63))
                                         )
 
+                                        val playOnlineItem: (OnlinePlaylist) -> Unit = { onlinePlaylist ->
+                                            loadingOnlinePlaylistId = onlinePlaylist.id
+                                            coroutineScope.launch {
+                                                val repo = OnlineMusicRepository.getInstance()
+                                                val res = repo.getPlaylistDetail(onlinePlaylist.id, onlinePlaylist.platform)
+                                                res.onSuccess { (detail, songs) ->
+                                                    if (songs.isNotEmpty()) {
+                                                        val origin = PlaybackOrigin.OnlinePlaylistOrigin(detail)
+                                                        viewModel.playOnlineSongs(songs, 0, origin)
+                                                    } else {
+                                                        Toast.makeText(context, "歌单曲目为空", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }.onFailure {
+                                                    Toast.makeText(context, "获取歌单失败: ${it.localizedMessage}", Toast.LENGTH_SHORT).show()
+                                                }
+                                                loadingOnlinePlaylistId = null
+                                            }
+                                        }
+
                                         platformsWithFavorites.forEach { (platform, favList, brandColor) ->
+                                            val groupKey = platform.name.uppercase()
                                             val shouldRenderPlatform = (selectedPlaylistGroup == "ALL" && favList.isNotEmpty()) ||
-                                                    (selectedPlaylistGroup == platform.name.uppercase())
+                                                    (selectedPlaylistGroup == groupKey)
 
                                             if (shouldRenderPlatform && favList.isNotEmpty()) {
-                                                // 平台分组 Header
-                                                item {
+                                                val isPlatformCollapsed = collapsedPlaylistGroups.contains(groupKey)
+                                                val platformDisplayName = when (platform) {
+                                                    OnlinePlatform.NETEASE -> "网易云音乐"
+                                                    OnlinePlatform.QQ -> "QQ 音乐"
+                                                    OnlinePlatform.KUGOU -> "酷狗音乐"
+                                                    OnlinePlatform.KUWO -> "酷我音乐"
+                                                    OnlinePlatform.MIGU -> "咪咕音乐"
+                                                }
+                                                val targetSquareTab = when (platform) {
+                                                    OnlinePlatform.NETEASE -> LibraryTab.NETEASE_SQUARE
+                                                    OnlinePlatform.QQ -> LibraryTab.QQ_SQUARE
+                                                    OnlinePlatform.KUGOU -> LibraryTab.KUGOU_SQUARE
+                                                    OnlinePlatform.KUWO -> LibraryTab.KUWO_SQUARE
+                                                    OnlinePlatform.MIGU -> LibraryTab.MIGU_SQUARE
+                                                }
+
+                                                // 分组 Header
+                                                item(key = "header_online_${platform.name}") {
+                                                    val rotationAngle by animateFloatAsState(
+                                                        targetValue = if (isPlatformCollapsed) -90f else 0f,
+                                                        label = "collapse_anim_${platform.name}"
+                                                    )
                                                     Row(
                                                         modifier = Modifier
                                                             .fillMaxWidth()
-                                                            .padding(top = if (selectedPlaylistGroup == "ALL") 10.dp else 2.dp, bottom = 4.dp),
+                                                            .clip(RoundedCornerShape(8.dp))
+                                                            .clickable {
+                                                                collapsedPlaylistGroups = if (isPlatformCollapsed) {
+                                                                    collapsedPlaylistGroups - groupKey
+                                                                } else {
+                                                                    collapsedPlaylistGroups + groupKey
+                                                                }
+                                                            }
+                                                            .padding(vertical = 8.dp, horizontal = 4.dp),
                                                         verticalAlignment = Alignment.CenterVertically,
                                                         horizontalArrangement = Arrangement.SpaceBetween
                                                     ) {
-                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                        ) {
                                                             Box(
                                                                 modifier = Modifier
-                                                                    .size(4.dp, 14.dp)
+                                                                    .width(4.dp)
+                                                                    .height(16.dp)
                                                                     .clip(RoundedCornerShape(2.dp))
                                                                     .background(brandColor)
                                                             )
-                                                            Spacer(modifier = Modifier.width(8.dp))
                                                             Text(
-                                                                text = "${platform.displayName} 收藏歌单",
-                                                                fontSize = 13.5.sp,
+                                                                text = "$platformDisplayName 收藏歌单",
+                                                                fontSize = 14.sp,
                                                                 fontWeight = FontWeight.Bold,
                                                                 color = OrbitTheme.colors.textPrimary
                                                             )
-                                                            Spacer(modifier = Modifier.width(6.dp))
-                                                            Text(
-                                                                text = "${favList.size}",
-                                                                fontSize = 11.5.sp,
-                                                                fontWeight = FontWeight.SemiBold,
-                                                                color = OrbitTheme.colors.textSecondary
-                                                            )
-                                                        }
-
-                                                        // 前往在线广场快捷入口
-                                                        val targetTab = when (platform) {
-                                                            OnlinePlatform.NETEASE -> LibraryTab.NETEASE_SQUARE
-                                                            OnlinePlatform.QQ -> LibraryTab.QQ_SQUARE
-                                                            OnlinePlatform.KUGOU -> LibraryTab.KUGOU_SQUARE
-                                                            OnlinePlatform.KUWO -> LibraryTab.KUWO_SQUARE
-                                                            OnlinePlatform.MIGU -> LibraryTab.MIGU_SQUARE
-                                                        }
-                                                        Row(
-                                                            modifier = Modifier
-                                                                .clip(RoundedCornerShape(12.dp))
-                                                                .clickable { viewModel.setTab(targetTab) }
-                                                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                                                            verticalAlignment = Alignment.CenterVertically
-                                                        ) {
-                                                            Text(
-                                                                text = "去广场",
-                                                                fontSize = 11.5.sp,
-                                                                fontWeight = FontWeight.Medium,
-                                                                color = OrbitTheme.colors.primary
-                                                            )
-                                                            Icon(
-                                                                imageVector = Icons.Default.ChevronRight,
-                                                                contentDescription = null,
-                                                                tint = OrbitTheme.colors.primary,
-                                                                modifier = Modifier.size(14.dp)
-                                                            )
-                                                        }
-                                                    }
-                                                }
-
-                                                val playOnlineItem: (OnlinePlaylist) -> Unit = { onlinePlaylist ->
-                                                    loadingOnlinePlaylistId = onlinePlaylist.id
-                                                    coroutineScope.launch {
-                                                        val repo = OnlineMusicRepository.getInstance()
-                                                        val res = repo.getPlaylistDetail(onlinePlaylist.id, onlinePlaylist.platform)
-                                                        res.onSuccess { (detail, songs) ->
-                                                            if (songs.isNotEmpty()) {
-                                                                val origin = PlaybackOrigin.OnlinePlaylistOrigin(detail)
-                                                                viewModel.playOnlineSongs(songs, 0, origin)
-                                                            } else {
-                                                                Toast.makeText(context, "歌单曲目为空", Toast.LENGTH_SHORT).show()
+                                                            Surface(
+                                                                shape = CircleShape,
+                                                                color = brandColor.copy(alpha = 0.15f)
+                                                            ) {
+                                                                Text(
+                                                                    text = "${favList.size}",
+                                                                    fontSize = 11.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = brandColor,
+                                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                )
                                                             }
-                                                        }.onFailure {
-                                                            Toast.makeText(context, "获取歌单失败: ${it.localizedMessage}", Toast.LENGTH_SHORT).show()
                                                         }
-                                                        loadingOnlinePlaylistId = null
+
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                        ) {
+                                                            TextButton(
+                                                                onClick = { viewModel.setTab(targetSquareTab) },
+                                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                                modifier = Modifier.height(28.dp)
+                                                            ) {
+                                                                Text(
+                                                                    text = "去广场",
+                                                                    fontSize = 11.5.sp,
+                                                                    color = brandColor,
+                                                                    fontWeight = FontWeight.Medium
+                                                                )
+                                                            }
+                                                            Icon(
+                                                                imageVector = Icons.Default.KeyboardArrowDown,
+                                                                contentDescription = if (isPlatformCollapsed) "展开" else "折叠",
+                                                                tint = OrbitTheme.colors.textSecondary,
+                                                                modifier = Modifier
+                                                                    .size(20.dp)
+                                                                    .rotate(rotationAngle)
+                                                            )
+                                                        }
                                                     }
                                                 }
 
-                                                if (useTabletLayout) {
-                                                    // 平板双列展示在线收藏歌单
-                                                    val onlineChunks = favList.chunked(2)
-                                                    items(onlineChunks, key = { chunk -> "online_chunk_${platform.name}_${chunk.map { it.id }.joinToString("_")}" }) { pair ->
-                                                        Row(
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                                        ) {
-                                                            val op1 = pair[0]
-                                                            OnlinePlaylistItemCard(
-                                                                onlinePlaylist = op1,
-                                                                brandColor = brandColor,
-                                                                isLoading = loadingOnlinePlaylistId == op1.id,
-                                                                onClick = { viewModel.selectOnlinePlaylist(op1) },
-                                                                onPlay = { playOnlineItem(op1) },
-                                                                onShowDetail = { viewModel.selectOnlinePlaylist(op1) },
-                                                                onRemoveFavorite = {
-                                                                    onlineFavoriteManager.removeFavorite(op1)
-                                                                    Toast.makeText(context, "已取消收藏「${op1.title}」", Toast.LENGTH_SHORT).show()
-                                                                },
-                                                                modifier = Modifier.weight(1f)
-                                                            )
-                                                            if (pair.size > 1) {
-                                                                val op2 = pair[1]
+                                                // 歌单内容 (未折叠时渲染)
+                                                if (!isPlatformCollapsed) {
+                                                    if (useTabletLayout) {
+                                                        // 平板双列展示在线收藏歌单
+                                                        val onlineChunks = favList.chunked(2)
+                                                        items(onlineChunks, key = { chunk -> "online_chunk_${platform.name}_${chunk.map { it.id }.joinToString("_")}" }) { pair ->
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                                            ) {
+                                                                val op1 = pair[0]
                                                                 OnlinePlaylistItemCard(
-                                                                    onlinePlaylist = op2,
+                                                                    onlinePlaylist = op1,
                                                                     brandColor = brandColor,
-                                                                    isLoading = loadingOnlinePlaylistId == op2.id,
-                                                                    onClick = { viewModel.selectOnlinePlaylist(op2) },
-                                                                    onPlay = { playOnlineItem(op2) },
-                                                                    onShowDetail = { viewModel.selectOnlinePlaylist(op2) },
+                                                                    isLoading = loadingOnlinePlaylistId == op1.id,
+                                                                    onClick = { viewModel.selectOnlinePlaylist(op1) },
+                                                                    onPlay = { playOnlineItem(op1) },
+                                                                    onShowDetail = { viewModel.selectOnlinePlaylist(op1) },
                                                                     onRemoveFavorite = {
-                                                                        onlineFavoriteManager.removeFavorite(op2)
-                                                                        Toast.makeText(context, "已取消收藏「${op2.title}」", Toast.LENGTH_SHORT).show()
+                                                                        onlineFavoriteManager.removeFavorite(op1)
+                                                                        Toast.makeText(context, "已取消收藏「${op1.title}」", Toast.LENGTH_SHORT).show()
                                                                     },
                                                                     modifier = Modifier.weight(1f)
                                                                 )
-                                                            } else {
-                                                                Spacer(modifier = Modifier.weight(1f))
+                                                                if (pair.size > 1) {
+                                                                    val op2 = pair[1]
+                                                                    OnlinePlaylistItemCard(
+                                                                        onlinePlaylist = op2,
+                                                                        brandColor = brandColor,
+                                                                        isLoading = loadingOnlinePlaylistId == op2.id,
+                                                                        onClick = { viewModel.selectOnlinePlaylist(op2) },
+                                                                        onPlay = { playOnlineItem(op2) },
+                                                                        onShowDetail = { viewModel.selectOnlinePlaylist(op2) },
+                                                                        onRemoveFavorite = {
+                                                                            onlineFavoriteManager.removeFavorite(op2)
+                                                                            Toast.makeText(context, "已取消收藏「${op2.title}」", Toast.LENGTH_SHORT).show()
+                                                                        },
+                                                                        modifier = Modifier.weight(1f)
+                                                                    )
+                                                                } else {
+                                                                    Spacer(modifier = Modifier.weight(1f))
+                                                                }
                                                             }
                                                         }
-                                                    }
-                                                } else {
-                                                    // 手机单列展示
-                                                    items(favList, key = { "online_${it.platform.name}_${it.id}" }) { onlinePlaylist ->
-                                                        OnlinePlaylistItemCard(
-                                                            onlinePlaylist = onlinePlaylist,
-                                                            brandColor = brandColor,
-                                                            isLoading = loadingOnlinePlaylistId == onlinePlaylist.id,
-                                                            onClick = { viewModel.selectOnlinePlaylist(onlinePlaylist) },
-                                                            onPlay = { playOnlineItem(onlinePlaylist) },
-                                                            onShowDetail = { viewModel.selectOnlinePlaylist(onlinePlaylist) },
-                                                            onRemoveFavorite = {
-                                                                onlineFavoriteManager.removeFavorite(onlinePlaylist)
-                                                                Toast.makeText(context, "已取消收藏「${onlinePlaylist.title}」", Toast.LENGTH_SHORT).show()
-                                                             },
-                                                             modifier = Modifier.fillMaxWidth()
-                                                         )
+                                                    } else {
+                                                        // 手机单列展示
+                                                        items(favList, key = { "online_${it.platform.name}_${it.id}" }) { onlinePlaylist ->
+                                                            OnlinePlaylistItemCard(
+                                                                onlinePlaylist = onlinePlaylist,
+                                                                brandColor = brandColor,
+                                                                isLoading = loadingOnlinePlaylistId == onlinePlaylist.id,
+                                                                onClick = { viewModel.selectOnlinePlaylist(onlinePlaylist) },
+                                                                onPlay = { playOnlineItem(onlinePlaylist) },
+                                                                onShowDetail = { viewModel.selectOnlinePlaylist(onlinePlaylist) },
+                                                                onRemoveFavorite = {
+                                                                    onlineFavoriteManager.removeFavorite(onlinePlaylist)
+                                                                    Toast.makeText(context, "已取消收藏「${onlinePlaylist.title}」", Toast.LENGTH_SHORT).show()
+                                                                },
+                                                                modifier = Modifier.fillMaxWidth()
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }
@@ -4070,7 +4236,8 @@ fun MusicLibraryScreen(
                         } else {
                             com.orbit.music.ui.components.OnlinePlaylistSquareView(
                                 platform = com.orbit.music.data.online.model.OnlinePlatform.NETEASE,
-                                onPlaylistClick = { viewModel.selectOnlinePlaylist(it) }
+                                onPlaylistClick = { viewModel.selectOnlinePlaylist(it) },
+                                onPlayOnlineSong = { songs, index -> viewModel.playOnlineSongs(songs, index) }
                             )
                         }
                     }
@@ -4111,7 +4278,8 @@ fun MusicLibraryScreen(
                         } else {
                             com.orbit.music.ui.components.OnlinePlaylistSquareView(
                                 platform = com.orbit.music.data.online.model.OnlinePlatform.QQ,
-                                onPlaylistClick = { viewModel.selectOnlinePlaylist(it) }
+                                onPlaylistClick = { viewModel.selectOnlinePlaylist(it) },
+                                onPlayOnlineSong = { songs, index -> viewModel.playOnlineSongs(songs, index) }
                             )
                         }
                     }
@@ -4152,7 +4320,8 @@ fun MusicLibraryScreen(
                         } else {
                             com.orbit.music.ui.components.OnlinePlaylistSquareView(
                                 platform = com.orbit.music.data.online.model.OnlinePlatform.KUGOU,
-                                onPlaylistClick = { viewModel.selectOnlinePlaylist(it) }
+                                onPlaylistClick = { viewModel.selectOnlinePlaylist(it) },
+                                onPlayOnlineSong = { songs, index -> viewModel.playOnlineSongs(songs, index) }
                             )
                         }
                     }
@@ -4193,7 +4362,8 @@ fun MusicLibraryScreen(
                         } else {
                             com.orbit.music.ui.components.OnlinePlaylistSquareView(
                                 platform = com.orbit.music.data.online.model.OnlinePlatform.KUWO,
-                                onPlaylistClick = { viewModel.selectOnlinePlaylist(it) }
+                                onPlaylistClick = { viewModel.selectOnlinePlaylist(it) },
+                                onPlayOnlineSong = { songs, index -> viewModel.playOnlineSongs(songs, index) }
                             )
                         }
                     }
@@ -4234,7 +4404,8 @@ fun MusicLibraryScreen(
                         } else {
                             com.orbit.music.ui.components.OnlinePlaylistSquareView(
                                 platform = com.orbit.music.data.online.model.OnlinePlatform.MIGU,
-                                onPlaylistClick = { viewModel.selectOnlinePlaylist(it) }
+                                onPlaylistClick = { viewModel.selectOnlinePlaylist(it) },
+                                onPlayOnlineSong = { songs, index -> viewModel.playOnlineSongs(songs, index) }
                             )
                         }
                     }
@@ -4277,6 +4448,18 @@ fun MusicLibraryScreen(
                                 onArtistClick = { openedOnlineArtist = it }
                             )
                         }
+                    }
+
+                    LibraryTab.ONLINE_SEARCH -> {
+                        // 12. 全网多平台歌曲检索主视图
+                        com.orbit.music.ui.components.OnlineSongSearchView(
+                            onPlaySong = { songs, index ->
+                                viewModel.playOnlineSongs(songs, index)
+                            },
+                            onViewAlbum = { songItem ->
+                                viewModel.openOnlineAlbumBySongItem(songItem)
+                            }
+                        )
                     }
                 }
             }
@@ -5622,6 +5805,20 @@ fun MusicLibraryScreen(
         )
     }
 
+    // 全局在线专辑详情弹窗
+    val activeOnlineAlbumForDialog by viewModel.activeOnlineAlbumForDialog.collectAsState()
+    if (activeOnlineAlbumForDialog != null) {
+        com.orbit.music.ui.components.OnlineAlbumDetailDialog(
+            album = activeOnlineAlbumForDialog!!,
+            onDismiss = { viewModel.dismissOnlineAlbumDialog() },
+            onSongClick = { index, song, allSongs ->
+                viewModel.playOnlineSongs(allSongs, index)
+            },
+            currentPlayingTitle = playbackState.currentSong?.title,
+            currentPlayingArtist = playbackState.currentSong?.artist,
+            isPlaying = playbackState.isPlaying
+        )
+    }
 }
 
 @Composable
@@ -5655,6 +5852,7 @@ private fun getTabTitle(tab: LibraryTab): String {
         LibraryTab.KUWO_SQUARE -> "酷我音乐广场"
         LibraryTab.MIGU_SQUARE -> "咪咕音乐广场"
         LibraryTab.ONLINE_ARTISTS -> "歌手库"
+        LibraryTab.ONLINE_SEARCH -> "全网搜歌"
     }
 }
 
@@ -5786,6 +5984,7 @@ private fun TabletSideNavRail(
                         LibraryTab.KUWO_SQUARE -> Icons.Default.Radio to -1
                         LibraryTab.MIGU_SQUARE -> Icons.Default.GraphicEq to -1
                         LibraryTab.ONLINE_ARTISTS -> Icons.Default.PersonSearch to -1
+                        LibraryTab.ONLINE_SEARCH -> Icons.Default.TravelExplore to -1
                     }
 
                     if (isExpanded) {
@@ -6639,7 +6838,7 @@ private fun OnlinePlaylistItemCard(
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 歌单封面大图 + 平台角标
+        // 歌单封面大图（保持干净完整无遮挡）
         Box(
             modifier = Modifier
                 .size(60.dp)
@@ -6662,32 +6861,6 @@ private fun OnlinePlaylistItemCard(
                     modifier = Modifier.size(28.dp)
                 )
             }
-
-            // 平台标签徽章
-            val badgeText = when (onlinePlaylist.platform) {
-                OnlinePlatform.NETEASE -> "网易云"
-                OnlinePlatform.QQ -> "QQ"
-                OnlinePlatform.KUGOU -> "酷狗"
-                OnlinePlatform.KUWO -> "酷我"
-                OnlinePlatform.MIGU -> "咪咕"
-            }
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(3.dp)
-                    .background(
-                        color = brandColor,
-                        shape = RoundedCornerShape(3.dp)
-                    )
-                    .padding(horizontal = 3.dp, vertical = 1.dp)
-            ) {
-                Text(
-                    text = badgeText,
-                    color = Color.White,
-                    fontSize = 7.5.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
         }
 
         Spacer(modifier = Modifier.width(14.dp))
@@ -6702,28 +6875,48 @@ private fun OnlinePlaylistItemCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(modifier = Modifier.height(3.dp))
-            val subtitle = buildString {
-                if (!onlinePlaylist.creatorName.isNullOrBlank()) {
-                    append(onlinePlaylist.creatorName)
-                    append(" • ")
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                // 柔和半透明平台微型胶囊（不在封面上遮挡）
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = brandColor.copy(alpha = 0.12f),
+                    border = BorderStroke(0.5.dp, brandColor.copy(alpha = 0.35f))
+                ) {
+                    Text(
+                        text = onlinePlaylist.platform.displayName,
+                        color = brandColor,
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
                 }
-                if (onlinePlaylist.trackCount > 0) {
-                    append("${onlinePlaylist.trackCount} 首")
-                } else {
-                    append("在线歌单")
+
+                val subtitle = buildString {
+                    if (!onlinePlaylist.creatorName.isNullOrBlank()) {
+                        append(onlinePlaylist.creatorName)
+                        append(" • ")
+                    }
+                    if (onlinePlaylist.trackCount > 0) {
+                        append("${onlinePlaylist.trackCount} 首")
+                    } else {
+                        append("在线歌单")
+                    }
+                    if (onlinePlaylist.playCount > 0) {
+                        append(" • ${formatCount(onlinePlaylist.playCount)} 播放")
+                    }
                 }
-                if (onlinePlaylist.playCount > 0) {
-                    append(" • ${formatCount(onlinePlaylist.playCount)} 播放")
-                }
+                Text(
+                    text = subtitle,
+                    color = OrbitTheme.colors.textSecondary,
+                    fontSize = 11.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
-            Text(
-                text = subtitle,
-                color = OrbitTheme.colors.textSecondary,
-                fontSize = 11.5.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
         }
 
         // 快捷播放按钮

@@ -226,5 +226,90 @@ class OnlineMusicSourceTest {
         println("=== QQ Album Responses ===")
         println(resp)
     }
+
+    @Test
+    fun testSearchSongsNeteaseAndQQ() {
+        val repo = OnlineMusicRepository.getInstance()
+        kotlinx.coroutines.runBlocking {
+            val neteaseRes = repo.searchSongs("晴天 周杰伦", 1, 5, OnlinePlatform.NETEASE)
+            println("Netease search count: ${neteaseRes.getOrNull()?.size}")
+            neteaseRes.getOrNull()?.forEach {
+                println("  [Netease] ${it.title} - ${it.artist} (${it.album}) id=${it.id}")
+            }
+            assertTrue("网易云单曲搜索应有结果", neteaseRes.getOrNull()?.isNotEmpty() == true)
+
+            val qqRes = repo.searchSongs("晴天 周杰伦", 1, 5, OnlinePlatform.QQ)
+            println("QQ search count: ${qqRes.getOrNull()?.size}")
+            qqRes.getOrNull()?.forEach {
+                println("  [QQ] ${it.title} - ${it.artist} (${it.album}) id=${it.id}")
+            }
+            assertTrue("QQ音乐单曲搜索应有结果", qqRes.getOrNull()?.isNotEmpty() == true)
+        }
+    }
+
+    @Test
+    fun testSearchSongsAllPlatforms() {
+        val repo = OnlineMusicRepository.getInstance()
+        kotlinx.coroutines.runBlocking {
+            val allMap = repo.searchSongsAllPlatforms("海阔天空", 1, 5)
+            println("All platforms search results:")
+            allMap.forEach { (platform, result) ->
+                val songs = result.getOrNull() ?: emptyList()
+                println("  [${platform.displayName}] count=${songs.size}, first=${songs.firstOrNull()?.title} - ${songs.firstOrNull()?.artist}")
+            }
+            assertTrue("至少有平台能检索到歌曲", allMap.values.any { it.getOrNull()?.isNotEmpty() == true })
+        }
+    }
+
+    @Test
+    fun testSearchSongsCoversNonEmpty() {
+        val repo = OnlineMusicRepository.getInstance()
+        kotlinx.coroutines.runBlocking {
+            for (platform in OnlinePlatform.entries) {
+                val res = repo.searchSongs("周杰伦", 1, 5, platform)
+                val songs = res.getOrNull() ?: emptyList()
+                println("=== Platform: ${platform.displayName}, count=${songs.size} ===")
+                songs.forEach { s ->
+                    println("  [${s.platform.displayName}] ${s.title} - ${s.artist} coverUrl=${s.coverUrl}")
+                }
+                if (songs.isNotEmpty()) {
+                    val hasCovers = songs.count { item ->
+                        val c = item.coverUrl
+                        !c.isNullOrEmpty() && (c.startsWith("http://") || c.startsWith("https://"))
+                    }
+                    println("  -> Valid covers count: $hasCovers / ${songs.size}")
+                    assertTrue("${platform.displayName} 搜索出的歌曲应该包含有效封面", hasCovers > 0)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun testResolveAlbumDetailAllPlatforms() {
+        val repo = OnlineMusicRepository.getInstance()
+        kotlinx.coroutines.runBlocking {
+            for (platform in OnlinePlatform.entries) {
+                val searchRes = repo.searchSongs("七里香 周杰伦", 1, 3, platform)
+                val songs = searchRes.getOrNull() ?: emptyList()
+                if (songs.isNotEmpty()) {
+                    val firstSong = songs.first()
+                    val albumRes = repo.resolveAlbumDetail(
+                        platform = platform,
+                        albumId = firstSong.albumId,
+                        albumTitle = firstSong.album,
+                        artist = firstSong.artist,
+                        defaultCover = firstSong.coverUrl
+                    )
+                    val (album, trackList) = albumRes.getOrNull() ?: Pair(null, emptyList())
+                    println("=== [${platform.displayName}] Album Detail ===")
+                    println("  Album: ${album?.title}, artist=${album?.artist}, cover=${album?.coverUrl}, tracksCount=${trackList.size}")
+                    trackList.take(3).forEachIndexed { i, t ->
+                        println("    Track ${i + 1}: ${t.title} - ${t.artist}")
+                    }
+                    assertTrue("${platform.displayName} 应当成功解析出专辑", album != null)
+                }
+            }
+        }
+    }
 }
 

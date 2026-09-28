@@ -56,6 +56,7 @@ fun OnlinePlaylistSquareView(
     platform: OnlinePlatform,
     onPlaylistClick: (OnlinePlaylist) -> Unit,
     onArtistClick: ((com.orbit.music.data.online.model.OnlineArtist) -> Unit)? = null,
+    onPlayOnlineSong: ((List<OnlineSongItem>, Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
     viewModel: com.orbit.music.ui.viewmodel.OnlinePlaylistViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
         key = "online_square_${platform.name}",
@@ -65,6 +66,8 @@ fun OnlinePlaylistSquareView(
     val uiState by viewModel.uiState.collectAsState()
     val repository = remember { OnlineMusicRepository.getInstance() }
     var showSourceManagerDialog by remember { mutableStateOf(false) }
+    var showSongSearchDialog by remember { mutableStateOf(false) }
+    var songSearchKeyword by remember { mutableStateOf("") }
 
     val tabTitles = listOf("精选推荐", "热门分类", "官方榜单", "我的收藏")
 
@@ -76,8 +79,34 @@ fun OnlinePlaylistSquareView(
         }
         androidx.compose.ui.window.Dialog(
             onDismissRequest = { showSourceManagerDialog = false },
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false
+            )
         ) {
+            val isDark = OrbitTheme.colors.isDark
+            val view = androidx.compose.ui.platform.LocalView.current
+            androidx.compose.runtime.SideEffect {
+                var parent = view.parent
+                while (parent != null) {
+                    if (parent is androidx.compose.ui.window.DialogWindowProvider) {
+                        val window = parent.window
+                        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+                        window.statusBarColor = android.graphics.Color.TRANSPARENT
+                        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                            window.isStatusBarContrastEnforced = false
+                            window.isNavigationBarContrastEnforced = false
+                        }
+                        val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+                        insetsController.isAppearanceLightStatusBars = !isDark
+                        insetsController.isAppearanceLightNavigationBars = !isDark
+                        break
+                    }
+                    parent = parent.parent
+                }
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -88,6 +117,23 @@ fun OnlinePlaylistSquareView(
                 )
             }
         }
+    }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    // 全网歌曲搜索对话框
+    if (showSongSearchDialog) {
+        OnlineSongSearchDialog(
+            initialKeyword = songSearchKeyword,
+            onDismiss = { showSongSearchDialog = false },
+            onPlaySong = { songs, index ->
+                if (onPlayOnlineSong != null) {
+                    onPlayOnlineSong(songs, index)
+                } else {
+                    com.orbit.music.audio.MusicPlayerManager.getInstance(context).playOnlineSongList(songs, index)
+                }
+            }
+        )
     }
 
     // 链接导入对话框
@@ -144,39 +190,71 @@ fun OnlinePlaylistSquareView(
                 }
             }
 
-            // 搜索、导入链接与音源管理按钮
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            // 全网搜歌、音源管理与导入链接按钮
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                // 全网歌曲搜索入口胶囊按钮
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = OrbitTheme.colors.primary.copy(alpha = 0.15f),
+                    border = BorderStroke(0.6.dp, OrbitTheme.colors.primary.copy(alpha = 0.4f)),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable {
+                            songSearchKeyword = uiState.searchKeyword
+                            showSongSearchDialog = true
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.TravelExplore,
+                            contentDescription = "全网搜歌",
+                            tint = OrbitTheme.colors.primary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "全网搜歌",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = OrbitTheme.colors.primary
+                        )
+                    }
+                }
+
                 IconButton(
                     onClick = { showSourceManagerDialog = true },
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(30.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Tune,
                         contentDescription = "在线音源管理",
-                        tint = OrbitTheme.colors.primary,
-                        modifier = Modifier.size(17.dp)
+                        tint = OrbitTheme.colors.textSecondary,
+                        modifier = Modifier.size(16.dp)
                     )
                 }
                 IconButton(
                     onClick = { viewModel.setSearchActive(!uiState.isSearchMode) },
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(30.dp)
                 ) {
                     Icon(
                         imageVector = if (uiState.isSearchMode) Icons.Default.Close else Icons.Default.Search,
                         contentDescription = "搜索歌单",
                         tint = if (uiState.isSearchMode) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                        modifier = Modifier.size(17.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                 }
                 IconButton(
                     onClick = { viewModel.openImportDialog() },
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(30.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Link,
                         contentDescription = "导入歌单链接",
                         tint = OrbitTheme.colors.textSecondary,
-                        modifier = Modifier.size(17.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
@@ -820,44 +898,18 @@ fun OnlinePlaylistDetailView(
                                 modifier = Modifier.size(32.dp)
                             )
                         }
-
-                        // 平台标识
-                        val platformBadgeColor = when (playlist.platform) {
-                            OnlinePlatform.NETEASE -> Color(0xFFE60026)
-                            OnlinePlatform.QQ -> Color(0xFF1ECF96)
-                            OnlinePlatform.KUGOU -> Color(0xFF0088FF)
-                            OnlinePlatform.KUWO -> Color(0xFFFF9500)
-                            OnlinePlatform.MIGU -> Color(0xFFE91E63)
-                        }
-                        val platformBadgeText = when (playlist.platform) {
-                            OnlinePlatform.NETEASE -> "网易云"
-                            OnlinePlatform.QQ -> "QQ音乐"
-                            OnlinePlatform.KUGOU -> "酷狗"
-                            OnlinePlatform.KUWO -> "酷我"
-                            OnlinePlatform.MIGU -> "咪咕"
-                        }
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .padding(4.dp)
-                                .background(
-                                    color = platformBadgeColor,
-                                    shape = RoundedCornerShape(3.dp)
-                                )
-                                .padding(horizontal = 4.dp, vertical = 1.dp)
-                        ) {
-                            Text(
-                                text = platformBadgeText,
-                                color = Color.White,
-                                fontSize = 8.5.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
                     }
 
                     Spacer(modifier = Modifier.width(14.dp))
 
                     // 右侧：歌单元数据
+                    val platformBadgeColor = when (playlist.platform) {
+                        OnlinePlatform.NETEASE -> Color(0xFFE60026)
+                        OnlinePlatform.QQ -> Color(0xFF1ECF96)
+                        OnlinePlatform.KUGOU -> Color(0xFF0088FF)
+                        OnlinePlatform.KUWO -> Color(0xFFFF9500)
+                        OnlinePlatform.MIGU -> Color(0xFFE91E63)
+                    }
                     Column(
                         modifier = Modifier
                             .weight(1f)
@@ -895,11 +947,32 @@ fun OnlinePlaylistDetailView(
                             }
                         }
 
-                        Text(
-                            text = "▶ ${formatCount(playlist.playCount)} 播放 · 共 ${if (songs.isNotEmpty()) songs.size else playlist.trackCount} 首",
-                            fontSize = 11.sp,
-                            color = OrbitTheme.colors.textSecondary.copy(alpha = 0.8f)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = platformBadgeColor.copy(alpha = 0.12f),
+                                border = BorderStroke(0.5.dp, platformBadgeColor.copy(alpha = 0.35f))
+                            ) {
+                                Text(
+                                    text = playlist.platform.displayName,
+                                    color = platformBadgeColor,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+
+                            Text(
+                                text = "▶ ${formatCount(playlist.playCount)} 播放 · 共 ${if (songs.isNotEmpty()) songs.size else playlist.trackCount} 首",
+                                fontSize = 11.sp,
+                                color = OrbitTheme.colors.textSecondary.copy(alpha = 0.8f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
 

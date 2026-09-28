@@ -2830,6 +2830,21 @@ fun NowPlayingScreen(
             modifier = Modifier.fillMaxSize()
         )
     }
+
+    // 全局在线专辑详情弹窗
+    val activeOnlineAlbumForDialog by viewModel.activeOnlineAlbumForDialog.collectAsState()
+    if (activeOnlineAlbumForDialog != null) {
+        com.orbit.music.ui.components.OnlineAlbumDetailDialog(
+            album = activeOnlineAlbumForDialog!!,
+            onDismiss = { viewModel.dismissOnlineAlbumDialog() },
+            onSongClick = { index, song, allSongs ->
+                viewModel.playOnlineSongs(allSongs, index)
+            },
+            currentPlayingTitle = playbackState.currentSong?.title,
+            currentPlayingArtist = playbackState.currentSong?.artist,
+            isPlaying = playbackState.isPlaying
+        )
+    }
 }
 
 private fun formatTime(ms: Long): String {

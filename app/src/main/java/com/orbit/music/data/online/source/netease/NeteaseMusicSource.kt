@@ -279,6 +279,7 @@ class NeteaseMusicSource(
                 }
                 val formBody = FormBody.Builder()
                     .add("c", cArray.toString())
+                    .add("ids", "[${chunk.joinToString(",")}]")
                     .build()
                 val root = postApi("https://music.163.com/api/v3/song/detail", formBody)
                 val songsArr = root.optJSONArray("songs") ?: continue
@@ -309,11 +310,18 @@ class NeteaseMusicSource(
         // 艺术家: ar 或 artists
         val arArr = trackObj.optJSONArray("ar") ?: trackObj.optJSONArray("artists")
         val artists = mutableListOf<String>()
+        var artistPicUrl = ""
         if (arArr != null) {
             for (a in 0 until arArr.length()) {
                 val aObj = arArr.optJSONObject(a)
                 val aName = aObj?.optString("name") ?: aObj?.optString("title")
                 if (!aName.isNullOrEmpty()) artists.add(aName)
+                if (artistPicUrl.isEmpty() && aObj != null) {
+                    val aPic = aObj.optString("img1v1Url").ifEmpty { aObj.optString("picUrl") }
+                    if (aPic.isNotEmpty() && !aPic.contains("default_avatar")) {
+                        artistPicUrl = aPic
+                    }
+                }
             }
         }
         val artistStr = if (artists.isEmpty()) "未知歌手" else artists.joinToString(", ")
@@ -321,7 +329,12 @@ class NeteaseMusicSource(
         // 专辑: al 或 album
         val alObj = trackObj.optJSONObject("al") ?: trackObj.optJSONObject("album")
         val albumName = alObj?.optString("name") ?: "未知专辑"
-        var picUrl = alObj?.optString("picUrl")
+        val albId = alObj?.optLong("id")?.takeIf { it > 0 }?.toString()
+        var picUrl = alObj?.optString("picUrl")?.ifEmpty { null }
+            ?: alObj?.optString("pic_str")?.let { if (it.isNotEmpty() && it.startsWith("http")) it else null }
+            ?: trackObj.optString("picUrl").ifEmpty { null }
+            ?: artistPicUrl.ifEmpty { null }
+
         if (!picUrl.isNullOrEmpty() && !picUrl.contains("?param=")) {
             picUrl = "$picUrl?param=300y300"
         }
@@ -332,6 +345,7 @@ class NeteaseMusicSource(
             title = songName,
             artist = artistStr,
             album = albumName,
+            albumId = albId,
             durationMs = dt,
             coverUrl = picUrl,
             isVip = isVip
@@ -380,6 +394,66 @@ class NeteaseMusicSource(
                 )
             )
         }
+        list
+    }
+
+    override suspend fun searchSongs(keyword: String, page: Int, pageSize: Int): List<OnlineSongItem> = withContext(Dispatchers.IO) {
+        val offset = (page - 1) * pageSize
+        val formBody = FormBody.Builder()
+            .add("s", keyword)
+            .add("type", "1") // 1 代表单曲歌曲搜索
+            .add("offset", offset.toString())
+            .add("limit", pageSize.toString())
+            .add("total", "true")
+            .build()
+
+        val list = mutableListOf<OnlineSongItem>()
+
+        // 1. 优先使用稳定网页搜索接口
+        try {
+            val root = postApi("https://music.163.com/api/search/get/web?csrf_token=", formBody)
+            val resultObj = root.optJSONObject("result")
+            val songsArr = resultObj?.optJSONArray("songs")
+            if (songsArr != null) {
+                for (i in 0 until songsArr.length()) {
+                    val item = songsArr.optJSONObject(i) ?: continue
+                    parseSongItem(item)?.let { list.add(it) }
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 2. 备用 cloudsearch 降级
+        if (list.isEmpty()) {
+            try {
+                val root = postApi("https://music.163.com/api/cloudsearch/pc", formBody)
+                val resultObj = root.optJSONObject("result")
+                val songsArr = resultObj?.optJSONArray("songs")
+                if (songsArr != null && songsArr.length() > 0) {
+                    for (i in 0 until songsArr.length()) {
+                        val item = songsArr.optJSONObject(i) ?: continue
+                        parseSongItem(item)?.let { list.add(it) }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 3. 若有缺失封面的歌曲，批量补充详情（获取高清大图 al.picUrl）
+        val missingCoverIds = list.filter { it.coverUrl.isNullOrEmpty() }.map { it.id }
+        if (missingCoverIds.isNotEmpty()) {
+            try {
+                val detailedSongs = fetchSongDetailsByIds(missingCoverIds).associateBy { it.id }
+                if (detailedSongs.isNotEmpty()) {
+                    return@withContext list.map { song ->
+                        if (song.coverUrl.isNullOrEmpty() && detailedSongs.containsKey(song.id)) {
+                            detailedSongs[song.id] ?: song
+                        } else {
+                            song
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
         list
     }
 
