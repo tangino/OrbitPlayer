@@ -70,6 +70,7 @@ import androidx.compose.ui.zIndex
 import coil.compose.SubcomposeAsyncImage
 import coil.size.Size
 import com.orbit.music.data.provider.AudioCoverProvider
+import com.orbit.music.data.model.PlaybackOrigin
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
@@ -812,7 +813,7 @@ fun NowPlayingScreen(
             }
         }
 
-        // 3.5 歌曲技术规格参数栏 (比特率、时长、格式、采样率等)
+        // 3.5 歌曲技术规格参数栏 (来源平台/音源标签、比特率、时长、格式、采样率等)
         val techSpecsView: @Composable (Modifier) -> Unit = { mod ->
             val specs = songTechSpecs
             val rawFormatText = specs?.format?.uppercase() ?: (song?.mimeType?.takeIf { it.isNotBlank() }?.substringAfterLast('/')?.uppercase() ?: "AUDIO")
@@ -825,11 +826,63 @@ fun NowPlayingScreen(
             val bitDepthText = if ((specs?.bitDepth ?: 0) > 0) "${specs?.bitDepth} bit" else ""
             val durationText = specs?.durationFormatted?.ifBlank { song?.formattedDuration } ?: (song?.formattedDuration ?: "0:00")
 
+            val currentSong = song
+            val isOnline = currentSong?.isOnlineSong == true
+            val srcPlatform = currentSong?.sourcePlatform
+            val origPlatform = currentSong?.originalPlatform
+            val isFallbackSource = origPlatform != null && srcPlatform != null && origPlatform != srcPlatform
+
+            val platformColor = when (srcPlatform ?: origPlatform) {
+                com.orbit.music.data.online.model.OnlinePlatform.NETEASE -> Color(0xFFE53935)
+                com.orbit.music.data.online.model.OnlinePlatform.QQ -> Color(0xFF10B981)
+                com.orbit.music.data.online.model.OnlinePlatform.KUGOU -> Color(0xFF0084FF)
+                com.orbit.music.data.online.model.OnlinePlatform.KUWO -> Color(0xFFFFB300)
+                com.orbit.music.data.online.model.OnlinePlatform.MIGU -> Color(0xFFEC407A)
+                null -> OrbitTheme.colors.primary
+            }
+
+            val sourceDisplayText = when {
+                isFallbackSource -> "${origPlatform?.displayName ?: "原源"} ➔ ${srcPlatform?.displayName}"
+                srcPlatform != null -> srcPlatform.displayName
+                !currentSong?.sourceTag.isNullOrBlank() -> currentSong!!.sourceTag!!
+                origPlatform != null -> origPlatform.displayName
+                isOnline -> "在线音源"
+                else -> null
+            }
+
             Row(
                 modifier = mod,
                 horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // 在线来源平台与音源徽标
+                if (sourceDisplayText != null) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = platformColor.copy(alpha = 0.16f),
+                        border = BorderStroke(0.6.dp, platformColor.copy(alpha = 0.45f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(4.5.dp)
+                                    .clip(CircleShape)
+                                    .background(platformColor)
+                            )
+                            Text(
+                                text = sourceDisplayText,
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = platformColor
+                            )
+                        }
+                    }
+                }
+
                 // 格式胶囊 (FLAC, MP3, WAV 等)
                 Surface(
                     shape = RoundedCornerShape(4.dp),
@@ -2834,14 +2887,15 @@ fun NowPlayingScreen(
     // 全局在线专辑详情弹窗
     val activeOnlineAlbumForDialog by viewModel.activeOnlineAlbumForDialog.collectAsState()
     if (activeOnlineAlbumForDialog != null) {
+        val curDialogAlbum = activeOnlineAlbumForDialog!!
         com.orbit.music.ui.components.OnlineAlbumDetailDialog(
-            album = activeOnlineAlbumForDialog!!,
+            album = curDialogAlbum,
             onDismiss = { viewModel.dismissOnlineAlbumDialog() },
             onSongClick = { index, song, allSongs ->
-                viewModel.playOnlineSongs(allSongs, index)
+                viewModel.playOnlineSongs(allSongs, index, PlaybackOrigin.OnlineAlbumOrigin(curDialogAlbum))
             },
-            currentPlayingTitle = playbackState.currentSong?.title,
-            currentPlayingArtist = playbackState.currentSong?.artist,
+            currentPlayingTitle = if (playbackState.currentSong?.isOnlineSong == true) playbackState.currentSong?.title else null,
+            currentPlayingArtist = if (playbackState.currentSong?.isOnlineSong == true) playbackState.currentSong?.artist else null,
             isPlaying = playbackState.isPlaying
         )
     }
@@ -4849,6 +4903,7 @@ fun NowPlayingLibraryMiddleColumn(
                             modifier = Modifier.clickable {
                                 selectedTab = tab
                                 searchQuery = ""
+                                isSearchActive = false
                             }
                         ) {
                             Text(

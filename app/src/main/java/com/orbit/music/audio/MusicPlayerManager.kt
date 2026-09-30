@@ -425,21 +425,37 @@ class MusicPlayerManager private constructor(private val context: Context) {
     }
 
     /**
-     * 异步解析 online:// 协议歌曲的真实音频 URL
+     * 异步解析 online:// 协议歌曲的真实音频 URL 与音源元数据
      */
-    suspend fun resolveOnlineSongDirectUrl(song: Song): String? {
-        if (!song.path.startsWith("online://")) return song.path
+    suspend fun resolveOnlineSongSource(song: Song): OnlineAudioSourceManager.ResolvedAudioSource? {
+        if (!song.path.startsWith("online://")) {
+            return OnlineAudioSourceManager.ResolvedAudioSource(
+                url = song.path,
+                platform = song.sourcePlatform ?: song.originalPlatform ?: OnlinePlatform.NETEASE,
+                sourceName = song.sourceTag ?: "本地/直链",
+                durationMs = song.durationMs
+            )
+        }
         val uri = Uri.parse(song.path)
         val platformId = uri.host ?: ""
         val songId = uri.lastPathSegment ?: ""
-        val platform = OnlinePlatform.values().firstOrNull { it.id == platformId } ?: OnlinePlatform.NETEASE
-        return onlineSourceManager.resolvePlayableUrl(
+        val platform = song.originalPlatform 
+            ?: (OnlinePlatform.values().firstOrNull { it.id == platformId } ?: OnlinePlatform.NETEASE)
+        return onlineSourceManager.resolvePlayableSource(
             platform = platform,
             songId = songId,
             title = song.title,
             artist = song.artist,
-            album = song.album
+            album = song.album,
+            expectedDurationMs = song.durationMs
         )
+    }
+
+    /**
+     * 异步解析 online:// 协议歌曲的真实音频 URL (兼容)
+     */
+    suspend fun resolveOnlineSongDirectUrl(song: Song): String? {
+        return resolveOnlineSongSource(song)?.url
     }
 
     /**
@@ -485,12 +501,12 @@ class MusicPlayerManager private constructor(private val context: Context) {
         recordPlayImmediately(targetSong)
 
         if (targetSong.path.startsWith("online://")) {
-            // 在线歌曲分支：由应用层按需解析真实音频直链后安全交付 ExoPlayer
+            // 在线歌曲分支：由应用层按需解析真实音频直链与完整性校验后安全交付 ExoPlayer
             currentOnlineResolveJob = scope.launch {
-                var directUrl: String? = null
+                var resolvedSource: OnlineAudioSourceManager.ResolvedAudioSource? = null
                 var resolveException: Exception? = null
                 try {
-                    directUrl = resolveOnlineSongDirectUrl(targetSong)
+                    resolvedSource = resolveOnlineSongSource(targetSong)
                 } catch (e: Exception) {
                     resolveException = e
                 }
@@ -500,7 +516,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
                     return@launch
                 }
 
-                if (directUrl.isNullOrBlank() || directUrl.startsWith("online://")) {
+                if (resolvedSource == null || resolvedSource.url.isBlank() || resolvedSource.url.startsWith("online://")) {
                     val errorMsg = when {
                         resolveException is java.net.UnknownHostException || resolveException is java.net.ConnectException -> "网络连接失败，请检查网络设置"
                         resolveException is java.net.SocketTimeoutException -> "网络请求超时，请稍后重试"
@@ -521,7 +537,20 @@ class MusicPlayerManager private constructor(private val context: Context) {
                     return@launch
                 }
 
-                val resolvedSong = updatedSong.copy(path = directUrl)
+                val directUrl = resolvedSource.url
+
+                val origPlatform = targetSong.originalPlatform ?: run {
+                    val host = Uri.parse(targetSong.path).host
+                    OnlinePlatform.values().firstOrNull { it.id == host } ?: OnlinePlatform.NETEASE
+                }
+
+                val resolvedSong = updatedSong.copy(
+                    path = directUrl,
+                    durationMs = if (resolvedSource.durationMs > 0L) resolvedSource.durationMs else updatedSong.durationMs,
+                    sourcePlatform = resolvedSource.platform,
+                    sourceTag = if (resolvedSource.isFallback) "${resolvedSource.platform.displayName} (自动降级匹配)" else resolvedSource.platform.displayName,
+                    originalPlatform = origPlatform
+                )
                 val resolvedPlaylist = updatedPlaylist.mapIndexed { idx, s ->
                     if (idx == safeIndex) resolvedSong else s
                 }
@@ -530,8 +559,17 @@ class MusicPlayerManager private constructor(private val context: Context) {
                     it.copy(
                         currentPlaylist = resolvedPlaylist, 
                         currentSong = resolvedSong,
+                        durationMs = resolvedSong.durationMs,
                         isBuffering = true,
                         errorMessage = null
+                    )
+                }
+
+                if (resolvedSource.isFallback) {
+                    com.orbit.music.utils.FastToast.show(
+                        context,
+                        "原源音频缺失或试听短流，已自动切换至【${resolvedSource.platform.displayName}】",
+                        2200L
                     )
                 }
 

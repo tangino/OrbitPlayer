@@ -108,6 +108,21 @@ class OnlinePlaylistFavoriteManager private constructor(private val context: Con
     }
 
     /**
+     * 添加或更新收藏（若已存在则更新元数据，不存在则添加到头部）
+     */
+    fun addFavorite(playlist: OnlinePlaylist) {
+        val current = _favorites.value.toMutableList()
+        val index = current.indexOfFirst { it.platform == playlist.platform && it.id == playlist.id }
+        if (index >= 0) {
+            current[index] = playlist
+        } else {
+            current.add(0, playlist)
+        }
+        _favorites.value = current
+        saveFavoritesToPrefs(current)
+    }
+
+    /**
      * 切换收藏状态（已收藏则移除，未收藏则添加），返回最新收藏状态
      */
     fun toggleFavorite(playlist: OnlinePlaylist): Boolean {

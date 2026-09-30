@@ -389,6 +389,9 @@ fun OnlineArtistSquareView(
                             .clickable {
                                 if (selectedCategory?.id != cat.id) {
                                     selectedCategory = cat
+                                    isSearchMode = false
+                                    searchKeyword = ""
+                                    searchResults = emptyList()
                                     loadInitialArtists(cat.id)
                                 }
                             }

@@ -26,7 +26,10 @@ data class Song(
     val mimeType: String = "",
     val isFavorite: Boolean = false,
     val isDisliked: Boolean = false,
-    val playCount: Int = 0
+    val playCount: Int = 0,
+    val sourcePlatform: com.orbit.music.data.online.model.OnlinePlatform? = null,
+    val sourceTag: String? = null,
+    val originalPlatform: com.orbit.music.data.online.model.OnlinePlatform? = null
 ) {
     val attitude: SongAttitude
         get() = when {
@@ -41,6 +44,8 @@ data class Song(
             val seconds = totalSeconds % 60
             return "%d:%02d".format(minutes, seconds)
         }
+    val isOnlineSong: Boolean
+        get() = id < 0 || path.startsWith("online://") || path.startsWith("http://") || path.startsWith("https://")
 }
 
 /**
@@ -79,15 +84,24 @@ data class Playlist(
     val createdAt: Long
 )
 
+
 /**
  * 歌曲播放来源上下文（用于一键精准定位回播放时的原始页面）
  */
 sealed interface PlaybackOrigin {
+    // ── 本地播放来源 ──
     object AllSongs : PlaybackOrigin
     data class Folder(val folderPath: String) : PlaybackOrigin
     data class Album(val albumItem: AlbumItem) : PlaybackOrigin
     data class Artist(val artistItem: ArtistItem) : PlaybackOrigin
     data class PlaylistOrigin(val playlist: Playlist) : PlaybackOrigin
+
+    // ── 网络播放来源（与本地严格隔离） ──
     data class OnlinePlaylistOrigin(val onlinePlaylist: com.orbit.music.data.online.model.OnlinePlaylist) : PlaybackOrigin
+    data class OnlineArtistOrigin(val onlineArtist: com.orbit.music.data.online.model.OnlineArtist, val tabIndex: Int = 0) : PlaybackOrigin
+    data class OnlineAlbumOrigin(val onlineAlbum: com.orbit.music.data.online.model.OnlineAlbum) : PlaybackOrigin
+    data class OnlineSearchOrigin(val query: String = "") : PlaybackOrigin
+    data class OnlineSquareOrigin(val platform: com.orbit.music.data.online.model.OnlinePlatform, val tabIndex: Int = 0) : PlaybackOrigin
+    data class OnlineGeneral(val platform: com.orbit.music.data.online.model.OnlinePlatform? = null) : PlaybackOrigin
 }
 
