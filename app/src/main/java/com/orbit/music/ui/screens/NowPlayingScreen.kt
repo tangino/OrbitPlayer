@@ -3688,14 +3688,14 @@ private fun MaximizedVisualizerOverlay(
         val composeCutout = WindowInsets.displayCutout.asPaddingValues().calculateTopPadding()
 
         val actualStatusBarHeight = maxOf(systemStatusBarHeight, composeStatusBar, composeSafeDrawingTop, composeCutout)
-            .coerceAtLeast(if (isLandscape) 28.dp else 44.dp)
+            .coerceAtLeast(if (isLandscape) (if (screenHeight < 500.dp) 0.dp else 28.dp) else 44.dp)
 
         val topBarPaddingTop = if (isLandscape) {
-            maxOf(actualStatusBarHeight, composeCutout).coerceAtLeast(28.dp) + 8.dp
+            maxOf(actualStatusBarHeight, composeCutout) + (if (screenHeight < 500.dp) 4.dp else 8.dp)
         } else {
             actualStatusBarHeight + 12.dp
         }
-        val topBarBottom = if (equalizerUiState.maximizedShowTopBar && !isCoverFlowMode && !isCleanScreen) (topBarPaddingTop + 48.dp + 12.dp) else (topBarPaddingTop + 6.dp)
+        val topBarBottom = if (equalizerUiState.maximizedShowTopBar && !isCoverFlowMode && !isCleanScreen) (topBarPaddingTop + 48.dp + (if (screenHeight < 500.dp) 6.dp else 12.dp)) else (topBarPaddingTop + 6.dp)
 
         // 2. 精准测量系统底部导航栏 / 车机原生 Dock 控制条高度
         val navBarResId = remember(context) {
@@ -3715,13 +3715,13 @@ private fun MaximizedVisualizerOverlay(
         val composeSystemBarsBottom = WindowInsets.systemBars.asPaddingValues().calculateBottomPadding()
         val composeSafeGesturesBottom = WindowInsets.safeGestures.asPaddingValues().calculateBottomPadding()
 
-        // 判断是否处于车载系统环境、平板横屏模式或大屏横屏
+        // 判断是否处于车载系统环境、平板横屏模式或大屏横屏（高度必须满足大屏特征，避免普通手机横屏误判）
         val isCarUiMode = remember(context) {
             val uiMode = context.resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK
             uiMode == Configuration.UI_MODE_TYPE_CAR ||
                     context.packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE)
         }
-        val isCarOrLargeScreen = isCarUiMode || equalizerUiState.isTabletLandscapeModeEnabled || (isLandscape && screenWidth >= 680.dp)
+        val isCarOrLargeScreen = isCarUiMode || equalizerUiState.isTabletLandscapeModeEnabled || (isLandscape && screenWidth >= 680.dp && screenHeight >= 500.dp)
 
         val rawNavBarBottom = maxOf(
             systemNavBarHeight,
@@ -3740,27 +3740,28 @@ private fun MaximizedVisualizerOverlay(
 
         // 3. 精准测量底部控制卡片实际占用的高度 (包含底部避让空间与卡片自身高度)
         val bottomControlsHeight = (if (equalizerUiState.maximizedShowControls) {
-            if (isLandscape) 92.dp else 168.dp
+            if (isLandscape) (if (screenHeight < 500.dp) 72.dp else 92.dp) else 168.dp
         } else {
-            if (isLandscape) 20.dp else 24.dp
+            if (isLandscape) 12.dp else 24.dp
         }) + actualNavBarHeight
 
         // 4. 计算垂直可用净空距离
         val verticalAvailableGap = (screenHeight - topBarBottom - bottomControlsHeight).coerceAtLeast(80.dp)
 
         // 5. 动态自适应常规状态封面尺寸 (在高分辨率大屏车机上适度放开上限至 300dp，杜绝娇小空旷)
-        val maxCoverHeight = (verticalAvailableGap - 28.dp).coerceAtLeast(80.dp)
+        val isSmallLandscapePhone = isLandscape && screenHeight < 500.dp
+        val maxCoverHeight = (verticalAvailableGap - (if (isSmallLandscapePhone) 10.dp else 28.dp)).coerceAtLeast(80.dp)
         val maxCoverWidth = if (isLandscape) {
-            (screenWidth * 0.40f).coerceAtLeast(80.dp)
+            (screenWidth * (if (isSmallLandscapePhone) 0.32f else 0.40f)).coerceAtLeast(80.dp)
         } else {
             (screenWidth - 36.dp).coerceAtLeast(80.dp)
         }
-        val landscapeMaxCoverCap = if (screenHeight >= 550.dp && screenWidth >= 800.dp) 300.dp else 250.dp
+        val landscapeMaxCoverCap = if (screenHeight >= 550.dp && screenWidth >= 800.dp) 300.dp else (if (isSmallLandscapePhone) 160.dp else 250.dp)
         val coverSize = minOf(maxCoverHeight, maxCoverWidth, if (isLandscape) landscapeMaxCoverCap else 240.dp)
 
         // 6. 常规模式封面位置坐标
         val remainingVerticalGap = (verticalAvailableGap - coverSize).coerceAtLeast(0.dp)
-        val coverTopPadding = topBarBottom + (remainingVerticalGap / 2).coerceAtLeast(14.dp)
+        val coverTopPadding = topBarBottom + (remainingVerticalGap / 2).coerceAtLeast(if (isSmallLandscapePhone) 4.dp else 14.dp)
 
         val landscapeSideMargin = (screenWidth * 0.21f - coverSize / 2).coerceAtLeast(30.dp)
         val coverStartPadding = if (isLandscape) {
@@ -4325,6 +4326,7 @@ private fun MaximizedVisualizerOverlay(
         )
 
         // 4. 底部悬浮播放控制卡片 (在 Cover Flow 模式或一键清屏状态下隐藏，智能避让系统导航条与车载Dock栏)
+        // 4. 底部悬浮播放控制卡片 (在 Cover Flow 模式或一键清屏状态下隐藏，智能避让系统导航条与车载Dock栏)
         AnimatedVisibility(
             visible = equalizerUiState.maximizedShowControls && !isCoverFlowMode && !isCleanScreen,
             enter = slideInVertically(tween(250)) { height -> height } + fadeIn(tween(200)),
@@ -4332,12 +4334,12 @@ private fun MaximizedVisualizerOverlay(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(
-                    start = if (isLandscape) 48.dp else 16.dp,
-                    end = if (isLandscape) 48.dp else 16.dp,
+                    start = if (isLandscape) (if (isSmallLandscapePhone) 24.dp else 48.dp) else 16.dp,
+                    end = if (isLandscape) (if (isSmallLandscapePhone) 24.dp else 48.dp) else 16.dp,
                     top = 0.dp,
-                    bottom = actualNavBarHeight + 8.dp
+                    bottom = actualNavBarHeight + (if (isSmallLandscapePhone) 2.dp else 8.dp)
                 )
-                .widthIn(max = if (isLandscape) 640.dp else 580.dp)
+                .widthIn(max = if (isLandscape) (if (isSmallLandscapePhone) 560.dp else 640.dp) else 580.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -4347,42 +4349,68 @@ private fun MaximizedVisualizerOverlay(
                         indication = null,
                         onClick = {}
                     )
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                    .padding(horizontal = 8.dp, vertical = if (isSmallLandscapePhone) 1.dp else 4.dp)
             ) {
                 // 歌曲信息行：当封面在左边显示时，歌曲名称和作者在右边显示
                 val isCoverOnLeft = equalizerUiState.maximizedShowCover && !equalizerUiState.maximizedCoverOnRight
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = if (isCoverOnLeft) Arrangement.End else Arrangement.Start
-                ) {
-                    Column(
+                if (isSmallLandscapePhone) {
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = if (isCoverOnLeft) Alignment.End else Alignment.Start
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = if (isCoverOnLeft) Arrangement.End else Arrangement.Start
                     ) {
                         Text(
                             text = song?.title ?: "No Song",
-                            fontSize = 14.sp,
+                            fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = if (isCoverOnLeft) TextAlign.End else TextAlign.Start,
-                            modifier = Modifier.fillMaxWidth()
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Text(
-                            text = song?.artist ?: "Unknown Artist",
-                            fontSize = 11.sp,
-                            color = Color.White.copy(alpha = 0.7f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = if (isCoverOnLeft) TextAlign.End else TextAlign.Start,
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        if (!song?.artist.isNullOrBlank()) {
+                            Text(
+                                text = "  •  ${song?.artist}",
+                                fontSize = 11.sp,
+                                color = Color.White.copy(alpha = 0.7f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = if (isCoverOnLeft) Arrangement.End else Arrangement.Start
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = if (isCoverOnLeft) Alignment.End else Alignment.Start
+                        ) {
+                            Text(
+                                text = song?.title ?: "No Song",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = if (isCoverOnLeft) TextAlign.End else TextAlign.Start,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                text = song?.artist ?: "Unknown Artist",
+                                fontSize = 11.sp,
+                                color = Color.White.copy(alpha = 0.7f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = if (isCoverOnLeft) TextAlign.End else TextAlign.Start,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(if (isSmallLandscapePhone) 1.dp else 4.dp))
 
                 // 进度条与时间
                 Row(
@@ -4427,39 +4455,45 @@ private fun MaximizedVisualizerOverlay(
                 }
 
                 // 核心播放控制按钮
+                val playBtnSize = if (isSmallLandscapePhone) 38.dp else 46.dp
+                val playIconSize = if (isSmallLandscapePhone) 22.dp else 26.dp
+                val prevNextSize = if (isSmallLandscapePhone) 36.dp else 42.dp
+                val prevNextIconSize = if (isSmallLandscapePhone) 24.dp else 28.dp
+                val btnSpacing = if (isSmallLandscapePhone) 14.dp else 18.dp
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 2.dp),
+                        .padding(top = if (isSmallLandscapePhone) 1.dp else 2.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
                         onClick = onPlayPrevious,
-                        modifier = Modifier.size(42.dp)
+                        modifier = Modifier.size(prevNextSize)
                     ) {
                         Icon(
                             imageVector = Icons.Default.SkipPrevious,
                             contentDescription = "Previous",
                             tint = Color.White,
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(prevNextIconSize)
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(18.dp))
+                    Spacer(modifier = Modifier.width(btnSpacing))
 
                     Surface(
                         shape = CircleShape,
                         color = OrbitTheme.colors.primary,
                         shadowElevation = 8.dp,
                         modifier = Modifier
-                            .size(46.dp)
+                            .size(playBtnSize)
                             .clickable { onTogglePlay() }
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             if (playbackState.isBuffering) {
                                 CircularProgressIndicator(
-                                    modifier = Modifier.size(22.dp),
+                                    modifier = Modifier.size(if (isSmallLandscapePhone) 18.dp else 22.dp),
                                     color = Color.White,
                                     strokeWidth = 2.dp
                                 )
@@ -4468,23 +4502,23 @@ private fun MaximizedVisualizerOverlay(
                                     imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                     contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
                                     tint = Color.White,
-                                    modifier = Modifier.size(26.dp)
+                                    modifier = Modifier.size(playIconSize)
                                 )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(18.dp))
+                    Spacer(modifier = Modifier.width(btnSpacing))
 
                     IconButton(
                         onClick = onPlayNext,
-                        modifier = Modifier.size(42.dp)
+                        modifier = Modifier.size(prevNextSize)
                     ) {
                         Icon(
                             imageVector = Icons.Default.SkipNext,
                             contentDescription = "Next",
                             tint = Color.White,
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(prevNextIconSize)
                         )
                     }
                 }
