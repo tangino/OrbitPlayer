@@ -99,6 +99,14 @@ class MainActivity : ComponentActivity() {
             window.isNavigationBarContrastEnforced = false
         }
 
+        // 开启 32位真实色彩及广色域支持，消除高分辨率屏幕下的渐变色彩断层与栅格感
+        window.setFormat(android.graphics.PixelFormat.RGBA_8888)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                window.colorMode = android.content.pm.ActivityInfo.COLOR_MODE_WIDE_COLOR_GAMUT
+            } catch (_: Exception) {}
+        }
+
         checkAndRequestPermissions()
 
         setContent {
