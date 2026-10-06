@@ -41,6 +41,7 @@ class OnlineLyricManager private constructor(private val context: Context) {
         .build()
 
     private val memoryCache = LruCache<String, List<LyricLine>>(100)
+    private val originalOnlinePathMap = LruCache<Long, String>(300)
     private val lyricCacheDir: File by lazy {
         File(context.cacheDir, "lyrics").apply {
             if (!exists()) mkdirs()
@@ -52,6 +53,10 @@ class OnlineLyricManager private constructor(private val context: Context) {
      */
     suspend fun getLyricForSong(song: Song?): List<LyricLine> {
         if (song == null) return emptyList()
+
+        if (song.path.startsWith("online://")) {
+            originalOnlinePathMap.put(song.id, song.path)
+        }
 
         val cacheKey = buildCacheKey(song)
 
@@ -101,7 +106,12 @@ class OnlineLyricManager private constructor(private val context: Context) {
      * 多渠道在线获取歌词纯文本
      */
     private fun fetchOnlineLyricText(song: Song): String? {
-        val path = song.path
+        val path = if (song.path.startsWith("online://")) {
+            originalOnlinePathMap.put(song.id, song.path)
+            song.path
+        } else {
+            originalOnlinePathMap.get(song.id) ?: song.path
+        }
 
         // 渠道 A: 网易云原生直链
         if (path.startsWith("online://netease/")) {
@@ -306,7 +316,16 @@ class OnlineLyricManager private constructor(private val context: Context) {
     }
 
     private fun buildCacheKey(song: Song): String {
-        val raw = "${song.title}_${song.artist}_${song.path}"
+        // 关键防护：当歌曲直链解析完成后，path 会从 online:// 变为带有临时 Token/签名/时间戳的动态 CDN URL。
+        // 若将动态 CDN URL 拼入 Key 会导致加载时缓存的歌词在播放时完全无法命中，造成歌词消失不显示。
+        // 因此在线歌曲以稳定的 song.id 与标题/歌手作为恒定持久缓存键；本地文件才绑定本地存储路径。
+        val raw = if (song.id < 0) {
+            "online_${song.id}_${cleanKeyword(song.title)}_${cleanKeyword(song.artist)}"
+        } else if (song.path.startsWith("http://") || song.path.startsWith("https://") || song.path.startsWith("online://")) {
+            "online_${cleanKeyword(song.title)}_${cleanKeyword(song.artist)}"
+        } else {
+            "${song.title}_${song.artist}_${song.path}"
+        }
         return try {
             val md = MessageDigest.getInstance("MD5")
             val bytes = md.digest(raw.toByteArray(Charsets.UTF_8))

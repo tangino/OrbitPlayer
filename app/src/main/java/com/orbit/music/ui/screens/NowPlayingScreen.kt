@@ -212,10 +212,14 @@ fun NowPlayingScreen(
     var deleteLocalFileChecked by remember { mutableStateOf(false) }
     val coverVer by com.orbit.music.utils.CoverHelper.coverVersion.collectAsState()
 
-    LaunchedEffect(song?.id, song?.path, song?.title, song?.artist) {
+    LaunchedEffect(song?.id, song?.title, song?.artist) {
         if (song != null) {
-            lyricLines = withContext(Dispatchers.IO) {
+            val lines = withContext(Dispatchers.IO) {
                 LyricParser.loadLyricForSongAsync(context, song)
+            }
+            // 防抖与保底：若新抓取结果不为空，或当前尚无歌词时才更新，防止在线歌曲直链解析期间已有歌词被置空
+            if (lines.isNotEmpty() || lyricLines.isEmpty()) {
+                lyricLines = lines
             }
             songTechSpecs = withContext(Dispatchers.IO) {
                 com.orbit.music.data.model.SongMetadataHelper.extractTechSpecs(song)
@@ -223,6 +227,15 @@ fun NowPlayingScreen(
         } else {
             lyricLines = emptyList()
             songTechSpecs = null
+        }
+    }
+
+    // 仅针对音频直链解析完成后的场景，独立刷新音频规格参数，绝不打断或重置歌词显示
+    LaunchedEffect(song?.path) {
+        if (song != null && !song.path.startsWith("online://")) {
+            songTechSpecs = withContext(Dispatchers.IO) {
+                com.orbit.music.data.model.SongMetadataHelper.extractTechSpecs(song)
+            }
         }
     }
 
