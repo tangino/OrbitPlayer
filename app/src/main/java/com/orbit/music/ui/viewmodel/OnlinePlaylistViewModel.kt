@@ -162,7 +162,7 @@ class OnlinePlaylistViewModel(
             result.onSuccess { list ->
                 _uiState.update {
                     it.copy(
-                        playlists = list,
+                        playlists = list.distinctBy { p -> "${p.platform.id}_${p.id}" },
                         currentPage = 1,
                         hasMorePlaylists = list.isNotEmpty(),
                         isLoading = false
@@ -196,11 +196,13 @@ class OnlinePlaylistViewModel(
                 platform = state.currentPlatform
             )
             result.onSuccess { list ->
-                _uiState.update {
-                    it.copy(
-                        playlists = it.playlists + list,
+                _uiState.update { current ->
+                    val existingKeys = current.playlists.map { p -> "${p.platform.id}_${p.id}" }.toSet()
+                    val uniqueNew = list.filter { p -> "${p.platform.id}_${p.id}" !in existingKeys }
+                    current.copy(
+                        playlists = current.playlists + uniqueNew,
                         currentPage = nextPage,
-                        hasMorePlaylists = list.size >= 15,
+                        hasMorePlaylists = list.size >= 15 && uniqueNew.isNotEmpty(),
                         isPagingLoading = false
                     )
                 }
@@ -220,7 +222,7 @@ class OnlinePlaylistViewModel(
             result.onSuccess { boards ->
                 _uiState.update {
                     it.copy(
-                        leaderboards = boards,
+                        leaderboards = boards.distinctBy { b -> "${b.platform.id}_${b.id}" },
                         isLoading = false
                     )
                 }
@@ -300,7 +302,10 @@ class OnlinePlaylistViewModel(
             )
             result.onSuccess { list ->
                 _uiState.update {
-                    it.copy(searchResults = list, isSearching = false)
+                    it.copy(
+                        searchResults = list.distinctBy { p -> "${p.platform.id}_${p.id}" },
+                        isSearching = false
+                    )
                 }
             }.onFailure {
                 _uiState.update { it.copy(isSearching = false) }

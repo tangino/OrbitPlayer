@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -128,9 +129,11 @@ fun OnlineArtistSquareView(
                 platform = OnlinePlatform.QQ
             )
             res.onSuccess { list ->
-                artists = artists + list
+                val existingIds = artists.map { it.id }.toSet()
+                val uniqueList = list.filter { it.id !in existingIds }
+                artists = artists + uniqueList
                 currentPage = nextPage
-                hasMore = list.size >= 20
+                hasMore = list.size >= 20 && uniqueList.isNotEmpty()
                 isPagingLoading = false
             }.onFailure {
                 isPagingLoading = false
@@ -358,7 +361,7 @@ fun OnlineArtistSquareView(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(searchResults, key = { it.id }) { artist ->
+                    itemsIndexed(searchResults, key = { index, artist -> "${artist.id}_$index" }) { _, artist ->
                         OnlineArtistRowItem(artist = artist, onClick = { onArtistClick(artist) })
                     }
                 }
@@ -472,7 +475,7 @@ fun OnlineArtistSquareView(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            items(artists, key = { it.id }) { artist ->
+            itemsIndexed(artists, key = { index, artist -> "${artist.id}_$index" }) { _, artist ->
                 OnlineArtistCardItem(artist = artist, onClick = { onArtistClick(artist) })
             }
 
@@ -1136,7 +1139,7 @@ fun OnlineArtistDetailView(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(filteredAlbums, key = { it.id }) { album ->
+                    itemsIndexed(filteredAlbums, key = { index, album -> "${album.id}_$index" }) { _, album ->
                         OnlineAlbumCardItem(album = album, onClick = { onAlbumClick(album) })
                     }
 

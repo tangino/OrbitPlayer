@@ -10,8 +10,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -441,7 +443,7 @@ private fun PlaylistGridView(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        items(playlists, key = { "${it.platform.id}_${it.id}" }) { item ->
+        itemsIndexed(playlists, key = { index, item -> "${item.platform.id}_${item.id}_$index" }) { _, item ->
             OnlinePlaylistCard(
                 playlist = item,
                 onClick = { onPlaylistClick(item) }
@@ -564,7 +566,7 @@ private fun LeaderboardsView(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        items(leaderboards, key = { "${it.platform.id}_${it.id}" }) { board ->
+        itemsIndexed(leaderboards, key = { index, board -> "${board.platform.id}_${board.id}_$index" }) { _, board ->
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -664,7 +666,7 @@ private fun SearchResultsSection(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        items(results, key = { "${it.platform.id}_${it.id}" }) { playlist ->
+        itemsIndexed(results, key = { index, playlist -> "${playlist.platform.id}_${playlist.id}_$index" }) { _, playlist ->
             Card(
                 modifier = Modifier
                     .fillMaxWidth()

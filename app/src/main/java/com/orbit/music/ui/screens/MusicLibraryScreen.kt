@@ -4175,7 +4175,7 @@ fun MusicLibraryScreen(
                                                         }
                                                     } else {
                                                         // 手机单列展示
-                                                        items(favList, key = { "online_${it.platform.name}_${it.id}" }) { onlinePlaylist ->
+                                                        itemsIndexed(favList, key = { index, onlinePlaylist -> "online_${onlinePlaylist.platform.name}_${onlinePlaylist.id}_$index" }) { _, onlinePlaylist ->
                                                             OnlinePlaylistItemCard(
                                                                 onlinePlaylist = onlinePlaylist,
                                                                 brandColor = brandColor,

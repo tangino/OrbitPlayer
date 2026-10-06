@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -379,7 +380,7 @@ fun OnlinePlaylistSquareView(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(uiState.searchResults, key = { it.id }) { item ->
+                    itemsIndexed(uiState.searchResults, key = { index, item -> "${item.platform.id}_${item.id}_$index" }) { _, item ->
                         OnlinePlaylistListRow(playlist = item, onClick = { onPlaylistClick(item) })
                     }
                 }
@@ -495,7 +496,7 @@ fun OnlinePlaylistSquareView(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(uiState.playlists, key = { "${it.platform.id}_${it.id}" }) { item ->
+                itemsIndexed(uiState.playlists, key = { index, item -> "${item.platform.id}_${item.id}_$index" }) { _, item ->
                     OnlinePlaylistCardItem(playlist = item, onClick = { onPlaylistClick(item) })
                 }
 
@@ -519,7 +520,7 @@ fun OnlinePlaylistSquareView(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 98.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(uiState.leaderboards, key = { "${it.platform.id}_${it.id}" }) { board ->
+                itemsIndexed(uiState.leaderboards, key = { index, board -> "${board.platform.id}_${board.id}_$index" }) { _, board ->
                     Surface(
                         shape = RoundedCornerShape(14.dp),
                         color = OrbitTheme.colors.surfaceCard,
@@ -648,7 +649,7 @@ fun OnlinePlaylistSquareView(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(platformFavorites, key = { "fav_${it.platform.id}_${it.id}" }) { item ->
+                    itemsIndexed(platformFavorites, key = { index, item -> "fav_${item.platform.id}_${item.id}_$index" }) { _, item ->
                         OnlinePlaylistCardItem(
                             playlist = item,
                             onClick = { onPlaylistClick(item) },
