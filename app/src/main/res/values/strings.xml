@@ -39,6 +39,7 @@
     <string name="section_presets_backup">PRESETS &amp; BACKUP</string>
     <string name="section_per_app_device">PER-APP &amp; DEVICE PROFILES</string>
     <string name="section_system_diagnostics">SYSTEM &amp; DIAGNOSTICS</string>
+    <string name="section_device_info">DEVICE &amp; DISPLAY SPECS</string>
 
     <!-- Settings Items -->
     <string name="launch_as_equalizer_only_title">Launch as Equalizer Only</string>
@@ -90,6 +91,12 @@
     <string name="dsp_latency_value">&lt; 2.5 ms</string>
     <string name="version_title">Version</string>
     <string name="version_value">0.2.1</string>
+    <string name="device_model_title">Device Model</string>
+    <string name="system_version_title">Android Version</string>
+    <string name="screen_resolution_title">Screen Resolution</string>
+    <string name="screen_density_title">Density &amp; Viewport</string>
+    <string name="cpu_architecture_title">CPU Architecture</string>
+    <string name="device_info_copied">Device specifications copied to clipboard</string>
 
     <!-- Import / Export Dialogs -->
     <string name="import_dialog_title">Import Preset / AutoEQ</string>

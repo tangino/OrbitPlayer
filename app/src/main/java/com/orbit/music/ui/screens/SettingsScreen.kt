@@ -2028,7 +2028,109 @@ fun SettingsScreen(
                 }
             }
 
-            // 3. 关于与引擎状态
+            // 3. 设备与显示规格识别
+            item {
+                val deviceModel = remember {
+                    val manufacturer = android.os.Build.MANUFACTURER.replaceFirstChar {
+                        if (it.isLowerCase()) it.titlecase(java.util.Locale.getDefault()) else it.toString()
+                    }
+                    val model = android.os.Build.MODEL
+                    if (model.startsWith(manufacturer, ignoreCase = true)) model else "$manufacturer $model"
+                }
+
+                val osVersion = remember {
+                    "Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})"
+                }
+
+                val (resolutionText, densityText) = remember(context) {
+                    val wm = context.getSystemService(android.content.Context.WINDOW_SERVICE) as? android.view.WindowManager
+                    val metrics = android.util.DisplayMetrics()
+                    var refreshRate = 60
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                        try {
+                            context.display?.getRealMetrics(metrics)
+                            refreshRate = context.display?.refreshRate?.toInt() ?: 60
+                        } catch (_: Exception) {
+                            @Suppress("DEPRECATION")
+                            wm?.defaultDisplay?.getRealMetrics(metrics)
+                            @Suppress("DEPRECATION")
+                            refreshRate = wm?.defaultDisplay?.refreshRate?.toInt() ?: 60
+                        }
+                    } else {
+                        @Suppress("DEPRECATION")
+                        wm?.defaultDisplay?.getRealMetrics(metrics)
+                        @Suppress("DEPRECATION")
+                        refreshRate = wm?.defaultDisplay?.refreshRate?.toInt() ?: 60
+                    }
+                    val res = "${metrics.widthPixels} × ${metrics.heightPixels} px @ ${refreshRate}Hz"
+                    val scaleFactor = String.format(java.util.Locale.US, "%.1f", metrics.density)
+                    val widthDp = if (metrics.density > 0) (metrics.widthPixels / metrics.density).toInt() else 0
+                    val heightDp = if (metrics.density > 0) (metrics.heightPixels / metrics.density).toInt() else 0
+                    val density = "${metrics.densityDpi} DPI (${scaleFactor}x) · ${widthDp} × ${heightDp} dp"
+                    res to density
+                }
+
+                val cpuAbi = remember {
+                    android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "未知"
+                }
+
+                val copyDeviceInfo = remember(deviceModel, osVersion, resolutionText, densityText, cpuAbi) {
+                    {
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                        val infoText = buildString {
+                            appendLine("[Orbit Player 设备规格识别]")
+                            appendLine("- 设备型号: $deviceModel")
+                            appendLine("- 系统版本: $osVersion")
+                            appendLine("- 物理分辨率: $resolutionText")
+                            appendLine("- 屏幕密度与视口: $densityText")
+                            appendLine("- 处理器架构: $cpuAbi")
+                        }
+                        val clip = android.content.ClipData.newPlainText("Orbit Device Info", infoText.trimEnd())
+                        clipboard?.setPrimaryClip(clip)
+                        Toast.makeText(context, context.getString(R.string.device_info_copied), Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                SettingsSectionHeader(stringResource(R.string.section_device_info))
+                SettingsCard {
+                    SettingsInfoItem(
+                        icon = Icons.Default.Devices,
+                        title = stringResource(R.string.device_model_title),
+                        value = deviceModel,
+                        onClick = copyDeviceInfo
+                    )
+                    HorizontalDivider(color = OrbitTheme.colors.gridLine)
+                    SettingsInfoItem(
+                        icon = Icons.Default.Android,
+                        title = stringResource(R.string.system_version_title),
+                        value = osVersion,
+                        onClick = copyDeviceInfo
+                    )
+                    HorizontalDivider(color = OrbitTheme.colors.gridLine)
+                    SettingsInfoItem(
+                        icon = Icons.Default.AspectRatio,
+                        title = stringResource(R.string.screen_resolution_title),
+                        value = resolutionText,
+                        onClick = copyDeviceInfo
+                    )
+                    HorizontalDivider(color = OrbitTheme.colors.gridLine)
+                    SettingsInfoItem(
+                        icon = Icons.Default.FitScreen,
+                        title = stringResource(R.string.screen_density_title),
+                        value = densityText,
+                        onClick = copyDeviceInfo
+                    )
+                    HorizontalDivider(color = OrbitTheme.colors.gridLine)
+                    SettingsInfoItem(
+                        icon = Icons.Default.DeveloperBoard,
+                        title = stringResource(R.string.cpu_architecture_title),
+                        value = cpuAbi,
+                        onClick = copyDeviceInfo
+                    )
+                }
+            }
+
+            // 4. 关于与引擎状态
             item {
                 SettingsSectionHeader(stringResource(R.string.section_system_diagnostics))
                 SettingsCard {
@@ -2563,11 +2665,18 @@ private fun SettingsDropdownItem(
 private fun SettingsInfoItem(
     icon: ImageVector,
     title: String,
-    value: String
+    value: String,
+    onClick: (() -> Unit)? = null
 ) {
+    val clickableModifier = if (onClick != null) {
+        Modifier.clickable(onClick = onClick)
+    } else {
+        Modifier
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .then(clickableModifier)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

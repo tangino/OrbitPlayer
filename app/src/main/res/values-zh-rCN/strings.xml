@@ -39,6 +39,7 @@
     <string name="section_presets_backup">预设管理与备份</string>
     <string name="section_per_app_device">应用与设备专属配置</string>
     <string name="section_system_diagnostics">系统与性能诊断</string>
+    <string name="section_device_info">设备与显示规格</string>
 
     <!-- Settings Items -->
     <string name="launch_as_equalizer_only_title">仅作为均衡器启动</string>
@@ -76,6 +77,12 @@
     <string name="dsp_latency_value">&lt; 2.5 毫秒 (极低延迟)</string>
     <string name="version_title">软件版本</string>
     <string name="version_value">0.2.1</string>
+    <string name="device_model_title">设备型号</string>
+    <string name="system_version_title">系统版本</string>
+    <string name="screen_resolution_title">物理分辨率</string>
+    <string name="screen_density_title">屏幕密度与视口</string>
+    <string name="cpu_architecture_title">处理器架构</string>
+    <string name="device_info_copied">已复制设备规格信息到剪贴板</string>
 
     <!-- Import / Export Dialogs -->
     <string name="import_dialog_title">导入预设 / AutoEQ 调音</string>
