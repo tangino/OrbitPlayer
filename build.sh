@@ -18,7 +18,11 @@ echo -e "${CYAN}     Orbit Player - 完整编译构建           ${NC}"
 echo -e "${CYAN}======================================================${NC}"
 
 # 1. 定位 Android SDK
-export ANDROID_HOME="${ANDROID_HOME:-/Users/$USER/Library/Android/sdk}"
+if [ -d "/Volumes/BOOTCAMP/Android/sdk" ]; then
+    export ANDROID_HOME="/Volumes/BOOTCAMP/Android/sdk"
+else
+    export ANDROID_HOME="${ANDROID_HOME:-/Users/$USER/Library/Android/sdk}"
+fi
 if [ ! -d "$ANDROID_HOME" ]; then
     echo -e "${RED}[错误] 未找到 Android SDK 路径: $ANDROID_HOME${NC}"
     exit 1

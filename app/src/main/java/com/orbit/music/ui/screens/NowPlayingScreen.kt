@@ -3482,14 +3482,27 @@ private fun MaximizedVisualizerOverlay(
         }
     }
 
-    // 播放时实时从当前专辑封面文件中异步提取亮色与暗色 (不进行持久化)
-    LaunchedEffect(song?.id, song?.path, song?.album, coverVer) {
-        if (song != null) {
-            val coverFile = com.orbit.music.utils.CoverHelper.getOrExtractCoverFile(context, song.id, song.path, song.album)
+    // 播放时实时从当前专辑封面中异步提取亮色与暗色 (全面支持本地单曲与网络歌曲在线封面)
+    val activeCoverSong = if (isCoverFlowMode) {
+        playlist.getOrNull(pagerState.currentPage) ?: song
+    } else {
+        song
+    }
+
+    LaunchedEffect(activeCoverSong?.id, activeCoverSong?.albumArtUri, activeCoverSong?.path, activeCoverSong?.album, coverVer, isDownloadingCover) {
+        if (activeCoverSong != null) {
+            // 1. 本地歌曲专属缓存文件优先极速通道
+            val coverFile = com.orbit.music.utils.CoverHelper.getOrExtractCoverFile(context, activeCoverSong.id, activeCoverSong.path, activeCoverSong.album)
             if (coverFile != null && coverFile.exists() && coverFile.length() > 0L) {
                 coverExtractedColors = com.orbit.music.utils.PaletteHelper.extractColorsFromImage(coverFile.absolutePath)
             } else {
-                coverExtractedColors = null
+                // 2. 网络歌曲封面 URL 或 ContentProvider URI 通道
+                val targetSource = if (!activeCoverSong.albumArtUri.isNullOrBlank()) {
+                    activeCoverSong.albumArtUri
+                } else {
+                    AudioCoverProvider.buildSongCoverUri(activeCoverSong.id, activeCoverSong.path, activeCoverSong.album)
+                }
+                coverExtractedColors = com.orbit.music.utils.PaletteHelper.extractColorsFromCoverSource(context, targetSource)
             }
         } else {
             coverExtractedColors = null

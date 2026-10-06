@@ -1,9 +1,14 @@
 package com.orbit.music.utils
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.Color as AndroidColor
 import androidx.palette.graphics.Palette
+import coil.Coil
+import coil.request.ImageRequest
+import coil.request.SuccessResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -63,6 +68,43 @@ object PaletteHelper {
         } catch (e: Exception) {
             null
         }
+    }
+
+    /**
+     * 智能异步提取任意封面源的亮色与暗色
+     * 全面兼容：本地文件路径、File 对象、本地 ContentProvider URI (content://)、网络封面图片 URL (http://, https://)
+     */
+    suspend fun extractColorsFromCoverSource(context: Context, source: Any?): ExtractedColors? = withContext(Dispatchers.IO) {
+        if (source == null) return@withContext null
+
+        // 1. 本地图片文件优先通道 (毫秒级解码)
+        if (source is File) {
+            val direct = extractColorsFromImage(source.absolutePath)
+            if (direct != null) return@withContext direct
+        } else if (source is String && !source.startsWith("http://", ignoreCase = true) && !source.startsWith("https://", ignoreCase = true) && !source.startsWith("content://", ignoreCase = true)) {
+            val direct = extractColorsFromImage(source)
+            if (direct != null) return@withContext direct
+        }
+
+        // 2. 网络封面 URL 或 ContentProvider URI，通过 Coil 图片加载引擎异步分析
+        try {
+            val imageLoader = Coil.imageLoader(context)
+            val request = ImageRequest.Builder(context)
+                .data(source)
+                .size(128, 128)
+                .allowHardware(false) // 禁用硬件位图，以确保 AndroidX Palette 可以安全读取像素数组
+                .build()
+
+            val result = imageLoader.execute(request)
+            if (result is SuccessResult) {
+                val bitmap = (result.drawable as? BitmapDrawable)?.bitmap
+                if (bitmap != null) {
+                    return@withContext extractColorsFromBitmap(bitmap)
+                }
+            }
+        } catch (_: Exception) {}
+
+        null
     }
 
     /**
