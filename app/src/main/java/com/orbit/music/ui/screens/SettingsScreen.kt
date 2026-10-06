@@ -156,8 +156,8 @@ fun SettingsScreen(
 
                     SettingsSwitchItem(
                         icon = Icons.Default.TabletAndroid,
-                        title = "平板专属媒体库 UI",
-                        subtitle = "启用左侧分栏导航与大屏自适应网格，并锁定横屏显示",
+                        title = "平板与车机大屏专属 UI",
+                        subtitle = "启用左侧分栏导航与大屏网格自适应，并锁定横屏优化车机显示与触控",
                         checked = uiState.isTabletLandscapeModeEnabled,
                         onCheckedChange = { viewModel.setTabletLandscapeModeEnabled(it) }
                     )

@@ -1,5 +1,6 @@
 package com.orbit.music.ui.screens
 
+import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -3639,7 +3640,114 @@ private fun MaximizedVisualizerOverlay(
             dimAlpha = equalizerUiState.backgroundDimAlpha
         )
 
-        // 1. 全屏底层动态频谱渲染 (完全触底与横向铺满)
+        val screenWidth = configuration.screenWidthDp.dp
+        val screenHeight = configuration.screenHeightDp.dp
+
+        // 1. 精准测量顶部控制条实际占用的底部位置 (充分考虑高分辨率车机横屏状态栏)
+        val statusBarResId = remember(context) {
+            context.resources.getIdentifier("status_bar_height", "dimen", "android")
+        }
+        val systemStatusBarHeight = remember(context, statusBarResId) {
+            if (statusBarResId > 0) {
+                val px = context.resources.getDimensionPixelSize(statusBarResId)
+                val density = context.resources.displayMetrics.density
+                if (density > 0f) (px / density).dp else 0.dp
+            } else {
+                0.dp
+            }
+        }
+        val composeStatusBar = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        val composeSafeDrawingTop = WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding()
+        val composeCutout = WindowInsets.displayCutout.asPaddingValues().calculateTopPadding()
+
+        val actualStatusBarHeight = maxOf(systemStatusBarHeight, composeStatusBar, composeSafeDrawingTop, composeCutout)
+            .coerceAtLeast(if (isLandscape) 28.dp else 44.dp)
+
+        val topBarPaddingTop = if (isLandscape) {
+            maxOf(actualStatusBarHeight, composeCutout).coerceAtLeast(28.dp) + 8.dp
+        } else {
+            actualStatusBarHeight + 12.dp
+        }
+        val topBarBottom = if (equalizerUiState.maximizedShowTopBar && !isCoverFlowMode && !isCleanScreen) (topBarPaddingTop + 48.dp + 12.dp) else (topBarPaddingTop + 6.dp)
+
+        // 2. 精准测量系统底部导航栏 / 车机原生 Dock 控制条高度
+        val navBarResId = remember(context) {
+            context.resources.getIdentifier("navigation_bar_height", "dimen", "android")
+        }
+        val systemNavBarHeight = remember(context, navBarResId) {
+            if (navBarResId > 0) {
+                val px = context.resources.getDimensionPixelSize(navBarResId)
+                val density = context.resources.displayMetrics.density
+                if (density > 0f) (px / density).dp else 0.dp
+            } else {
+                0.dp
+            }
+        }
+        val composeNavBar = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        val composeSafeDrawingBottom = WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding()
+        val composeSystemBarsBottom = WindowInsets.systemBars.asPaddingValues().calculateBottomPadding()
+        val composeSafeGesturesBottom = WindowInsets.safeGestures.asPaddingValues().calculateBottomPadding()
+
+        // 判断是否处于车载系统环境、平板横屏模式或大屏横屏
+        val isCarUiMode = remember(context) {
+            val uiMode = context.resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK
+            uiMode == Configuration.UI_MODE_TYPE_CAR ||
+                    context.packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE)
+        }
+        val isCarOrLargeScreen = isCarUiMode || equalizerUiState.isTabletLandscapeModeEnabled || (isLandscape && screenWidth >= 680.dp)
+
+        val rawNavBarBottom = maxOf(
+            systemNavBarHeight,
+            composeNavBar,
+            composeSafeDrawingBottom,
+            composeSystemBarsBottom,
+            composeSafeGesturesBottom
+        )
+        // 在车载大屏与宽屏横屏下，车机 Dock 栏通常占据 64~90dp。
+        // 若系统未如实上报（或上报值为0），强制保底避让 72.dp；若系统上报了更大高度，则以系统为准
+        val actualNavBarHeight = if (isCarOrLargeScreen) {
+            rawNavBarBottom.coerceAtLeast(72.dp)
+        } else {
+            rawNavBarBottom
+        }
+
+        // 3. 精准测量底部控制卡片实际占用的高度 (包含底部避让空间与卡片自身高度)
+        val bottomControlsHeight = (if (equalizerUiState.maximizedShowControls) {
+            if (isLandscape) 92.dp else 168.dp
+        } else {
+            if (isLandscape) 20.dp else 24.dp
+        }) + actualNavBarHeight
+
+        // 4. 计算垂直可用净空距离
+        val verticalAvailableGap = (screenHeight - topBarBottom - bottomControlsHeight).coerceAtLeast(80.dp)
+
+        // 5. 动态自适应常规状态封面尺寸 (在高分辨率大屏车机上适度放开上限至 300dp，杜绝娇小空旷)
+        val maxCoverHeight = (verticalAvailableGap - 28.dp).coerceAtLeast(80.dp)
+        val maxCoverWidth = if (isLandscape) {
+            (screenWidth * 0.40f).coerceAtLeast(80.dp)
+        } else {
+            (screenWidth - 36.dp).coerceAtLeast(80.dp)
+        }
+        val landscapeMaxCoverCap = if (screenHeight >= 550.dp && screenWidth >= 800.dp) 300.dp else 250.dp
+        val coverSize = minOf(maxCoverHeight, maxCoverWidth, if (isLandscape) landscapeMaxCoverCap else 240.dp)
+
+        // 6. 常规模式封面位置坐标
+        val remainingVerticalGap = (verticalAvailableGap - coverSize).coerceAtLeast(0.dp)
+        val coverTopPadding = topBarBottom + (remainingVerticalGap / 2).coerceAtLeast(14.dp)
+
+        val landscapeSideMargin = (screenWidth * 0.21f - coverSize / 2).coerceAtLeast(30.dp)
+        val coverStartPadding = if (isLandscape) {
+            if (equalizerUiState.maximizedCoverOnRight) 0.dp else landscapeSideMargin
+        } else {
+            if (equalizerUiState.maximizedCoverOnRight) 0.dp else 18.dp
+        }
+        val coverEndPadding = if (isLandscape) {
+            if (equalizerUiState.maximizedCoverOnRight) landscapeSideMargin else 0.dp
+        } else {
+            if (equalizerUiState.maximizedCoverOnRight) 18.dp else 0.dp
+        }
+
+        // 1. 全屏底层动态频谱渲染 (完全触底与横向铺满，顶部充分避让状态栏与胶囊栏)
         PowerampSpectrumVisualizer(
             magnitudes = visualizerFrame.rawMagnitudes,
             peaks = visualizerFrame.peakCaps,
@@ -3672,8 +3780,8 @@ private fun MaximizedVisualizerOverlay(
                         Modifier.padding(
                             start = 0.dp,
                             end = 0.dp,
-                            top = if (isLandscape) 40.dp else 52.dp,
-                            bottom = 0.dp
+                            top = if (isLandscape) (topBarBottom + 6.dp).coerceAtLeast(64.dp) else (actualStatusBarHeight + 8.dp).coerceAtLeast(52.dp),
+                            bottom = actualNavBarHeight
                         )
                     }
                 ),
@@ -3687,71 +3795,6 @@ private fun MaximizedVisualizerOverlay(
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = spectrumDimAlpha))
             )
-        }
-
-        val screenWidth = configuration.screenWidthDp.dp
-        val screenHeight = configuration.screenHeightDp.dp
-
-        // 1. 精准测量顶部控制条实际占用的底部位置
-        val statusBarResId = remember(context) {
-            context.resources.getIdentifier("status_bar_height", "dimen", "android")
-        }
-        val systemStatusBarHeight = remember(context, statusBarResId) {
-            if (statusBarResId > 0) {
-                val px = context.resources.getDimensionPixelSize(statusBarResId)
-                val density = context.resources.displayMetrics.density
-                if (density > 0f) (px / density).dp else 0.dp
-            } else {
-                0.dp
-            }
-        }
-        val composeStatusBar = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-        val composeSafeDrawing = WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding()
-        val composeCutout = WindowInsets.displayCutout.asPaddingValues().calculateTopPadding()
-
-        val actualStatusBarHeight = maxOf(systemStatusBarHeight, composeStatusBar, composeSafeDrawing, composeCutout)
-            .coerceAtLeast(if (isLandscape) 0.dp else 44.dp)
-
-        val topBarPaddingTop = if (isLandscape) {
-            maxOf(actualStatusBarHeight, composeCutout).coerceAtLeast(6.dp) + 6.dp
-        } else {
-            actualStatusBarHeight + 12.dp
-        }
-        val topBarBottom = if (equalizerUiState.maximizedShowTopBar && !isCoverFlowMode && !isCleanScreen) (topBarPaddingTop + 46.dp + 12.dp) else (topBarPaddingTop + 6.dp)
-
-        // 2. 精准测量底部控制卡片实际占用的高度
-        val bottomControlsHeight = if (equalizerUiState.maximizedShowControls) {
-            if (isLandscape) 90.dp else 168.dp
-        } else {
-            if (isLandscape) 20.dp else 24.dp
-        }
-
-        // 3. 计算垂直可用净空距离
-        val verticalAvailableGap = (screenHeight - topBarBottom - bottomControlsHeight).coerceAtLeast(80.dp)
-
-        // 4. 动态自适应常规状态封面尺寸
-        val maxCoverHeight = (verticalAvailableGap - 28.dp).coerceAtLeast(80.dp)
-        val maxCoverWidth = if (isLandscape) {
-            (screenWidth * 0.40f).coerceAtLeast(80.dp)
-        } else {
-            (screenWidth - 36.dp).coerceAtLeast(80.dp)
-        }
-        val coverSize = minOf(maxCoverHeight, maxCoverWidth, if (isLandscape) 250.dp else 240.dp)
-
-        // 5. 常规模式封面位置坐标
-        val remainingVerticalGap = (verticalAvailableGap - coverSize).coerceAtLeast(0.dp)
-        val coverTopPadding = topBarBottom + (remainingVerticalGap / 2).coerceAtLeast(14.dp)
-
-        val landscapeSideMargin = (screenWidth * 0.21f - coverSize / 2).coerceAtLeast(30.dp)
-        val coverStartPadding = if (isLandscape) {
-            if (equalizerUiState.maximizedCoverOnRight) 0.dp else landscapeSideMargin
-        } else {
-            if (equalizerUiState.maximizedCoverOnRight) 0.dp else 18.dp
-        }
-        val coverEndPadding = if (isLandscape) {
-            if (equalizerUiState.maximizedCoverOnRight) landscapeSideMargin else 0.dp
-        } else {
-            if (equalizerUiState.maximizedCoverOnRight) 18.dp else 0.dp
         }
 
         // 计算常规角标位置相对于屏幕中央的偏移向量
@@ -4190,10 +4233,9 @@ private fun MaximizedVisualizerOverlay(
             }
         }
 
-        // 2.5 Cover Flow 模式下中央当前曲目名称与艺术家优雅渐显 (格式与歌曲列表保持完全一致，稍微向上移动避让底部手势横条)
-        val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        // 2.5 Cover Flow 模式下中央当前曲目名称与艺术家优雅渐显 (格式与歌曲列表保持完全一致，稍微向上移动避让底部手势横条与车机底栏)
         val baseOffset = (flowCoverSize / 2) + (flowCoverSize * 0.42f) - (if (isLandscape) 46.dp else 16.dp)
-        val maxAllowedOffset = (screenHeight / 2) - navBarBottom - 52.dp
+        val maxAllowedOffset = (screenHeight / 2) - actualNavBarHeight - 52.dp
         val infoOffsetY = minOf(baseOffset, maxAllowedOffset)
 
         AnimatedVisibility(
@@ -4241,6 +4283,8 @@ private fun MaximizedVisualizerOverlay(
             topPadding = topBarPaddingTop,
             equalizerUiState = equalizerUiState,
             isDualColor = isDualColor,
+            isLandscape = isLandscape,
+            screenWidth = screenWidth,
             onToggleMaximizedShowCover = onToggleMaximizedShowCover,
             onToggleMaximizedCoverPosition = onToggleMaximizedCoverPosition,
             onSetMaximizedCoverAlpha = onSetMaximizedCoverAlpha,
@@ -4253,15 +4297,20 @@ private fun MaximizedVisualizerOverlay(
             modifier = Modifier.align(Alignment.TopCenter)
         )
 
-        // 4. 底部悬浮播放控制卡片 (在 Cover Flow 模式或一键清屏状态下隐藏)
+        // 4. 底部悬浮播放控制卡片 (在 Cover Flow 模式或一键清屏状态下隐藏，智能避让系统导航条与车载Dock栏)
         AnimatedVisibility(
             visible = equalizerUiState.maximizedShowControls && !isCoverFlowMode && !isCleanScreen,
             enter = slideInVertically(tween(250)) { height -> height } + fadeIn(tween(200)),
             exit = slideOutVertically(tween(200)) { height -> height } + fadeOut(tween(150)),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(horizontal = if (isLandscape) 48.dp else 16.dp, vertical = 12.dp)
-                .widthIn(max = 580.dp)
+                .padding(
+                    start = if (isLandscape) 48.dp else 16.dp,
+                    end = if (isLandscape) 48.dp else 16.dp,
+                    top = 0.dp,
+                    bottom = actualNavBarHeight + 8.dp
+                )
+                .widthIn(max = if (isLandscape) 640.dp else 580.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -4428,6 +4477,8 @@ private fun MaximizedTopControlBar(
     topPadding: androidx.compose.ui.unit.Dp,
     equalizerUiState: EqualizerUiState,
     isDualColor: Boolean,
+    isLandscape: Boolean = false,
+    screenWidth: androidx.compose.ui.unit.Dp = 0.dp,
     onToggleMaximizedShowCover: (Boolean) -> Unit,
     onToggleMaximizedCoverPosition: (Boolean) -> Unit,
     onSetMaximizedCoverAlpha: (Float) -> Unit,
@@ -4440,6 +4491,9 @@ private fun MaximizedTopControlBar(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val isLargeCarScreen = isLandscape && screenWidth >= 750.dp
+    val buttonSize = if (isLargeCarScreen) 40.dp else 38.dp
+    val iconSize = if (isLargeCarScreen) 21.dp else 20.dp
 
     AnimatedVisibility(
         visible = showTopControlBar,
@@ -4459,20 +4513,20 @@ private fun MaximizedTopControlBar(
             )
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                modifier = Modifier.padding(horizontal = if (isLargeCarScreen) 12.dp else 10.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(if (isLargeCarScreen) 5.dp else 4.dp)
             ) {
                 // 1. 开关封面
                 IconButton(
                     onClick = { onToggleMaximizedShowCover(!equalizerUiState.maximizedShowCover) },
-                    modifier = Modifier.size(38.dp)
+                    modifier = Modifier.size(buttonSize)
                 ) {
                     Icon(
                         imageVector = if (equalizerUiState.maximizedShowCover) Icons.Default.Image else Icons.Default.HideImage,
                         contentDescription = stringResource(if (equalizerUiState.maximizedShowCover) R.string.maximized_hide_cover else R.string.maximized_show_cover),
                         tint = if (equalizerUiState.maximizedShowCover) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(iconSize)
                     )
                 }
 
@@ -4480,13 +4534,13 @@ private fun MaximizedTopControlBar(
                 if (equalizerUiState.maximizedShowCover) {
                     IconButton(
                         onClick = { onToggleMaximizedCoverPosition(!equalizerUiState.maximizedCoverOnRight) },
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier.size(buttonSize)
                     ) {
                         Icon(
                             imageVector = if (equalizerUiState.maximizedCoverOnRight) Icons.Default.FormatAlignRight else Icons.Default.FormatAlignLeft,
                             contentDescription = stringResource(R.string.maximized_cover_position),
                             tint = OrbitTheme.colors.primary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(iconSize)
                         )
                     }
 
@@ -4501,13 +4555,13 @@ private fun MaximizedTopControlBar(
                             }
                             onSetMaximizedCoverAlpha(nextAlpha)
                         },
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier.size(buttonSize)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Opacity,
                             contentDescription = stringResource(R.string.maximized_cover_alpha),
                             tint = OrbitTheme.colors.primary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(iconSize)
                         )
                     }
 
@@ -4524,13 +4578,13 @@ private fun MaximizedTopControlBar(
                                 Toast.LENGTH_SHORT
                             ).show()
                         },
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier.size(buttonSize)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Sync,
                             contentDescription = stringResource(R.string.maximized_cover_rotate),
                             tint = if (equalizerUiState.maximizedCoverRotating) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(iconSize)
                         )
                     }
                 }
@@ -4538,13 +4592,13 @@ private fun MaximizedTopControlBar(
                 // 5. 显示/隐藏底部控制条
                 IconButton(
                     onClick = { onToggleMaximizedShowControls(!equalizerUiState.maximizedShowControls) },
-                    modifier = Modifier.size(38.dp)
+                    modifier = Modifier.size(buttonSize)
                 ) {
                     Icon(
                         imageVector = if (equalizerUiState.maximizedShowControls) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                         contentDescription = stringResource(if (equalizerUiState.maximizedShowControls) R.string.maximized_hide_controls else R.string.maximized_show_controls),
                         tint = if (equalizerUiState.maximizedShowControls) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(iconSize)
                     )
                 }
 
@@ -4559,27 +4613,27 @@ private fun MaximizedTopControlBar(
                         }
                     },
                     modifier = Modifier
-                        .size(38.dp)
+                        .size(buttonSize)
                         .alpha(if (isDualColor) 1.0f else 0.38f)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Palette,
                         contentDescription = stringResource(R.string.maximized_follow_cover_color),
                         tint = if (equalizerUiState.followCoverColorInMaximized && isDualColor) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(iconSize)
                     )
                 }
 
                 // 7. 频谱样式切换按钮
                 IconButton(
                     onClick = { onCycleVisualizerStyle?.invoke() },
-                    modifier = Modifier.size(38.dp)
+                    modifier = Modifier.size(buttonSize)
                 ) {
                     Icon(
                         imageVector = Icons.Default.GraphicEq,
                         contentDescription = stringResource(R.string.switch_visualizer_style),
                         tint = OrbitTheme.colors.primary,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(iconSize)
                     )
                 }
 
@@ -4590,13 +4644,13 @@ private fun MaximizedTopControlBar(
                         onToggleMaximizedShowTopBar(false)
                         Toast.makeText(context, hideTopBarHint, Toast.LENGTH_SHORT).show()
                     },
-                    modifier = Modifier.size(38.dp)
+                    modifier = Modifier.size(buttonSize)
                 ) {
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowUp,
                         contentDescription = stringResource(R.string.maximized_hide_top_bar),
                         tint = OrbitTheme.colors.primary,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size((iconSize.value + 2f).dp)
                     )
                 }
 
@@ -4605,13 +4659,13 @@ private fun MaximizedTopControlBar(
                 // 9. 退出最大化全屏按钮
                 IconButton(
                     onClick = onBack,
-                    modifier = Modifier.size(38.dp)
+                    modifier = Modifier.size(buttonSize)
                 ) {
                     Icon(
                         imageVector = Icons.Default.FullscreenExit,
                         contentDescription = stringResource(R.string.btn_cancel),
                         tint = OrbitTheme.colors.textPrimary,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size((iconSize.value + 2f).dp)
                     )
                 }
             }
