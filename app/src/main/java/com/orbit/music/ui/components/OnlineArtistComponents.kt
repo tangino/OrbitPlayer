@@ -1071,8 +1071,10 @@ fun OnlineArtistDetailView(
                     itemsIndexed(filteredSongs, key = { index, song -> "${song.id}_$index" }) { index, song ->
                         val isCurrent = currentPlayingTitle == song.title &&
                                 (currentPlayingArtist.isNullOrBlank() || song.artist == currentPlayingArtist)
+                        val origIndex = remember(song.id, songs) { songs.indexOfFirst { it.id == song.id } }
+                        val displayIndex = if (origIndex >= 0) origIndex + 1 else index + 1
                         OnlineSongListItem(
-                            index = index + 1,
+                            index = displayIndex,
                             song = song,
                             isCurrentPlaying = isCurrent,
                             isPlaying = isPlaying && isCurrent,
@@ -1545,8 +1547,10 @@ fun OnlineAlbumDetailView(
                 itemsIndexed(filteredSongs, key = { index, song -> "${song.id}_$index" }) { index, song ->
                     val isCurrent = currentPlayingTitle == song.title &&
                             (currentPlayingArtist.isNullOrBlank() || song.artist == currentPlayingArtist)
+                    val origIndex = remember(song.id, songs) { songs.indexOfFirst { it.id == song.id } }
+                    val displayIndex = if (origIndex >= 0) origIndex + 1 else index + 1
                     OnlineSongListItem(
-                        index = index + 1,
+                        index = displayIndex,
                         song = song,
                         isCurrentPlaying = isCurrent,
                         isPlaying = isPlaying && isCurrent,

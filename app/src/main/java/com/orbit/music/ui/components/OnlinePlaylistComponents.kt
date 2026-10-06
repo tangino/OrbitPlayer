@@ -850,10 +850,24 @@ fun OnlinePlaylistDetailView(
         }
     }
 
+    val songIndexMap = remember(songs) {
+        songs.mapIndexed { idx, s -> s.id to idx }.toMap()
+    }
+
     // 监听外部定位请求，平滑滚动至当前正在播放的歌曲
     LaunchedEffect(locateTrigger) {
-        if (locateTrigger > 0L && locateIndex >= 0 && locateIndex < filteredSongs.size) {
-            listState.animateScrollToItem(locateIndex)
+        if (locateTrigger > 0L) {
+            val targetIndex = if (searchQuery.isBlank()) {
+                locateIndex
+            } else {
+                val currentSong = songs.getOrNull(locateIndex)
+                if (currentSong != null) {
+                    filteredSongs.indexOfFirst { it.id == currentSong.id }
+                } else -1
+            }
+            if (targetIndex >= 0 && targetIndex < filteredSongs.size) {
+                listState.animateScrollToItem(targetIndex)
+            }
         }
     }
 
@@ -1077,7 +1091,13 @@ fun OnlinePlaylistDetailView(
                     color = OrbitTheme.colors.primary.copy(alpha = 0.15f),
                     border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.4f)),
                     modifier = Modifier.clickable {
-                        if (filteredSongs.isNotEmpty()) onSongClick(0, filteredSongs.first())
+                        if (searchQuery.isBlank()) {
+                            onPlayAll()
+                        } else {
+                            val firstSong = filteredSongs.first()
+                            val origIdx = songIndexMap[firstSong.id] ?: songs.indexOfFirst { it.id == firstSong.id }.let { if (it >= 0) it else 0 }
+                            onSongClick(origIdx, firstSong)
+                        }
                     }
                 ) {
                     Row(
@@ -1092,7 +1112,7 @@ fun OnlinePlaylistDetailView(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "播放全部 (${filteredSongs.size})",
+                            text = if (searchQuery.isBlank()) "播放全部 (${songs.size})" else "播放全部 (${filteredSongs.size})",
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = OrbitTheme.colors.primary
@@ -1105,9 +1125,12 @@ fun OnlinePlaylistDetailView(
                     color = OrbitTheme.colors.surfaceCard,
                     border = BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder),
                     modifier = Modifier.clickable {
-                        if (filteredSongs.isNotEmpty()) {
-                            val randomIdx = (0 until filteredSongs.size).random()
-                            onSongClick(randomIdx, filteredSongs[randomIdx])
+                        if (searchQuery.isBlank()) {
+                            onShufflePlay()
+                        } else {
+                            val randomSong = filteredSongs.random()
+                            val origIdx = songIndexMap[randomSong.id] ?: songs.indexOfFirst { it.id == randomSong.id }.let { if (it >= 0) it else 0 }
+                            onSongClick(origIdx, randomSong)
                         }
                     }
                 ) {
@@ -1229,6 +1252,8 @@ fun OnlinePlaylistDetailView(
                 itemsIndexed(filteredSongs, key = { index, item -> "${item.id}_$index" }) { index, song ->
                     val isCurrent = currentPlayingTitle == song.title &&
                             (currentPlayingArtist == null || currentPlayingArtist == song.artist)
+                    val originalIndex = songIndexMap[song.id] ?: songs.indexOfFirst { it.id == song.id }.let { if (it >= 0) it else index }
+                    val displayIndex = originalIndex + 1
 
                     Surface(
                         shape = RoundedCornerShape(10.dp),
@@ -1236,14 +1261,14 @@ fun OnlinePlaylistDetailView(
                         border = if (isCurrent) BorderStroke(0.5.dp, OrbitTheme.colors.primary.copy(alpha = 0.3f)) else null,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSongClick(index, song) }
+                            .clickable { onSongClick(originalIndex, song) }
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = (index + 1).toString().padStart(2, '0'),
+                                text = displayIndex.toString().padStart(2, '0'),
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (isCurrent) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary.copy(alpha = 0.6f),
