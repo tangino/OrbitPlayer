@@ -125,6 +125,7 @@ import com.orbit.music.data.model.ArtistItem
 import com.orbit.music.data.model.FolderItem
 import com.orbit.music.data.model.Playlist
 import com.orbit.music.ui.viewmodel.LibraryTab
+import com.orbit.music.data.model.PlaybackOrigin
 import kotlin.math.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -4743,6 +4744,7 @@ private fun Modifier.maximizedCoverFlowTransform(
 }
 
 enum class NowPlayingMiddleTab(val title: String) {
+    ONLINE_PLAYLIST("网络歌单"),
     SONGS("全部歌曲"),
     FOLDERS("文件夹"),
     ARTISTS("歌手"),
@@ -4761,7 +4763,50 @@ fun NowPlayingLibraryMiddleColumn(
     coverVersion: Long,
     modifier: Modifier = Modifier
 ) {
-    var selectedTab by rememberSaveable { mutableStateOf(NowPlayingMiddleTab.SONGS) }
+    val playbackOrigin by viewModel.playbackOrigin.collectAsState()
+    val currentOnlinePlaylist = (playbackOrigin as? PlaybackOrigin.OnlinePlaylistOrigin)?.onlinePlaylist
+    val isOnlinePlaylistPlaying = currentOnlinePlaylist != null ||
+            (playbackState.currentSong?.path?.startsWith("online://") == true && playbackState.currentPlaylist.isNotEmpty())
+
+    val availableTabs = remember(isOnlinePlaylistPlaying) {
+        if (isOnlinePlaylistPlaying) {
+            listOf(
+                NowPlayingMiddleTab.ONLINE_PLAYLIST,
+                NowPlayingMiddleTab.SONGS,
+                NowPlayingMiddleTab.FOLDERS,
+                NowPlayingMiddleTab.ARTISTS,
+                NowPlayingMiddleTab.PLAYLISTS,
+                NowPlayingMiddleTab.ALBUMS
+            )
+        } else {
+            listOf(
+                NowPlayingMiddleTab.SONGS,
+                NowPlayingMiddleTab.FOLDERS,
+                NowPlayingMiddleTab.ARTISTS,
+                NowPlayingMiddleTab.PLAYLISTS,
+                NowPlayingMiddleTab.ALBUMS
+            )
+        }
+    }
+
+    var selectedTab by rememberSaveable {
+        mutableStateOf(if (isOnlinePlaylistPlaying) NowPlayingMiddleTab.ONLINE_PLAYLIST else NowPlayingMiddleTab.SONGS)
+    }
+
+    // 优先显示：当正在播放网络歌单或切换不同网络歌单时，优先切换选中网络歌单 Tab
+    var lastHandledPlaylistKey by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(currentOnlinePlaylist?.id, isOnlinePlaylistPlaying) {
+        if (isOnlinePlaylistPlaying) {
+            val key = currentOnlinePlaylist?.let { p -> "${p.platform.name}_${p.id}" } ?: "online_playing"
+            if (lastHandledPlaylistKey != key) {
+                lastHandledPlaylistKey = key
+                selectedTab = NowPlayingMiddleTab.ONLINE_PLAYLIST
+            }
+        } else if (selectedTab == NowPlayingMiddleTab.ONLINE_PLAYLIST) {
+            selectedTab = NowPlayingMiddleTab.SONGS
+        }
+    }
+
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
 
@@ -4796,6 +4841,7 @@ fun NowPlayingLibraryMiddleColumn(
         openedArtist != null -> allSongs.filter { it.artist.trim().equals(openedArtist!!.name.trim(), ignoreCase = true) }
         openedAlbum != null -> allSongs.filter { it.album.trim().equals(openedAlbum!!.title.trim(), ignoreCase = true) }
         openedPlaylist != null -> playlistSongs
+        selectedTab == NowPlayingMiddleTab.ONLINE_PLAYLIST -> playbackState.currentPlaylist
         selectedTab == NowPlayingMiddleTab.SONGS -> allSongs
         else -> null
     }
@@ -4891,29 +4937,43 @@ fun NowPlayingLibraryMiddleColumn(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    NowPlayingMiddleTab.values().forEach { tab ->
-                        val isSelected = selectedTab == tab
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.surface.copy(alpha = 0.5f),
-                            border = BorderStroke(
-                                width = 1.dp,
-                                color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.surfaceBorder.copy(alpha = 0.4f)
-                            ),
-                            modifier = Modifier.clickable {
-                                selectedTab = tab
-                                searchQuery = ""
-                            }
+                availableTabs.forEach { tab ->
+                    val isSelected = selectedTab == tab
+                    val isOnlineTab = tab == NowPlayingMiddleTab.ONLINE_PLAYLIST
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.surface.copy(alpha = 0.5f),
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.surfaceBorder.copy(alpha = 0.4f)
+                        ),
+                        modifier = Modifier.clickable {
+                            selectedTab = tab
+                            searchQuery = ""
+                        }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                         ) {
+                            if (isOnlineTab) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudQueue,
+                                    contentDescription = null,
+                                    tint = if (isSelected) Color.White else OrbitTheme.colors.primary,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                            }
                             Text(
                                 text = tab.title,
                                 fontSize = 11.5.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) Color.White else OrbitTheme.colors.textSecondary,
-                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                                color = if (isSelected) Color.White else if (isOnlineTab) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary
                             )
                         }
                     }
+                }
                 }
 
                 Spacer(modifier = Modifier.width(4.dp))
@@ -5002,37 +5062,104 @@ fun NowPlayingLibraryMiddleColumn(
                     }
                 }
 
-                if (filteredSongs.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
-                            text = if (q.isNotBlank()) "未找到相关歌曲" else "列表暂无歌曲",
-                            color = OrbitTheme.colors.textSecondary.copy(alpha = 0.6f),
-                            fontSize = 12.5.sp
-                        )
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // 若当前选中的是网络歌单且有元数据，展示网络歌单平台与名称提示条
+                    if (selectedTab == NowPlayingMiddleTab.ONLINE_PLAYLIST && currentOnlinePlaylist != null) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = OrbitTheme.colors.surface.copy(alpha = 0.5f),
+                            border = BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder.copy(alpha = 0.4f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudQueue,
+                                    contentDescription = null,
+                                    tint = OrbitTheme.colors.primary,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = "${currentOnlinePlaylist.platform.displayName} · ${currentOnlinePlaylist.title}",
+                                    fontSize = 11.sp,
+                                    color = OrbitTheme.colors.textSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    text = "共 ${currentSongList.size} 首",
+                                    fontSize = 10.5.sp,
+                                    color = OrbitTheme.colors.primary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
                     }
-                } else {
-                    val listState = rememberLazyListState()
-                    val currentPlayingSongId = playbackState.currentSong?.id
 
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(3.dp)
-                    ) {
-                        itemsIndexed(
-                            items = filteredSongs,
-                            key = { idx, s -> "${s.id}_${s.path}_$idx" }
-                        ) { index, s ->
-                            val isCurrentPlaying = s.id == currentPlayingSongId
-                            CompactSongRow(
-                                index = index + 1,
-                                song = s,
-                                isPlaying = playbackState.isPlaying,
-                                isCurrentPlaying = isCurrentPlaying,
-                                onClick = {
-                                    viewModel.playSong(filteredSongs, index)
-                                }
+                    if (filteredSongs.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize().weight(1f), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = if (q.isNotBlank()) "未找到相关歌曲" else "列表暂无歌曲",
+                                color = OrbitTheme.colors.textSecondary.copy(alpha = 0.6f),
+                                fontSize = 12.5.sp
                             )
+                        }
+                    } else {
+                        val listState = rememberLazyListState()
+                        val currentPlayingSong = playbackState.currentSong
+                        val currentPlayingSongId = currentPlayingSong?.id
+
+                        // 自动平滑滚动定位到当前正在播放的曲目
+                        LaunchedEffect(selectedTab, currentPlayingSong?.title, currentPlayingSong?.artist) {
+                            if (searchQuery.isBlank() && filteredSongs.isNotEmpty()) {
+                                val targetIdx = filteredSongs.indexOfFirst { s ->
+                                    if (s.id > 0 && currentPlayingSongId != null && currentPlayingSongId > 0) {
+                                        s.id == currentPlayingSongId
+                                    } else {
+                                        s.title == currentPlayingSong?.title &&
+                                                (s.artist.isBlank() || currentPlayingSong?.artist.isNullOrBlank() || s.artist == currentPlayingSong?.artist)
+                                    }
+                                }
+                                if (targetIdx in filteredSongs.indices) {
+                                    listState.animateScrollToItem(targetIdx)
+                                }
+                            }
+                        }
+
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            itemsIndexed(
+                                items = filteredSongs,
+                                key = { idx, s -> "${s.id}_${s.path}_$idx" }
+                            ) { index, s ->
+                                val isCurrentPlaying = if (s.id > 0 && currentPlayingSongId != null && currentPlayingSongId > 0) {
+                                    s.id == currentPlayingSongId
+                                } else {
+                                    s.title == currentPlayingSong?.title &&
+                                            (s.artist.isBlank() || currentPlayingSong?.artist.isNullOrBlank() || s.artist == currentPlayingSong?.artist)
+                                }
+                                CompactSongRow(
+                                    index = index + 1,
+                                    song = s,
+                                    isPlaying = playbackState.isPlaying,
+                                    isCurrentPlaying = isCurrentPlaying,
+                                    onClick = {
+                                        val origin = if (selectedTab == NowPlayingMiddleTab.ONLINE_PLAYLIST) playbackOrigin else null
+                                        viewModel.playSong(filteredSongs, index, origin)
+                                    }
+                                )
+                            }
                         }
                     }
                 }
