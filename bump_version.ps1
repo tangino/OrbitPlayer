@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # Orbit Player - 版本号修改/升级脚本 (PowerShell)
 # ==============================================================================
 
@@ -42,11 +42,15 @@ Write-Host " | " -NoNewline
 Write-Host "versionCode = $CurrentCode" -ForegroundColor Green
 Write-Host ""
 
-# 解析语义化版本号
+# 解析语义化版本号 (兼容 0.2.8-1 / 0.2.8_1 等带后缀版本号)
 $parts = $CurrentName.Split('.')
-$major = if ($parts.Length -ge 1) { [int]$parts[0] } else { 0 }
-$minor = if ($parts.Length -ge 2) { [int]$parts[1] } else { 0 }
-$patch = if ($parts.Length -ge 3) { [int]$parts[2] } else { 0 }
+$majorStr = if ($parts.Length -ge 1) { [System.Text.RegularExpressions.Regex]::Match($parts[0], '^\d+').Value } else { "0" }
+$minorStr = if ($parts.Length -ge 2) { [System.Text.RegularExpressions.Regex]::Match($parts[1], '^\d+').Value } else { "0" }
+$patchStr = if ($parts.Length -ge 3) { [System.Text.RegularExpressions.Regex]::Match($parts[2], '^\d+').Value } else { "0" }
+
+$major = if ([string]::IsNullOrEmpty($majorStr)) { 0 } else { [int]$majorStr }
+$minor = if ([string]::IsNullOrEmpty($minorStr)) { 0 } else { [int]$minorStr }
+$patch = if ([string]::IsNullOrEmpty($patchStr)) { 0 } else { [int]$patchStr }
 
 $SuggestPatchName = "$major.$minor.$($patch + 1)"
 $SuggestMinorName = "$major.$($minor + 1).0"

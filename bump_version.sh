@@ -38,10 +38,14 @@ echo -e "${CYAN}======================================================${NC}"
 echo -e "当前版本: ${GREEN}versionName = \"$CURRENT_NAME\"${NC} | ${GREEN}versionCode = $CURRENT_CODE${NC}"
 echo ""
 
-# 解析语义化版本号 (例如 0.2.1 -> MAJOR=0, MINOR=2, PATCH=1)
-MAJOR=$(echo "$CURRENT_NAME" | cut -d'.' -f1)
-MINOR=$(echo "$CURRENT_NAME" | cut -d'.' -f2)
-PATCH=$(echo "$CURRENT_NAME" | cut -d'.' -f3)
+# 解析语义化版本号 (例如 0.2.1 或带后缀的 0.2.8-1 / 0.2.8_1)
+RAW_MAJOR=$(echo "$CURRENT_NAME" | cut -d'.' -f1)
+RAW_MINOR=$(echo "$CURRENT_NAME" | cut -d'.' -f2)
+RAW_PATCH=$(echo "$CURRENT_NAME" | cut -d'.' -f3)
+
+MAJOR=$(echo "$RAW_MAJOR" | grep -oE '^[0-9]+' || true)
+MINOR=$(echo "$RAW_MINOR" | grep -oE '^[0-9]+' || true)
+PATCH=$(echo "$RAW_PATCH" | grep -oE '^[0-9]+' || true)
 
 MAJOR=${MAJOR:-0}
 MINOR=${MINOR:-0}
