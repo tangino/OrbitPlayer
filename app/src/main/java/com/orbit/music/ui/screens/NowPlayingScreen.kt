@@ -3748,22 +3748,39 @@ private fun MaximizedVisualizerOverlay(
         // 4. 计算垂直可用净空距离
         val verticalAvailableGap = (screenHeight - topBarBottom - bottomControlsHeight).coerceAtLeast(80.dp)
 
-        // 5. 动态自适应常规状态封面尺寸 (在高分辨率大屏车机上适度放开上限至 300dp，杜绝娇小空旷)
+        // 5. 动态自适应常规状态封面尺寸 (手机横屏大画幅沉浸体验，车机大屏放宽上限至320dp)
         val isSmallLandscapePhone = isLandscape && screenHeight < 500.dp
-        val maxCoverHeight = (verticalAvailableGap - (if (isSmallLandscapePhone) 10.dp else 28.dp)).coerceAtLeast(80.dp)
+        val maxCoverHeight = (verticalAvailableGap - 28.dp).coerceAtLeast(80.dp)
         val maxCoverWidth = if (isLandscape) {
-            (screenWidth * (if (isSmallLandscapePhone) 0.32f else 0.40f)).coerceAtLeast(80.dp)
+            (screenWidth * 0.40f).coerceAtLeast(80.dp)
         } else {
             (screenWidth - 36.dp).coerceAtLeast(80.dp)
         }
-        val landscapeMaxCoverCap = if (screenHeight >= 550.dp && screenWidth >= 800.dp) 300.dp else (if (isSmallLandscapePhone) 160.dp else 250.dp)
-        val coverSize = minOf(maxCoverHeight, maxCoverWidth, if (isLandscape) landscapeMaxCoverCap else 240.dp)
+        val coverSize = if (isSmallLandscapePhone) {
+            val availableH = (screenHeight - actualStatusBarHeight - actualNavBarHeight).coerceAtLeast(100.dp)
+            val availableW = (screenWidth * 0.32f).coerceAtLeast(100.dp)
+            minOf(availableH * 0.68f, availableW, 240.dp)
+        } else if (isLandscape) {
+            val landscapeMaxCoverCap = if (screenHeight >= 550.dp && screenWidth >= 800.dp) 320.dp else 260.dp
+            minOf(maxCoverHeight, maxCoverWidth, landscapeMaxCoverCap)
+        } else {
+            minOf(maxCoverHeight, maxCoverWidth, 240.dp)
+        }
 
-        // 6. 常规模式封面位置坐标
+        // 6. 常规模式封面位置坐标 (横屏下居中对称优雅布局)
         val remainingVerticalGap = (verticalAvailableGap - coverSize).coerceAtLeast(0.dp)
-        val coverTopPadding = topBarBottom + (remainingVerticalGap / 2).coerceAtLeast(if (isSmallLandscapePhone) 4.dp else 14.dp)
+        val coverTopPadding = if (isLandscape) {
+            val freeSpace = (screenHeight - actualStatusBarHeight - actualNavBarHeight - coverSize).coerceAtLeast(0.dp)
+            actualStatusBarHeight + (freeSpace / 2)
+        } else {
+            topBarBottom + (remainingVerticalGap / 2).coerceAtLeast(14.dp)
+        }
 
-        val landscapeSideMargin = (screenWidth * 0.21f - coverSize / 2).coerceAtLeast(30.dp)
+        val landscapeSideMargin = if (isSmallLandscapePhone) {
+            (screenWidth * 0.16f - coverSize / 2).coerceIn(16.dp, 40.dp)
+        } else {
+            (screenWidth * 0.21f - coverSize / 2).coerceAtLeast(30.dp)
+        }
         val coverStartPadding = if (isLandscape) {
             if (equalizerUiState.maximizedCoverOnRight) 0.dp else landscapeSideMargin
         } else {
