@@ -483,6 +483,27 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         _libraryUiState.update { it.copy(selectedOnlinePlaylist = onlinePlaylist) }
     }
 
+    /**
+     * 原子切换 Tab 并直接打开目标网络歌单详情（避免先切换 Tab 显示广场再打开歌单的跳跃和闪烁）
+     */
+    fun navigateToOnlinePlaylist(
+        onlinePlaylist: com.orbit.music.data.online.model.OnlinePlaylist,
+        targetTab: LibraryTab
+    ) {
+        _libraryUiState.update {
+            it.copy(
+                currentTab = targetTab,
+                selectedFolderPath = null,
+                selectedAlbum = null,
+                selectedArtist = null,
+                selectedPlaylist = null,
+                selectedOnlinePlaylist = onlinePlaylist,
+                selectedOnlineAlbum = null
+            )
+        }
+        saveLibraryUiState()
+    }
+
     fun selectOnlineAlbum(onlineAlbum: com.orbit.music.data.online.model.OnlineAlbum?) {
         _libraryUiState.update { it.copy(selectedOnlineAlbum = onlineAlbum) }
     }

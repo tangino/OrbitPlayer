@@ -1085,72 +1085,94 @@ fun OnlinePlaylistDetailView(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (filteredSongs.isNotEmpty()) {
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = OrbitTheme.colors.primary.copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.4f)),
-                    modifier = Modifier.clickable {
-                        if (searchQuery.isBlank()) {
-                            onPlayAll()
-                        } else {
-                            val firstSong = filteredSongs.first()
-                            val origIdx = songIndexMap[firstSong.id] ?: songs.indexOfFirst { it.id == firstSong.id }.let { if (it >= 0) it else 0 }
-                            onSongClick(origIdx, firstSong)
-                        }
-                    }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PlayArrow,
-                            contentDescription = "播放全部",
-                            tint = OrbitTheme.colors.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = if (searchQuery.isBlank()) "播放全部 (${songs.size})" else "播放全部 (${filteredSongs.size})",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = OrbitTheme.colors.primary
-                        )
-                    }
-                }
+            val isPlayable = filteredSongs.isNotEmpty()
 
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = OrbitTheme.colors.surfaceCard,
-                    border = BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder),
-                    modifier = Modifier.clickable {
-                        if (searchQuery.isBlank()) {
-                            onShufflePlay()
-                        } else {
-                            val randomSong = filteredSongs.random()
-                            val origIdx = songIndexMap[randomSong.id] ?: songs.indexOfFirst { it.id == randomSong.id }.let { if (it >= 0) it else 0 }
-                            onSongClick(origIdx, randomSong)
-                        }
-                    }
+            // 播放全部按钮（无结果时常驻显示并置灰禁用）
+            val playAllBg = if (isPlayable) OrbitTheme.colors.primary.copy(alpha = 0.15f) else OrbitTheme.colors.surfaceCard.copy(alpha = 0.4f)
+            val playAllBorder = if (isPlayable) BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.4f)) else BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder.copy(alpha = 0.3f))
+            val playAllContentColor = if (isPlayable) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary.copy(alpha = 0.35f)
+
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = playAllBg,
+                border = playAllBorder,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .then(
+                        if (isPlayable) {
+                            Modifier.clickable {
+                                if (searchQuery.isBlank()) {
+                                    onPlayAll()
+                                } else {
+                                    val firstSong = filteredSongs.first()
+                                    val origIdx = songIndexMap[firstSong.id] ?: songs.indexOfFirst { it.id == firstSong.id }.let { if (it >= 0) it else 0 }
+                                    onSongClick(origIdx, firstSong)
+                                }
+                            }
+                        } else Modifier
+                    )
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Shuffle,
-                            contentDescription = "随机播放",
-                            tint = OrbitTheme.colors.textSecondary,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "随机",
-                            fontSize = 12.sp,
-                            color = OrbitTheme.colors.textSecondary
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "播放全部",
+                        tint = playAllContentColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (searchQuery.isBlank()) "播放全部 (${songs.size})" else "播放全部 (${filteredSongs.size})",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = playAllContentColor
+                    )
+                }
+            }
+
+            // 随机播放按钮（无结果时常驻显示并置灰禁用）
+            val shuffleBg = if (isPlayable) OrbitTheme.colors.surfaceCard else OrbitTheme.colors.surfaceCard.copy(alpha = 0.4f)
+            val shuffleBorder = if (isPlayable) BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder) else BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder.copy(alpha = 0.3f))
+            val shuffleContentColor = if (isPlayable) OrbitTheme.colors.textSecondary else OrbitTheme.colors.textSecondary.copy(alpha = 0.35f)
+
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = shuffleBg,
+                border = shuffleBorder,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .then(
+                        if (isPlayable) {
+                            Modifier.clickable {
+                                if (searchQuery.isBlank()) {
+                                    onShufflePlay()
+                                } else {
+                                    val randomSong = filteredSongs.random()
+                                    val origIdx = songIndexMap[randomSong.id] ?: songs.indexOfFirst { it.id == randomSong.id }.let { if (it >= 0) it else 0 }
+                                    onSongClick(origIdx, randomSong)
+                                }
+                            }
+                        } else Modifier
+                    )
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Shuffle,
+                        contentDescription = "随机播放",
+                        tint = shuffleContentColor,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "随机",
+                        fontSize = 12.sp,
+                        color = shuffleContentColor
+                    )
                 }
             }
 

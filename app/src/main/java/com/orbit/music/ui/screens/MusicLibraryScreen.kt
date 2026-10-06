@@ -377,8 +377,6 @@ fun MusicLibraryScreen(
         when (origin) {
             is PlaybackOrigin.OnlinePlaylistOrigin -> {
                 val targetPlaylist = origin.onlinePlaylist
-                viewModel.clearAllDrillDown()
-                viewModel.selectOnlinePlaylist(targetPlaylist)
                 val targetTab = when (targetPlaylist.platform) {
                     com.orbit.music.data.online.model.OnlinePlatform.NETEASE -> LibraryTab.NETEASE_SQUARE
                     com.orbit.music.data.online.model.OnlinePlatform.QQ -> LibraryTab.QQ_SQUARE
@@ -386,13 +384,19 @@ fun MusicLibraryScreen(
                     com.orbit.music.data.online.model.OnlinePlatform.KUWO -> LibraryTab.KUWO_SQUARE
                     com.orbit.music.data.online.model.OnlinePlatform.MIGU -> LibraryTab.MIGU_SQUARE
                 }
-                if (libraryState.currentTab != targetTab) {
-                    viewModel.setTab(targetTab)
+
+                // 判断是否已经打开了目标网络歌单
+                val isAlreadyInTarget = openedOnlinePlaylist?.id == targetPlaylist.id &&
+                        openedOnlinePlaylist?.platform == targetPlaylist.platform
+
+                if (!isAlreadyInTarget) {
+                    // 原子切换 Tab 并直接打开目标歌单，避免先切换 Tab 显示广场再打开歌单的跳跃和闪烁
+                    viewModel.navigateToOnlinePlaylist(targetPlaylist, targetTab)
                 }
 
                 coroutineScope.launch {
                     var retry = 0
-                    while (retry < 15) {
+                    while (retry < 30) {
                         val currentList = onlinePlaylistSongs
                         val targetIndex = currentList.indexOfFirst {
                             it.title == currentSong.title && (currentSong.artist.isBlank() || it.artist == currentSong.artist)
@@ -402,7 +406,7 @@ fun MusicLibraryScreen(
                             onlineSongsLocateTrigger = System.currentTimeMillis()
                             break
                         }
-                        kotlinx.coroutines.delay(100)
+                        kotlinx.coroutines.delay(60)
                         retry++
                     }
                 }
