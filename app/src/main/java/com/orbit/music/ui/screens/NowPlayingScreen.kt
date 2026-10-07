@@ -3748,18 +3748,35 @@ private fun MaximizedVisualizerOverlay(
         // 4. 计算垂直可用净空距离
         val verticalAvailableGap = (screenHeight - topBarBottom - bottomControlsHeight).coerceAtLeast(80.dp)
 
-        // 5. 动态自适应常规状态封面尺寸 (手机横屏大画幅沉浸体验，车机大屏放宽上限至320dp)
+        // 5. 动态自适应常规状态封面尺寸 (手机横屏上方控制条隐藏时进一步扩大，车机大屏放宽上限至320dp)
         val isSmallLandscapePhone = isLandscape && screenHeight < 500.dp
+        val isTopControlBarVisible = equalizerUiState.maximizedShowTopBar && !isCoverFlowMode && !isCleanScreen
         val maxCoverHeight = (verticalAvailableGap - 28.dp).coerceAtLeast(80.dp)
         val maxCoverWidth = if (isLandscape) {
             (screenWidth * 0.40f).coerceAtLeast(80.dp)
         } else {
             (screenWidth - 36.dp).coerceAtLeast(80.dp)
         }
-        val coverSize = if (isSmallLandscapePhone) {
+
+        // 手机横屏时：顶部控制条隐藏时进一步扩展封面至270dp大画幅，显示控制条时优雅自适应235dp，并平滑动画过渡
+        val targetPhoneCoverSize = if (!isTopControlBarVisible) {
             val availableH = (screenHeight - actualStatusBarHeight - actualNavBarHeight).coerceAtLeast(100.dp)
+            val availableW = (screenWidth * 0.36f).coerceAtLeast(100.dp)
+            minOf(availableH * 0.78f, availableW, 270.dp)
+        } else {
+            val availableH = (screenHeight - topBarBottom - actualNavBarHeight).coerceAtLeast(100.dp)
             val availableW = (screenWidth * 0.32f).coerceAtLeast(100.dp)
-            minOf(availableH * 0.68f, availableW, 240.dp)
+            minOf(availableH * 0.68f, availableW, 235.dp)
+        }
+
+        val animatedPhoneCoverSize by animateDpAsState(
+            targetValue = targetPhoneCoverSize,
+            animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+            label = "PhoneCoverSizeAnim"
+        )
+
+        val coverSize = if (isSmallLandscapePhone) {
+            animatedPhoneCoverSize
         } else if (isLandscape) {
             val landscapeMaxCoverCap = if (screenHeight >= 550.dp && screenWidth >= 800.dp) 320.dp else 260.dp
             minOf(maxCoverHeight, maxCoverWidth, landscapeMaxCoverCap)
@@ -3767,11 +3784,12 @@ private fun MaximizedVisualizerOverlay(
             minOf(maxCoverHeight, maxCoverWidth, 240.dp)
         }
 
-        // 6. 常规模式封面位置坐标 (横屏下居中对称优雅布局)
+        // 6. 常规模式封面位置坐标 (上下重心略微往上移动，营造轻盈开阔感)
         val remainingVerticalGap = (verticalAvailableGap - coverSize).coerceAtLeast(0.dp)
         val coverTopPadding = if (isLandscape) {
             val freeSpace = (screenHeight - actualStatusBarHeight - actualNavBarHeight - coverSize).coerceAtLeast(0.dp)
-            actualStatusBarHeight + (freeSpace / 2)
+            val upwardOffset = if (isSmallLandscapePhone) 16.dp else 22.dp
+            (actualStatusBarHeight + (freeSpace * 0.38f) - upwardOffset).coerceAtLeast(actualStatusBarHeight + 2.dp)
         } else {
             topBarBottom + (remainingVerticalGap / 2).coerceAtLeast(14.dp)
         }
@@ -3791,6 +3809,16 @@ private fun MaximizedVisualizerOverlay(
         } else {
             if (equalizerUiState.maximizedCoverOnRight) 18.dp else 0.dp
         }
+
+        // 精准对齐：横向中心与底部控制栏进度条的结束点 (或起始点) 完美垂直对齐
+        val bottomCardHorizontalPadding = if (isLandscape) (if (isSmallLandscapePhone) 24.dp else 48.dp) else 16.dp
+        val bottomCardMaxWidth = if (isLandscape) (if (isSmallLandscapePhone) 560.dp else 640.dp) else 580.dp
+        val actualBottomCardWidth = minOf(screenWidth - bottomCardHorizontalPadding * 2, bottomCardMaxWidth)
+        val bottomCardRight = (screenWidth + actualBottomCardWidth) / 2
+        val bottomCardLeft = (screenWidth - actualBottomCardWidth) / 2
+        // 进度条轨道结束位置与起始位置 (扣除内边距 8dp + 时间宽度约 34dp + 间距 8dp = 50dp)
+        val progressBarEndX = bottomCardRight - 50.dp
+        val progressBarStartX = bottomCardLeft + 50.dp
 
         // 1. 全屏底层动态频谱渲染 (完全触底与横向铺满，顶部充分避让状态栏与胶囊栏)
         PowerampSpectrumVisualizer(
@@ -3842,11 +3870,15 @@ private fun MaximizedVisualizerOverlay(
             )
         }
 
-        // 计算常规角标位置相对于屏幕中央的偏移向量
-        val normalCenterX = if (equalizerUiState.maximizedCoverOnRight) {
-            screenWidth - coverEndPadding - coverSize / 2
+        // 计算常规角标位置相对于屏幕中央的偏移向量 (横屏下中心精准对齐进度条结束点/起始点)
+        val normalCenterX = if (isLandscape) {
+            if (equalizerUiState.maximizedCoverOnRight) progressBarEndX else progressBarStartX
         } else {
-            coverStartPadding + coverSize / 2
+            if (equalizerUiState.maximizedCoverOnRight) {
+                screenWidth - coverEndPadding - coverSize / 2
+            } else {
+                coverStartPadding + coverSize / 2
+            }
         }
         val normalCenterY = coverTopPadding + coverSize / 2
 
