@@ -95,6 +95,18 @@
     <string name="system_version_title">Android Version</string>
     <string name="screen_resolution_title">Screen Resolution</string>
     <string name="screen_density_title">Density &amp; Viewport</string>
+    <string name="ui_scale_title">UI &amp; Car Scale</string>
+    <string name="ui_scale_subtitle">Auto-adapt low-DPI high-res car displays (e.g. 2.5K@160DPI) or customize UI scaling</string>
+    <string name="ui_scale_auto">Auto Adapt (Recommended)</string>
+    <string name="ui_scale_080">Compact (0.8x)</string>
+    <string name="ui_scale_090">Light (0.9x)</string>
+    <string name="ui_scale_100">Standard (1.0x)</string>
+    <string name="ui_scale_110">Comfort (1.1x)</string>
+    <string name="ui_scale_125">Medium (1.25x)</string>
+    <string name="ui_scale_150">Large (1.5x)</string>
+    <string name="ui_scale_175">Extra Large (1.75x - 2K Car)</string>
+    <string name="ui_scale_200">Huge (2.0x)</string>
+    <string name="ui_scale_225">Ultra (2.25x - 4K Car)</string>
     <string name="cpu_architecture_title">CPU Architecture</string>
     <string name="device_info_copied">Device specifications copied to clipboard</string>
 

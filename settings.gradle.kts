@@ -20,3 +20,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "MusicEqualizer"
 include(":app")
+include(":installer")

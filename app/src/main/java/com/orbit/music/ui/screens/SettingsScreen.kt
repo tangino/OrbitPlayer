@@ -154,6 +154,38 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
                     )
 
+                    val uiScaleOptions = listOf(
+                        com.orbit.music.ui.utils.UiScaleHelper.MODE_AUTO to stringResource(R.string.ui_scale_auto),
+                        com.orbit.music.ui.utils.UiScaleHelper.MODE_080 to stringResource(R.string.ui_scale_080),
+                        com.orbit.music.ui.utils.UiScaleHelper.MODE_090 to stringResource(R.string.ui_scale_090),
+                        com.orbit.music.ui.utils.UiScaleHelper.MODE_100 to stringResource(R.string.ui_scale_100),
+                        com.orbit.music.ui.utils.UiScaleHelper.MODE_110 to stringResource(R.string.ui_scale_110),
+                        com.orbit.music.ui.utils.UiScaleHelper.MODE_125 to stringResource(R.string.ui_scale_125),
+                        com.orbit.music.ui.utils.UiScaleHelper.MODE_150 to stringResource(R.string.ui_scale_150),
+                        com.orbit.music.ui.utils.UiScaleHelper.MODE_175 to stringResource(R.string.ui_scale_175),
+                        com.orbit.music.ui.utils.UiScaleHelper.MODE_200 to stringResource(R.string.ui_scale_200),
+                        com.orbit.music.ui.utils.UiScaleHelper.MODE_225 to stringResource(R.string.ui_scale_225)
+                    )
+                    val currentScaleLabel = uiScaleOptions.find { it.first == uiState.uiScaleMode }?.second
+                        ?: stringResource(R.string.ui_scale_auto)
+
+                    SettingsDropdownItem(
+                        icon = Icons.Default.FitScreen,
+                        title = stringResource(R.string.ui_scale_title),
+                        subtitle = stringResource(R.string.ui_scale_subtitle),
+                        currentValue = currentScaleLabel,
+                        options = uiScaleOptions.map { it.second },
+                        onOptionSelected = { selectedLabel ->
+                            val mode = uiScaleOptions.find { it.second == selectedLabel }?.first ?: "auto"
+                            viewModel.setUiScaleMode(mode)
+                        }
+                    )
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                    )
+
                     SettingsSwitchItem(
                         icon = Icons.Default.TabletAndroid,
                         title = "平板与车机大屏专属 UI",
@@ -2042,31 +2074,24 @@ fun SettingsScreen(
                     "Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})"
                 }
 
-                val (resolutionText, densityText) = remember(context) {
-                    val wm = context.getSystemService(android.content.Context.WINDOW_SERVICE) as? android.view.WindowManager
-                    val metrics = android.util.DisplayMetrics()
+                val effectiveDensity = androidx.compose.ui.platform.LocalDensity.current
+                val currentConfiguration = androidx.compose.ui.platform.LocalConfiguration.current
+                val (resolutionText, densityText) = remember(context, effectiveDensity, currentConfiguration) {
+                    val metrics = com.orbit.music.ui.utils.UiScaleHelper.getRealDisplayMetrics(context)
                     var refreshRate = 60
                     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
                         try {
-                            context.display?.getRealMetrics(metrics)
                             refreshRate = context.display?.refreshRate?.toInt() ?: 60
-                        } catch (_: Exception) {
-                            @Suppress("DEPRECATION")
-                            wm?.defaultDisplay?.getRealMetrics(metrics)
-                            @Suppress("DEPRECATION")
-                            refreshRate = wm?.defaultDisplay?.refreshRate?.toInt() ?: 60
-                        }
-                    } else {
-                        @Suppress("DEPRECATION")
-                        wm?.defaultDisplay?.getRealMetrics(metrics)
-                        @Suppress("DEPRECATION")
-                        refreshRate = wm?.defaultDisplay?.refreshRate?.toInt() ?: 60
+                        } catch (_: Exception) {}
                     }
                     val res = "${metrics.widthPixels} × ${metrics.heightPixels} px @ ${refreshRate}Hz"
-                    val scaleFactor = String.format(java.util.Locale.US, "%.1f", metrics.density)
-                    val widthDp = if (metrics.density > 0) (metrics.widthPixels / metrics.density).toInt() else 0
-                    val heightDp = if (metrics.density > 0) (metrics.heightPixels / metrics.density).toInt() else 0
-                    val density = "${metrics.densityDpi} DPI (${scaleFactor}x) · ${widthDp} × ${heightDp} dp"
+                    val systemScaleFactor = String.format(java.util.Locale.US, "%.1f", metrics.density)
+                    val effectiveScaleFactor = String.format(java.util.Locale.US, "%.2f", effectiveDensity.density)
+                    val density = if (kotlin.math.abs(effectiveDensity.density - metrics.density) > 0.05f) {
+                        "${metrics.densityDpi} DPI (${systemScaleFactor}x) · 生效: ${(effectiveDensity.density * 160).toInt()} DPI (${effectiveScaleFactor}x) · ${currentConfiguration.screenWidthDp} × ${currentConfiguration.screenHeightDp} dp"
+                    } else {
+                        "${metrics.densityDpi} DPI (${systemScaleFactor}x) · ${currentConfiguration.screenWidthDp} × ${currentConfiguration.screenHeightDp} dp"
+                    }
                     res to density
                 }
 

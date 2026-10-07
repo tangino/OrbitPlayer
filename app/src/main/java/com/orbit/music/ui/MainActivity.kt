@@ -36,10 +36,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.orbit.music.data.model.AppScreen
 import com.orbit.music.ui.components.AppBackgroundLayer
+import com.orbit.music.ui.utils.UiScaleHelper
 
 import com.orbit.music.ui.components.MiniPlayerBar
 import com.orbit.music.ui.screens.MainEqualizerScreen
@@ -85,10 +88,22 @@ class MainActivity : ComponentActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         configurationState.value = Configuration(newConfig)
+        val savedMode = getSharedPreferences("equalizer_ui_state_prefs", Context.MODE_PRIVATE)
+            .getString(EqualizerViewModel.KEY_UI_SCALE_MODE, "auto") ?: "auto"
+        val metrics = UiScaleHelper.getRealDisplayMetrics(this)
+        val factor = UiScaleHelper.calculateScaleFactor(savedMode, metrics.widthPixels, metrics.heightPixels, metrics.densityDpi)
+        UiScaleHelper.applyActivityDensity(this, factor)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 优先应用车机与界面缩放配置，确保后续所有子 Window / Dialog / Popup 采用缩放后的 Density
+        val savedMode = getSharedPreferences("equalizer_ui_state_prefs", Context.MODE_PRIVATE)
+            .getString(EqualizerViewModel.KEY_UI_SCALE_MODE, "auto") ?: "auto"
+        val initMetrics = UiScaleHelper.getRealDisplayMetrics(this)
+        val initFactor = UiScaleHelper.calculateScaleFactor(savedMode, initMetrics.widthPixels, initMetrics.heightPixels, initMetrics.densityDpi)
+        UiScaleHelper.applyActivityDensity(this, initFactor)
 
         // 开启全屏沉浸式状态栏与导航栏 (Edge-to-Edge)
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -134,23 +149,62 @@ class MainActivity : ComponentActivity() {
                 else -> Locale.getDefault()
             }
 
+            val currentContext = LocalContext.current
+            val realMetrics = remember(configurationState.value, currentContext) {
+                UiScaleHelper.getRealDisplayMetrics(currentContext)
+            }
+
+            val scaleFactor = remember(uiState.uiScaleMode, realMetrics.widthPixels, realMetrics.heightPixels, realMetrics.densityDpi) {
+                UiScaleHelper.calculateScaleFactor(
+                    mode = uiState.uiScaleMode,
+                    widthPixels = realMetrics.widthPixels,
+                    heightPixels = realMetrics.heightPixels,
+                    systemDensityDpi = realMetrics.densityDpi
+                )
+            }
+
+            LaunchedEffect(scaleFactor) {
+                UiScaleHelper.applyActivityDensity(this@MainActivity, scaleFactor)
+            }
+
+            val baseDensity = LocalDensity.current
+            val effectiveDensity = remember(baseDensity, scaleFactor) {
+                Density(
+                    density = baseDensity.density * scaleFactor,
+                    fontScale = baseDensity.fontScale
+                )
+            }
+
             val systemConfig = configurationState.value ?: LocalConfiguration.current
             val updatedConfig = remember(
                 systemConfig.orientation,
                 systemConfig.screenWidthDp,
                 systemConfig.screenHeightDp,
                 systemConfig.densityDpi,
-                targetLocale
+                targetLocale,
+                scaleFactor
             ) {
                 Configuration(systemConfig).apply {
                     setLocale(targetLocale)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                         setLocales(LocaleList(targetLocale))
                     }
+                    if (scaleFactor != 1.0f) {
+                        val targetDensityDpi = (systemConfig.densityDpi * scaleFactor).toInt()
+                        densityDpi = targetDensityDpi
+                        val targetDensity = (systemConfig.densityDpi / 160f) * scaleFactor
+                        if (targetDensity > 0f) {
+                            val isPortrait = orientation == Configuration.ORIENTATION_PORTRAIT
+                            val wPx = if (isPortrait) minOf(realMetrics.widthPixels, realMetrics.heightPixels) else maxOf(realMetrics.widthPixels, realMetrics.heightPixels)
+                            val hPx = if (isPortrait) maxOf(realMetrics.widthPixels, realMetrics.heightPixels) else minOf(realMetrics.widthPixels, realMetrics.heightPixels)
+                            screenWidthDp = (wPx / targetDensity).toInt()
+                            screenHeightDp = (hPx / targetDensity).toInt()
+                            smallestScreenWidthDp = minOf(screenWidthDp, screenHeightDp)
+                        }
+                    }
                 }
             }
 
-            val currentContext = LocalContext.current
             val localizedContext = remember(updatedConfig, targetLocale) {
                 currentContext.createConfigurationContext(updatedConfig)
             }
@@ -213,6 +267,7 @@ class MainActivity : ComponentActivity() {
 
             val hasCustomBg = uiState.customBackgroundPath != null || uiState.customSolidBackgroundColor != null || uiState.isGradientEnabled
             CompositionLocalProvider(
+                LocalDensity provides effectiveDensity,
                 LocalConfiguration provides updatedConfig,
                 LocalContext provides localizedContext,
                 LocalActivityResultRegistryOwner provides this@MainActivity

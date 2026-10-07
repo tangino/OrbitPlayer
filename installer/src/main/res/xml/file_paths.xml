@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 允许共享应用缓存目录中的安装包 -->
+    <cache-path name="installer_cache" path="." />
+    <!-- 允许共享应用私有文件目录 -->
+    <files-path name="installer_files" path="." />
+    <!-- 允许共享外部缓存与存储目录（如下载目录、U盘等） -->
+    <external-path name="installer_external" path="." />
+    <external-files-path name="installer_ext_files" path="." />
+    <external-cache-path name="installer_ext_cache" path="." />
+</paths>

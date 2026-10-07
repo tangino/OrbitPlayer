@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">车机安装助手</string>
+    <string name="tab_online_install">网络链接安装</string>
+    <string name="tab_local_install">本地文件安装</string>
+    <string name="btn_start_download">开始下载并安装</string>
+    <string name="btn_select_file">选择本地 APK 文件</string>
+    <string name="btn_retry">重试</string>
+    <string name="hint_input_url">请输入或粘贴 APK 的 HTTP/HTTPS 下载直链</string>
+</resources>

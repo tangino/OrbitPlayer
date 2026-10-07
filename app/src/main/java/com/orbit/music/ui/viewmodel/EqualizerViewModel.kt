@@ -103,7 +103,8 @@ data class EqualizerUiState(
     val autoMatchOnlineCover: Boolean = true,
     val onlineCoverWifiOnly: Boolean = true,
     val isTabletLandscapeModeEnabled: Boolean = false,
-    val isMiniPlayerCollapsed: Boolean = false
+    val isMiniPlayerCollapsed: Boolean = false,
+    val uiScaleMode: String = "auto"
 )
 
 class EqualizerViewModel(application: Application) : AndroidViewModel(application) {
@@ -121,6 +122,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         // 1. 从持久化配置中恢复全局通用设置
         val savedLang = prefs.getString(KEY_LANGUAGE, "system") ?: "system"
         val savedTheme = prefs.getString(KEY_THEME_MODE, "system") ?: "system"
+        val savedUiScaleMode = prefs.getString(KEY_UI_SCALE_MODE, "auto") ?: "auto"
         val savedPersistentMiniPlayer = prefs.getBoolean(KEY_PERSISTENT_MINI_PLAYER, true)
         val savedIsMiniPlayerCollapsed = prefs.getBoolean(KEY_IS_MINI_PLAYER_COLLAPSED, false)
         val savedTrailStyle = prefs.getString(KEY_PROGRESS_TRAIL_STYLE, ProgressTrailStyle.NEON_PULSE.id) ?: ProgressTrailStyle.NEON_PULSE.id
@@ -227,7 +229,8 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
                 backgroundBlurRadius = savedBgBlurRadius,
                 backgroundBlurStyle = savedBgBlurStyle,
                 backgroundDimAlpha = savedBgDimAlpha,
-                visualizerSingleColor = savedVizSingleColor
+                visualizerSingleColor = savedVizSingleColor,
+                uiScaleMode = savedUiScaleMode
             )
         }
 
@@ -1022,9 +1025,15 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         prefs.edit().putBoolean(KEY_IS_MINI_PLAYER_COLLAPSED, collapsed).apply()
     }
 
+    fun setUiScaleMode(mode: String) {
+        _uiState.update { it.copy(uiScaleMode = mode) }
+        prefs.edit().putString(KEY_UI_SCALE_MODE, mode).apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "equalizer_ui_state_prefs"
         const val KEY_TABLET_LANDSCAPE_MODE = "key_tablet_landscape_mode"
+        const val KEY_UI_SCALE_MODE = "key_ui_scale_mode"
         private const val KEY_EQ_ENABLED = "key_eq_enabled"
         private const val KEY_SELECTED_PRESET_ID = "key_selected_preset_id"
         private const val KEY_PREAMP_GAIN = "key_preamp_gain"

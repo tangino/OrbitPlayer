@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.OrbitInstaller" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#12141A</item>
+        <item name="android:navigationBarColor">#12141A</item>
+        <item name="android:windowBackground">#12141A</item>
+    </style>
+</resources>
