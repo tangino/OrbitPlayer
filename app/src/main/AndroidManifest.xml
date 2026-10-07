@@ -84,19 +84,29 @@
             </intent-filter>
         </activity>
 
+        <!-- 声明支持 Android Automotive 与车载媒体中心识别 -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+        <meta-data
+            android:name="androidx.car.app.minCarApiLevel"
+            android:value="1" />
+
         <service
             android:name=".service.EqualizerService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
-        <!-- Media3 音乐播放后台服务 -->
+        <!-- Media3 / MediaBrowser 车载多媒体服务 (兼容所有车机音源与桌面卡片) -->
         <service
             android:name=".service.MusicPlaybackService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
+                <action android:name="androidx.media3.session.MediaLibraryService" />
                 <action android:name="androidx.media3.session.MediaSessionService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
             </intent-filter>
         </service>

@@ -4,23 +4,30 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.*
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.util.Log
-import android.widget.RemoteViews
+import android.view.KeyEvent
 import androidx.annotation.OptIn
 import androidx.core.app.NotificationCompat
-import android.view.KeyEvent
 import androidx.media3.common.ForwardingPlayer
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
+import com.google.common.collect.ImmutableList
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 import com.orbit.music.R
 import com.orbit.music.audio.MusicPlayerManager
 import com.orbit.music.data.model.Song
@@ -34,25 +41,74 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 核心前台音乐播放服务：
- * 1. 采用自定义 RemoteViews 左右布局（左侧高保真大缩略图，右侧歌曲信息与控制条）
- * 2. 播放控制按键（上一曲、播放/暂停圆形大按键、下一曲）强制统一为程序专属荧光青高亮色 (#00E5FF)
- * 3. 彻底避免 Android 系统厂商 ROM 对 Action 进行灰色/黑色遮罩篡改
- * 4. 通过 ForwardingPlayer 与 MediaSession.Callback 全面拦截车机/蓝牙 AVRCP / MediaButton 切歌指令
+ * 核心前台音乐播放服务 (支持车载 MediaBrowserService 与 Android Automotive OS 协议)：
+ * 1. 继承 MediaLibraryService，向车机系统暴露完整的 MediaBrowserService / MediaLibraryService 接口
+ * 2. 支持车机桌面卡片、仪表盘、中控音源切换器读取曲库、播放状态与封面
+ * 3. 采用系统标准 MediaStyle 通知，支持锁屏与车机中心实时同步
+ * 4. 播放控制按键强制统一为程序专属荧光青高亮色 (#00E5FF)
+ * 5. 通过 ForwardingPlayer、MediaLibrarySession.Callback 及车机服务广播全面响应车载切歌与交互指令
  */
-class MusicPlaybackService : MediaSessionService() {
+class MusicPlaybackService : MediaLibraryService() {
 
-    private var mediaSession: MediaSession? = null
+    private var mediaSession: MediaLibrarySession? = null
     private val serviceScope = CoroutineScope(Dispatchers.Main)
     private var stateObserverJob: Job? = null
     private var cachedCoverBitmap: Bitmap? = null
     private var lastCoverSongId: Long = -1L
 
+    private val rootMediaItem by lazy {
+        MediaItem.Builder()
+            .setMediaId(ROOT_ID)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle("Orbit Player")
+                    .setIsPlayable(false)
+                    .setIsBrowsable(true)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                    .build()
+            )
+            .build()
+    }
+
+    // 车机通用音乐指令广播接收器 (兼容如吉利、比亚迪、长城等车机系统的硬件按键与音源指令)
+    private val carMusicCommandReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent == null) return
+            val action = intent.action ?: return
+            val playerManager = MusicPlayerManager.getInstance(this@MusicPlaybackService)
+            Log.d(TAG, "carMusicCommandReceiver received action: $action")
+            if (action == ACTION_MUSIC_SERVICE_COMMAND || action == "com.android.music.musicservicecommand") {
+                val cmd = intent.getStringExtra("command")
+                Log.d(TAG, "car music command: $cmd")
+                when (cmd?.lowercase()) {
+                    "togglepause", "playpause" -> playerManager.togglePlayPause()
+                    "play" -> playerManager.play()
+                    "pause" -> playerManager.pause()
+                    "next" -> playerManager.playNext()
+                    "previous", "prev" -> playerManager.playPrevious()
+                    "stop" -> playerManager.pause()
+                }
+            }
+        }
+    }
+
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
-        Log.i(TAG, "MusicPlaybackService onCreate (Custom Neon Cyan RemoteViews)")
+        Log.i(TAG, "MusicPlaybackService onCreate (MediaLibraryService for Automotive)")
         createNotificationChannel()
+
+        // 动态注册车机广播接收器
+        val filter = IntentFilter().apply {
+            addAction(ACTION_MUSIC_SERVICE_COMMAND)
+            addAction("com.android.music.musicservicecommand")
+            addAction("android.media.AUDIO_BECOMING_NOISY")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(carMusicCommandReceiver, filter, RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(carMusicCommandReceiver, filter)
+        }
 
         val playerManager = MusicPlayerManager.getInstance(this)
 
@@ -99,28 +155,28 @@ class MusicPlaybackService : MediaSessionService() {
             }
 
             override fun seekToNext() {
-                Log.d(TAG, "ForwardingPlayer: seekToNext triggered from external controller/bluetooth")
+                Log.d(TAG, "ForwardingPlayer: seekToNext triggered from car/controller")
                 playerManager.playNext()
             }
 
             override fun seekToNextMediaItem() {
-                Log.d(TAG, "ForwardingPlayer: seekToNextMediaItem triggered from external controller/bluetooth")
+                Log.d(TAG, "ForwardingPlayer: seekToNextMediaItem triggered from car/controller")
                 playerManager.playNext()
             }
 
             override fun seekToPrevious() {
-                Log.d(TAG, "ForwardingPlayer: seekToPrevious triggered from external controller/bluetooth")
+                Log.d(TAG, "ForwardingPlayer: seekToPrevious triggered from car/controller")
                 playerManager.playPrevious()
             }
 
             override fun seekToPreviousMediaItem() {
-                Log.d(TAG, "ForwardingPlayer: seekToPreviousMediaItem triggered from external controller/bluetooth")
+                Log.d(TAG, "ForwardingPlayer: seekToPreviousMediaItem triggered from car/controller")
                 playerManager.playPrevious()
             }
         }
 
-        // 构造 Media3 MediaSession 并配置完备的回调以处理车载/蓝牙各种控制协议
-        val sessionCallback = object : MediaSession.Callback {
+        // 构造 Media3 MediaLibrarySession 并配置完备的回调以处理车载/MediaBrowser 各种控制与浏览协议
+        val libraryCallback = object : MediaLibrarySession.Callback {
             override fun onConnect(
                 session: MediaSession,
                 controller: MediaSession.ControllerInfo
@@ -137,6 +193,63 @@ class MusicPlaybackService : MediaSessionService() {
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                     .setAvailablePlayerCommands(availablePlayerCommands)
                     .build()
+            }
+
+            override fun onGetLibraryRoot(
+                session: MediaLibrarySession,
+                browser: MediaSession.ControllerInfo,
+                params: LibraryParams?
+            ): ListenableFuture<LibraryResult<MediaItem>> {
+                Log.d(TAG, "onGetLibraryRoot requested from: ${browser.packageName}")
+                return Futures.immediateFuture(LibraryResult.ofItem(rootMediaItem, params))
+            }
+
+            override fun onGetChildren(
+                session: MediaLibrarySession,
+                browser: MediaSession.ControllerInfo,
+                parentId: String,
+                page: Int,
+                pageSize: Int,
+                params: LibraryParams?
+            ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+                Log.d(TAG, "onGetChildren requested for parentId: $parentId from ${browser.packageName}")
+                val currentList: List<Song> = playerManager.playbackState.value.currentPlaylist
+                val mediaItems: List<MediaItem> = currentList.map { song: Song -> songToMediaItem(song) }
+                return Futures.immediateFuture(LibraryResult.ofItemList(ImmutableList.copyOf(mediaItems), params))
+            }
+
+            override fun onGetItem(
+                session: MediaLibrarySession,
+                browser: MediaSession.ControllerInfo,
+                mediaId: String
+            ): ListenableFuture<LibraryResult<MediaItem>> {
+                val song = playerManager.playbackState.value.currentPlaylist.firstOrNull { it.id.toString() == mediaId }
+                    ?: playerManager.playbackState.value.currentSong
+                return if (song != null) {
+                    Futures.immediateFuture(LibraryResult.ofItem(songToMediaItem(song), null))
+                } else {
+                    Futures.immediateFuture(LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE))
+                }
+            }
+
+            override fun onSetMediaItems(
+                mediaSession: MediaSession,
+                controller: MediaSession.ControllerInfo,
+                mediaItems: MutableList<MediaItem>,
+                startIndex: Int,
+                startPositionMs: Long
+            ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+                if (mediaItems.isNotEmpty() && startIndex in mediaItems.indices) {
+                    val targetId = mediaItems[startIndex].mediaId.toLongOrNull()
+                    val playlist = playerManager.playbackState.value.currentPlaylist
+                    val foundIndex = playlist.indexOfFirst { it.id == targetId }
+                    if (foundIndex >= 0) {
+                        playerManager.playSongList(playlist, foundIndex)
+                    }
+                }
+                return Futures.immediateFuture(
+                    MediaSession.MediaItemsWithStartPosition(mediaItems, startIndex, startPositionMs)
+                )
             }
 
             override fun onMediaButtonEvent(
@@ -186,9 +299,9 @@ class MusicPlaybackService : MediaSessionService() {
             }
         }
 
-        mediaSession = MediaSession.Builder(this, forwardingPlayer)
+        mediaSession = MediaLibrarySession.Builder(this, forwardingPlayer, libraryCallback)
             .setSessionActivity(openAppIntent)
-            .setCallback(sessionCallback)
+            .setId("OrbitMediaLibrarySession")
             .build()
 
         // 初始拉起前台
@@ -200,7 +313,7 @@ class MusicPlaybackService : MediaSessionService() {
         )
         safeStartForeground(initialNotification)
 
-        // 监听播放状态实时刷新通知 (关键优化：仅在切歌或播放暂停状态变化时更新，进度变化绝不刷新，保证缩略图绝对定格显示！)
+        // 监听播放状态实时刷新通知
         stateObserverJob = serviceScope.launch {
             playerManager.playbackState
                 .distinctUntilChanged { old, new ->
@@ -251,7 +364,25 @@ class MusicPlaybackService : MediaSessionService() {
         manager.notify(NOTIFICATION_ID, notification)
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = mediaSession
+
+    private fun songToMediaItem(song: Song): MediaItem {
+        return MediaItem.Builder()
+            .setMediaId(song.id.toString())
+            .setUri(Uri.parse(song.path))
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(song.title)
+                    .setArtist(song.artist)
+                    .setAlbumTitle(song.album)
+                    .setArtworkUri(song.albumArtUri?.let { Uri.parse(it) })
+                    .setIsPlayable(true)
+                    .setIsBrowsable(false)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+                    .build()
+            )
+            .build()
+    }
 
     private suspend fun loadCoverBitmap(song: Song): Bitmap? = withContext(Dispatchers.IO) {
         if (song.id == lastCoverSongId && cachedCoverBitmap != null) {
@@ -428,8 +559,12 @@ class MusicPlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         stateObserverJob?.cancel()
+        try {
+            unregisterReceiver(carMusicCommandReceiver)
+        } catch (e: Exception) {
+            Log.w(TAG, "carMusicCommandReceiver already unregistered", e)
+        }
         mediaSession?.run {
-            player.release()
             release()
             mediaSession = null
         }
@@ -440,6 +575,9 @@ class MusicPlaybackService : MediaSessionService() {
         private const val TAG = "MusicPlaybackService"
         const val CHANNEL_ID = "music_playback_channel"
         const val NOTIFICATION_ID = 2001
+
+        const val ROOT_ID = "ROOT_ORBIT_MUSIC"
+        const val ACTION_MUSIC_SERVICE_COMMAND = "com.android.music.musicservicecommand"
 
         const val ACTION_PREV = "com.orbit.music.ACTION_PREV"
         const val ACTION_PLAY_PAUSE = "com.orbit.music.ACTION_PLAY_PAUSE"

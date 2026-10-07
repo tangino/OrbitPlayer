@@ -3,6 +3,11 @@
 ## [0.2.8-1 / 0.2.9 (即将发布)] - 2026-10-07
 
 ### 🚗 高分辨率车机与横屏大屏适配 (Car & Tablet High-Res Optimization)
+- **全面支持车机系统音源识别与桌面卡片挂载 (MediaBrowser & AAOS)**：
+  - 将后台核心播放服务升级为 **`MediaLibraryService`**，完整实现 `onGetLibraryRoot()`、`onGetChildren()` 与 `onSetMediaItems()` 树状媒体浏览协议；
+  - 完美向车机系统暴露标准 `android.media.browse.MediaBrowserService` 接口，使车机桌面音乐卡片、中控音源切换列表（如与 QQ音乐、蓝牙、USB音乐并列）、仪表盘与 HUD 能一键识别、列出曲目并实现原生硬件双向控制；
+  - 新增车载应用元数据描述文件 (`automotive_app_desc.xml`) 与 `minCarApiLevel` 车载应用声明；
+  - 动态集成通用车载音乐指令广播监听（`com.android.music.musicservicecommand` 与 `AUDIO_BECOMING_NOISY`），全面兼容各厂商车机系统按键指令分发。
 - **界面与车机 DPI 缩放自适应**：新增 `UiScaleHelper`，支持 0.8x 至 2.25x 多档自由缩放及智能自适应模式（Auto Adapt）。彻底解决部分车机系统将 2K / 2.5K / 4K 高分大屏错误配置为 160 DPI 导致界面控件极小、触控困难的痛点问题，智能将视口稳定在舒适触控区。
 - **设置中心新增缩放配置项**：在设置页面提供「界面与车机缩放」调节卡片，并在「设备与显示规格」卡片中实时显示当前原生 DPI 与实际生效 DPI / 视口状态。
 - **频谱全屏页遮挡修复**：彻底修复在 2K / 4K 高分辨率宽屏车机上，全屏频谱页面播放控制条、悬浮卡片及操作按钮被遮挡的布局问题。
