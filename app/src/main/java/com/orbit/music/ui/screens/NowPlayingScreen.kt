@@ -1253,112 +1253,116 @@ fun NowPlayingScreen(
         }
 
         if (useTabletThreeColumnLayout) {
-            // ========== 平板 UI 三栏极致并列布局 (左: 完整播放器 | 中: 歌曲列表与分类库 | 右: 滚动歌词) ==========
+            // ========== 平板 UI 一体化无界三栏流体架构 (左: 聚焦播放舞台 | 中: 动态曲库队列 | 右: 沉浸流体歌词) ==========
             Row(
                 modifier = modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
                     .swipeToChangeSong(
                         onSwipeNext = { viewModel.playNext() },
                         onSwipePrevious = { viewModel.playPrevious() }
                     ),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // ── 1. 左栏：播放器（手机布局中的完整播放页） ──
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.52f),
-                    border = BorderStroke(1.dp, OrbitTheme.colors.surfaceBorder.copy(alpha = 0.5f)),
+                // ── 1. 左栏：聚焦播放器核心区 (封面舞台、音质、快捷操作、控制按键) ──
+                Column(
                     modifier = Modifier
-                        .weight(1.05f)
+                        .weight(1.12f)
                         .fillMaxHeight()
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.SpaceBetween
+                    // 顶部导航与来源标题
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        // 顶部导航与操作行
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier.size(32.dp)
                         ) {
-                            IconButton(
-                                onClick = onBack,
-                                modifier = Modifier.size(34.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.KeyboardArrowDown,
-                                    contentDescription = "Collapse",
-                                    tint = OrbitTheme.colors.textPrimary,
-                                    modifier = Modifier.size(28.dp)
-                                )
-                            }
-                            Text(
-                                text = song?.album?.takeIf { it.isNotBlank() && it != "Unknown Album" } ?: "Orbit Player",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = OrbitTheme.colors.textPrimary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false).padding(horizontal = 8.dp),
-                                textAlign = TextAlign.Center
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Collapse",
+                                tint = OrbitTheme.colors.textPrimary,
+                                modifier = Modifier.size(26.dp)
                             )
-                            Spacer(modifier = Modifier.size(34.dp))
                         }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        // 封面与大频谱切换舞台
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f, fill = false),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            coverView(Modifier.fillMaxWidth())
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // 歌曲标题与艺术家
-                        trackInfoView()
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        // 技术规格参数
-                        techSpecsView(Modifier.fillMaxWidth())
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // 快捷操作栏 (红心/态度、EQ、频谱样式切换、更多选项)
-                        quickActionsView(Modifier.fillMaxWidth())
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // 进度条与时间
-                        progressSliderView()
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        // 播放控制底栏 (Shuffle, Prev, Play/Pause, Next, Repeat)
-                        controlsRowView()
+                        Text(
+                            text = song?.album?.takeIf { it.isNotBlank() && it != "Unknown Album" } ?: "Orbit Player",
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = OrbitTheme.colors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false).padding(horizontal = 8.dp),
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.size(32.dp))
                     }
+
+                    // 封面与大频谱切换舞台 (自适应高度，确保封面始终优雅大方不被压缩)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(vertical = 4.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        coverView(Modifier.fillMaxSize())
+                    }
+
+                    // 歌曲标题与艺术家
+                    trackInfoView()
+
+                    Spacer(modifier = Modifier.height(3.dp))
+
+                    // 技术规格参数胶囊
+                    techSpecsView(Modifier.fillMaxWidth())
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // 快捷操作栏 (红心/态度、EQ、频谱样式切换、更多选项)
+                    quickActionsView(Modifier.fillMaxWidth())
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // 进度条与时间
+                    progressSliderView()
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // 播放控制底栏 (Shuffle, Prev, Play/Pause, Next, Repeat)
+                    controlsRowView()
                 }
 
-                // ── 2. 中栏：歌曲列表与分类库 ──
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.52f),
-                    border = BorderStroke(1.dp, OrbitTheme.colors.surfaceBorder.copy(alpha = 0.5f)),
+                // ── 左/中 微光渐变纵向分割线 ──
+                Box(
                     modifier = Modifier
-                        .weight(1.22f)
+                        .width(1.dp)
                         .fillMaxHeight()
+                        .padding(vertical = 16.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    OrbitTheme.colors.surfaceBorder.copy(alpha = 0.40f),
+                                    OrbitTheme.colors.surfaceBorder.copy(alpha = 0.40f),
+                                    Color.Transparent
+                                )
+                            )
+                        )
+                )
+
+                // ── 2. 中栏：歌曲列表与分类库 ──
+                Box(
+                    modifier = Modifier
+                        .weight(1.28f)
+                        .fillMaxHeight()
+                        .padding(horizontal = 6.dp, vertical = 4.dp)
                 ) {
                     NowPlayingLibraryMiddleColumn(
                         viewModel = viewModel,
@@ -1371,71 +1375,81 @@ fun NowPlayingScreen(
                     )
                 }
 
-                // ── 3. 右栏：沉浸式歌词 ──
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.52f),
-                    border = BorderStroke(1.dp, OrbitTheme.colors.surfaceBorder.copy(alpha = 0.5f)),
+                // ── 中/右 微光渐变纵向分割线 ──
+                Box(
                     modifier = Modifier
-                        .weight(1.05f)
+                        .width(1.dp)
                         .fillMaxHeight()
+                        .padding(vertical = 16.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    OrbitTheme.colors.surfaceBorder.copy(alpha = 0.40f),
+                                    OrbitTheme.colors.surfaceBorder.copy(alpha = 0.40f),
+                                    Color.Transparent
+                                )
+                            )
+                        )
+                )
+
+                // ── 3. 右栏：沉浸式流体歌词 ──
+                Column(
+                    modifier = Modifier
+                        .weight(1.10f)
+                        .fillMaxHeight()
+                        .padding(vertical = 6.dp, horizontal = 10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Column(
+                    // 歌词顶部标题栏
+                    Row(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .padding(vertical = 12.dp, horizontal = 12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        // 歌词顶部标题栏
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            Icon(
+                                imageVector = Icons.Default.Lyrics,
+                                contentDescription = null,
+                                tint = OrbitTheme.colors.primary,
+                                modifier = Modifier.size(17.dp)
+                            )
+                            Text(
+                                text = "歌词",
+                                fontSize = 14.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = OrbitTheme.colors.textPrimary
+                            )
+                        }
+                        if (lyricLines.isNotEmpty()) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = OrbitTheme.colors.primary.copy(alpha = 0.14f)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Lyrics,
-                                    contentDescription = null,
-                                    tint = OrbitTheme.colors.primary,
-                                    modifier = Modifier.size(18.dp)
-                                )
                                 Text(
-                                    text = "歌词",
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = OrbitTheme.colors.textPrimary
+                                    text = "同步滚动",
+                                    fontSize = 10.sp,
+                                    color = OrbitTheme.colors.primary,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    fontWeight = FontWeight.Medium
                                 )
-                            }
-                            if (lyricLines.isNotEmpty()) {
-                                Surface(
-                                    shape = RoundedCornerShape(6.dp),
-                                    color = OrbitTheme.colors.primary.copy(alpha = 0.12f)
-                                ) {
-                                    Text(
-                                        text = "同步歌词",
-                                        fontSize = 10.5.sp,
-                                        color = OrbitTheme.colors.primary,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
                             }
                         }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        // 歌词列表
-                        fullLyricsView(
-                            Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
-                        )
                     }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // 歌词列表
+                    fullLyricsView(
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    )
                 }
             }
         } else if (isLandscape) {
