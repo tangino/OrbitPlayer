@@ -549,6 +549,14 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
         db.update("songs", cvSong, "path = ?", arrayOf(path))
     }
 
+    fun updateSongAlbumArt(songId: Long, albumArtUri: String) {
+        val db = helper.writableDatabase
+        val cv = ContentValues().apply {
+            put("albumArtUri", if (albumArtUri.startsWith("//")) "https:$albumArtUri" else albumArtUri)
+        }
+        db.update("songs", cv, "id = ?", arrayOf(songId.toString()))
+    }
+
     fun getAllPlaylists(): List<Playlist> {
         val list = mutableListOf<Playlist>()
         val db = helper.readableDatabase
@@ -559,9 +567,17 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
                        FROM playlist_songs ps2
                        JOIN songs s ON ps2.songId = s.id
                        WHERE ps2.playlistId = p.id AND s.albumArtUri IS NOT NULL AND s.albumArtUri != ''
-                       ORDER BY ps2.orderIndex ASC, ps2.rowid ASC
+                       ORDER BY ps2.orderIndex ASC
                        LIMIT 1
-                   ) AS firstCover
+                   ) AS firstCover,
+                   COALESCE(
+                       (
+                           SELECT SUM(CASE WHEN (s2.path LIKE 'online://%' OR s2.path LIKE 'http://%' OR s2.path LIKE 'https://%' OR s2.id < 0) THEN 1 ELSE 0 END)
+                           FROM playlist_songs ps3
+                           JOIN songs s2 ON ps3.songId = s2.id
+                           WHERE ps3.playlistId = p.id
+                       ), 0
+                   ) AS onlineCount
             FROM playlists p
             LEFT JOIN playlist_songs ps ON p.id = ps.playlistId
             GROUP BY p.id
@@ -569,14 +585,27 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
         """.trimIndent()
         db.rawQuery(sql, null).use { c ->
             while (c.moveToNext()) {
+                val songCount = c.getInt(3)
+                val group = c.getString(4).ifBlank { "默认" }
+                val onlineCount = c.getInt(6)
+                val type = when {
+                    songCount == 0 -> if (group.contains("网络") || group.contains("云")) com.orbit.music.data.model.PlaylistType.ONLINE else com.orbit.music.data.model.PlaylistType.LOCAL
+                    onlineCount == 0 -> com.orbit.music.data.model.PlaylistType.LOCAL
+                    onlineCount == songCount -> com.orbit.music.data.model.PlaylistType.ONLINE
+                    else -> com.orbit.music.data.model.PlaylistType.HYBRID
+                }
+                val rawCover = if (c.isNull(5)) null else c.getString(5).takeIf { it.isNotBlank() }
+                val normCover = rawCover?.let { if (it.startsWith("//")) "https:$it" else it }
                 list.add(
                     Playlist(
                         id = c.getLong(0),
                         name = c.getString(1),
                         createdAt = c.getLong(2),
-                        songCount = c.getInt(3),
-                        groupName = c.getString(4).ifBlank { "默认" },
-                        coverArtUri = if (c.isNull(5)) null else c.getString(5).takeIf { it.isNotBlank() }
+                        songCount = songCount,
+                        groupName = group,
+                        coverArtUri = normCover,
+                        type = type,
+                        onlineSongCount = onlineCount
                     )
                 )
             }
@@ -733,10 +762,21 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
         }
         return list
     }
-    private fun sanitizeAlbumArtUri(rawArtUri: String?, songId: Long, path: String, album: String?): String {
-        if (rawArtUri.isNullOrBlank() || rawArtUri.contains("media/external/audio/albumart")) {
-            return com.orbit.music.data.provider.AudioCoverProvider.buildSongCoverUri(songId, path, album)
+    private fun sanitizeAlbumArtUri(rawArtUri: String?, songId: Long, path: String, album: String?): String? {
+        if (!rawArtUri.isNullOrBlank()) {
+            if (rawArtUri.startsWith("//")) {
+                return "https:$rawArtUri"
+            }
+            if (rawArtUri.startsWith("http://") || rawArtUri.startsWith("https://") || rawArtUri.startsWith("content://") || rawArtUri.startsWith("file://")) {
+                if (!rawArtUri.contains("media/external/audio/albumart")) {
+                    return rawArtUri
+                }
+            }
         }
-        return rawArtUri
+        val isOnline = songId < 0 || path.startsWith("online://") || path.startsWith("http://") || path.startsWith("https://")
+        if (isOnline) {
+            return rawArtUri?.let { if (it.startsWith("//")) "https:$it" else it }?.takeIf { it.isNotBlank() }
+        }
+        return com.orbit.music.data.provider.AudioCoverProvider.buildSongCoverUri(songId, path, album)
     }
 }

@@ -52,7 +52,17 @@ fun OnlinePlaylistDetailScreen(
     var isDescExpanded by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var isSavingToLocal by remember { mutableStateOf(false) }
+    var songToAddToPlaylist by remember { mutableStateOf<OnlineSongItem?>(null) }
+    val viewModel: com.orbit.music.ui.viewmodel.MusicPlayerViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val coroutineScope = rememberCoroutineScope()
+
+    if (songToAddToPlaylist != null) {
+        com.orbit.music.ui.components.AddToPlaylistDialog(
+            onlineSong = songToAddToPlaylist,
+            viewModel = viewModel,
+            onDismiss = { songToAddToPlaylist = null }
+        )
+    }
 
     if (showExportDialog) {
         com.orbit.music.ui.components.ExportPlaylistDialog(
@@ -287,6 +297,9 @@ fun OnlinePlaylistDetailScreen(
                             } else {
                                 playerManager.playOnlineSongList(songs, index)
                             }
+                        },
+                        onAddPlaylist = {
+                            songToAddToPlaylist = song
                         }
                     )
                     HorizontalDivider(
@@ -451,7 +464,8 @@ private fun OnlineSongRowItem(
     isPlayingThis: Boolean,
     isPlaying: Boolean,
     isBuffering: Boolean = false,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onAddPlaylist: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -568,6 +582,21 @@ private fun OnlineSongRowItem(
                 style = MaterialTheme.typography.labelSmall,
                 color = if (isPlayingThis) PrimaryNeonCyan.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             )
+        }
+
+        if (onAddPlaylist != null) {
+            Spacer(modifier = Modifier.width(6.dp))
+            IconButton(
+                onClick = onAddPlaylist,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlaylistAdd,
+                    contentDescription = "添加到歌单",
+                    tint = PrimaryNeonCyan.copy(alpha = 0.85f),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }

@@ -66,15 +66,26 @@ fun OnlineSongSearchView(
     onAddSongToPlaylist: ((OnlineSongItem) -> Unit)? = null,
     onViewAlbum: ((OnlineSongItem) -> Unit)? = null,
     modifier: Modifier = Modifier,
-    viewModel: OnlineSongSearchViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    viewModel: OnlineSongSearchViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+    playerViewModel: com.orbit.music.ui.viewmodel.MusicPlayerViewModel? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var pendingAddToPlaylistSong by remember { mutableStateOf<OnlineSongItem?>(null) }
 
     LaunchedEffect(initialKeyword) {
         if (initialKeyword.isNotBlank() && uiState.titleQuery.isBlank() && uiState.artistQuery.isBlank()) {
             viewModel.setTitleQuery(initialKeyword)
             viewModel.performSearch(title = initialKeyword)
         }
+    }
+
+    // 添加到歌单弹窗
+    if (pendingAddToPlaylistSong != null && playerViewModel != null) {
+        AddToPlaylistDialog(
+            onlineSong = pendingAddToPlaylistSong,
+            viewModel = playerViewModel,
+            onDismiss = { pendingAddToPlaylistSong = null }
+        )
     }
 
     Column(
@@ -603,7 +614,13 @@ fun OnlineSongSearchView(
                             song = song,
                             index = index,
                             onClick = { onPlaySong(uiState.searchResults, index) },
-                            onAddPlaylist = { onAddSongToPlaylist?.invoke(song) },
+                            onAddPlaylist = {
+                                if (onAddSongToPlaylist != null) {
+                                    onAddSongToPlaylist(song)
+                                } else {
+                                    pendingAddToPlaylistSong = song
+                                }
+                            },
                             onViewAlbum = { onViewAlbum?.invoke(song) }
                         )
                     }
@@ -692,7 +709,8 @@ fun OnlineSongSearchDialog(
     onPlaySong: (List<OnlineSongItem>, Int) -> Unit,
     onAddSongToPlaylist: ((OnlineSongItem) -> Unit)? = null,
     onViewAlbum: ((OnlineSongItem) -> Unit)? = null,
-    viewModel: OnlineSongSearchViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    viewModel: OnlineSongSearchViewModel = androidx.lifecycle.viewmodel.compose.viewModel(),
+    playerViewModel: com.orbit.music.ui.viewmodel.MusicPlayerViewModel? = null
 ) {
     val dialogBg = if (OrbitTheme.colors.background == Color.Transparent) {
         if (OrbitTheme.colors.isDark) Color(0xFF111318) else Color(0xFFF8FAFC)
@@ -745,7 +763,8 @@ fun OnlineSongSearchDialog(
                 modifier = Modifier
                     .fillMaxSize()
                     .systemBarsPadding(),
-                viewModel = viewModel
+                viewModel = viewModel,
+                playerViewModel = playerViewModel
             )
         }
     }

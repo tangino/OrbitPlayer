@@ -186,8 +186,6 @@ fun NowPlayingScreen(
     val preferredQuality by viewModel.preferredQuality.collectAsState()
 
     var showAddToPlaylistDialog by remember { mutableStateOf(false) }
-    var showCreatePlaylistDialog by remember { mutableStateOf(false) }
-    var newPlaylistName by remember { mutableStateOf("") }
     var showMoreOptionsMenu by remember { mutableStateOf(false) }
     var showAudioQualityDialog by remember { mutableStateOf(false) }
     var showEditSongTagsDialog by remember { mutableStateOf(false) }
@@ -3012,161 +3010,10 @@ fun NowPlayingScreen(
 
     // 添加到播放列表对话框
     if (showAddToPlaylistDialog && song != null) {
-        AlertDialog(
-            onDismissRequest = { showAddToPlaylistDialog = false },
-            title = {
-                Text(
-                    text = stringResource(R.string.add_to_playlist),
-                    color = OrbitTheme.colors.textPrimary,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth().heightIn(max = 380.dp)) {
-                    Text(
-                        text = song.title,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
-                        color = OrbitTheme.colors.primary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-
-                    // 快速新建播放列表入口
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable {
-                                newPlaylistName = ""
-                                showCreatePlaylistDialog = true
-                            }
-                            .padding(vertical = 10.dp, horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, tint = OrbitTheme.colors.primary, modifier = Modifier.size(22.dp))
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = stringResource(R.string.create_new_playlist),
-                            color = OrbitTheme.colors.primary,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
-                        )
-                    }
-
-                    HorizontalDivider(
-                        color = OrbitTheme.colors.textSecondary.copy(alpha = 0.15f),
-                        modifier = Modifier.padding(vertical = 6.dp)
-                    )
-
-                    if (playlists.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.empty_playlist_hint),
-                            fontSize = 12.sp,
-                            color = OrbitTheme.colors.textSecondary,
-                            modifier = Modifier.padding(vertical = 12.dp)
-                        )
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            items(playlists, key = { it.id }) { pl ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable {
-                                            viewModel.addSongToPlaylist(pl.id, song.id)
-                                            showAddToPlaylistDialog = false
-                                            Toast.makeText(context, context.getString(R.string.added_to_playlist_success, pl.name), Toast.LENGTH_SHORT).show()
-                                        }
-                                        .padding(vertical = 10.dp, horizontal = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.PlaylistPlay,
-                                        contentDescription = null,
-                                        tint = OrbitTheme.colors.primary,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = pl.name,
-                                            fontWeight = FontWeight.Medium,
-                                            fontSize = 14.sp,
-                                            color = OrbitTheme.colors.textPrimary
-                                        )
-                                        Text(
-                                            text = stringResource(R.string.tracks_count, pl.songCount),
-                                            fontSize = 11.sp,
-                                            color = OrbitTheme.colors.textSecondary
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showAddToPlaylistDialog = false }) {
-                    Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
-                }
-            },
-            containerColor = OrbitTheme.colors.surfaceDialog
-        )
-    }
-
-    // 新建播放列表弹窗
-    if (showCreatePlaylistDialog) {
-        AlertDialog(
-            onDismissRequest = { showCreatePlaylistDialog = false },
-            title = {
-                Text(
-                    text = stringResource(R.string.create_new_playlist),
-                    color = OrbitTheme.colors.textPrimary,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                OutlinedTextField(
-                    value = newPlaylistName,
-                    onValueChange = { newPlaylistName = it },
-                    label = { Text(stringResource(R.string.playlist_name_hint)) },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = OrbitTheme.colors.primary,
-                        unfocusedBorderColor = OrbitTheme.colors.textSecondary.copy(alpha = 0.5f),
-                        focusedLabelColor = OrbitTheme.colors.primary,
-                        cursorColor = OrbitTheme.colors.primary
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val name = newPlaylistName.trim()
-                        if (name.isNotEmpty()) {
-                            viewModel.createPlaylist(name)
-                            showCreatePlaylistDialog = false
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary)
-                ) {
-                    Text(stringResource(R.string.btn_ok), color = Color.White)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCreatePlaylistDialog = false }) {
-                    Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
-                }
-            },
-            containerColor = OrbitTheme.colors.surfaceDialog
+        com.orbit.music.ui.components.AddToPlaylistDialog(
+            song = song,
+            viewModel = viewModel,
+            onDismiss = { showAddToPlaylistDialog = false }
         )
     }
     } // 结束 Scaffold，使全屏浮层彻底覆盖整个窗口

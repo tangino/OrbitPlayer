@@ -3304,6 +3304,7 @@ fun MusicLibraryScreen(
                                 songs = onlinePlaylistSongs,
                                 isLoading = isOnlineDetailLoading,
                                 errorMessage = onlineDetailError,
+                                playerViewModel = viewModel,
                                 onSongClick = { index, song ->
                                     val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
                                     viewModel.playOnlineSongs(onlinePlaylistSongs, index, origin)
@@ -4614,6 +4615,7 @@ fun MusicLibraryScreen(
                                 songs = onlinePlaylistSongs,
                                 isLoading = isOnlineDetailLoading,
                                 errorMessage = onlineDetailError,
+                                playerViewModel = viewModel,
                                 onSongClick = { index, song ->
                                     val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
                                     viewModel.playOnlineSongs(onlinePlaylistSongs, index, origin)
@@ -4656,6 +4658,7 @@ fun MusicLibraryScreen(
                                 songs = onlinePlaylistSongs,
                                 isLoading = isOnlineDetailLoading,
                                 errorMessage = onlineDetailError,
+                                playerViewModel = viewModel,
                                 onSongClick = { index, song ->
                                     val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
                                     viewModel.playOnlineSongs(onlinePlaylistSongs, index, origin)
@@ -4698,6 +4701,7 @@ fun MusicLibraryScreen(
                                 songs = onlinePlaylistSongs,
                                 isLoading = isOnlineDetailLoading,
                                 errorMessage = onlineDetailError,
+                                playerViewModel = viewModel,
                                 onSongClick = { index, song ->
                                     val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
                                     viewModel.playOnlineSongs(onlinePlaylistSongs, index, origin)
@@ -4740,6 +4744,7 @@ fun MusicLibraryScreen(
                                 songs = onlinePlaylistSongs,
                                 isLoading = isOnlineDetailLoading,
                                 errorMessage = onlineDetailError,
+                                playerViewModel = viewModel,
                                 onSongClick = { index, song ->
                                     val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
                                     viewModel.playOnlineSongs(onlinePlaylistSongs, index, origin)
@@ -4782,6 +4787,7 @@ fun MusicLibraryScreen(
                                 songs = onlinePlaylistSongs,
                                 isLoading = isOnlineDetailLoading,
                                 errorMessage = onlineDetailError,
+                                playerViewModel = viewModel,
                                 onSongClick = { index, song ->
                                     val origin = openedOnlinePlaylist?.let { PlaybackOrigin.OnlinePlaylistOrigin(it) }
                                     viewModel.playOnlineSongs(onlinePlaylistSongs, index, origin)
@@ -4861,6 +4867,7 @@ fun MusicLibraryScreen(
                     LibraryTab.ONLINE_SEARCH -> {
                         // 12. 全网多平台歌曲检索主视图
                         com.orbit.music.ui.components.OnlineSongSearchView(
+                            playerViewModel = viewModel,
                             onPlaySong = { songs, index ->
                                 viewModel.playOnlineSongs(songs, index, PlaybackOrigin.OnlineSearchOrigin())
                             },
@@ -5134,8 +5141,20 @@ fun MusicLibraryScreen(
 
     // 1. 新建播放列表弹窗（带分组选择）
     if (showNewPlaylistDialog) {
+        var isCustomGroupForNew by remember { mutableStateOf(false) }
+        var customGroupForNewName by remember { mutableStateOf("") }
+        val candidateGroups = remember(allGroupsList) {
+            val list = mutableListOf("默认", "网络列表", "网络歌单", "车载精选")
+            list.addAll(allGroupsList)
+            list.distinct()
+        }
+
         AlertDialog(
-            onDismissRequest = { showNewPlaylistDialog = false },
+            onDismissRequest = {
+                showNewPlaylistDialog = false
+                isCustomGroupForNew = false
+                customGroupForNewName = ""
+            },
             title = { Text(stringResource(R.string.create_new_playlist), color = OrbitTheme.colors.textPrimary, fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -5143,7 +5162,15 @@ fun MusicLibraryScreen(
                         value = newPlaylistName,
                         onValueChange = { newPlaylistName = it },
                         label = { Text(stringResource(R.string.playlist_name_hint), color = OrbitTheme.colors.textSecondary) },
+                        placeholder = { Text("例如：我的车载网络精选", fontSize = 12.sp) },
                         singleLine = true,
+                        trailingIcon = {
+                            if (newPlaylistName.isNotEmpty()) {
+                                IconButton(onClick = { newPlaylistName = "" }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "清空", modifier = Modifier.size(16.dp))
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -5160,13 +5187,16 @@ fun MusicLibraryScreen(
                             .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        allGroupsList.forEach { g ->
-                            val isSel = newPlaylistSelectedGroup == g
+                        candidateGroups.forEach { g ->
+                            val isSel = !isCustomGroupForNew && newPlaylistSelectedGroup == g
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = if (isSel) OrbitTheme.colors.primary else OrbitTheme.colors.surfaceCard,
                                 border = BorderStroke(1.dp, if (isSel) OrbitTheme.colors.primary else OrbitTheme.colors.primary.copy(alpha = 0.2f)),
-                                modifier = Modifier.clickable { newPlaylistSelectedGroup = g }
+                                modifier = Modifier.clickable {
+                                    isCustomGroupForNew = false
+                                    newPlaylistSelectedGroup = g
+                                }
                             ) {
                                 Text(
                                     text = g,
@@ -5179,15 +5209,51 @@ fun MusicLibraryScreen(
                                 )
                             }
                         }
+
+                        // 自定义分组选项
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isCustomGroupForNew) OrbitTheme.colors.primary else OrbitTheme.colors.surfaceCard,
+                            border = BorderStroke(1.dp, if (isCustomGroupForNew) OrbitTheme.colors.primary else OrbitTheme.colors.primary.copy(alpha = 0.2f)),
+                            modifier = Modifier.clickable { isCustomGroupForNew = true }
+                        ) {
+                            Text(
+                                text = "＋ 自定义",
+                                fontSize = 11.5.sp,
+                                fontWeight = if (isCustomGroupForNew) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isCustomGroupForNew) {
+                                    if (OrbitTheme.colors.isDark) DarkBackground else Color.White
+                                } else OrbitTheme.colors.textPrimary,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+
+                    if (isCustomGroupForNew) {
+                        OutlinedTextField(
+                            value = customGroupForNewName,
+                            onValueChange = { customGroupForNewName = it },
+                            label = { Text("输入新分组名称", color = OrbitTheme.colors.textSecondary) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        if (newPlaylistName.isNotBlank()) {
-                            viewModel.createPlaylist(newPlaylistName.trim(), newPlaylistSelectedGroup)
+                        val name = newPlaylistName.trim()
+                        if (name.isNotBlank()) {
+                            val finalGroup = if (isCustomGroupForNew) {
+                                customGroupForNewName.trim().ifBlank { "网络列表" }
+                            } else {
+                                newPlaylistSelectedGroup
+                            }
+                            viewModel.createPlaylist(name, finalGroup)
                             newPlaylistName = ""
+                            isCustomGroupForNew = false
+                            customGroupForNewName = ""
                             showNewPlaylistDialog = false
                         }
                     },
@@ -5197,7 +5263,11 @@ fun MusicLibraryScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showNewPlaylistDialog = false }) {
+                TextButton(onClick = {
+                    showNewPlaylistDialog = false
+                    isCustomGroupForNew = false
+                    customGroupForNewName = ""
+                }) {
                     Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
                 }
             },
@@ -7891,6 +7961,33 @@ private fun LocalPlaylistItemCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
+                // 智能类型 Badge (本地 / 网络 / 混合)
+                val typeColor = when (playlist.type) {
+                    com.orbit.music.data.model.PlaylistType.ONLINE -> Color(0xFF00E5FF)
+                    com.orbit.music.data.model.PlaylistType.HYBRID -> Color(0xFFFF9100)
+                    com.orbit.music.data.model.PlaylistType.LOCAL -> Color(0xFF3B82F6)
+                }
+                val typeText = when (playlist.type) {
+                    com.orbit.music.data.model.PlaylistType.ONLINE -> "网络"
+                    com.orbit.music.data.model.PlaylistType.HYBRID -> "混合"
+                    com.orbit.music.data.model.PlaylistType.LOCAL -> "本地"
+                }
+                val typeBg = typeColor.copy(alpha = 0.12f)
+                val typeBorder = typeColor.copy(alpha = 0.4f)
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = typeBg,
+                    border = BorderStroke(0.5.dp, typeBorder)
+                ) {
+                    Text(
+                        text = typeText,
+                        color = typeColor,
+                        fontSize = 9.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+
                 if (playlist.groupName.isNotBlank() && playlist.groupName != "默认") {
                     Surface(
                         shape = RoundedCornerShape(4.dp),
@@ -7906,10 +8003,16 @@ private fun LocalPlaylistItemCard(
                         )
                     }
                 }
+
+                val countText = if (playlist.isHybrid) {
+                    "${playlist.songCount} 首 (网 ${playlist.onlineSongCount} · 本 ${playlist.localSongCount})"
+                } else {
+                    stringResource(R.string.tracks_count, playlist.songCount)
+                }
                 Text(
-                    text = stringResource(R.string.tracks_count, playlist.songCount),
+                    text = countText,
                     color = OrbitTheme.colors.textSecondary,
-                    fontSize = 12.sp
+                    fontSize = 11.5.sp
                 )
             }
         }

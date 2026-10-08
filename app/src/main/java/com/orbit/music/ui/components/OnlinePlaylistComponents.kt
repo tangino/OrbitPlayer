@@ -836,10 +836,24 @@ fun OnlinePlaylistDetailView(
     isSearching: Boolean = false,
     searchQuery: String = "",
     onSearchQueryChange: (String) -> Unit = {},
+    onAddSongToPlaylist: ((OnlineSongItem) -> Unit)? = null,
+    playerViewModel: com.orbit.music.ui.viewmodel.MusicPlayerViewModel? = null,
     modifier: Modifier = Modifier
 ) {
     var isDescExpanded by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    var songToAddToPlaylist by remember { mutableStateOf<OnlineSongItem?>(null) }
+
+    val resolvedViewModel: com.orbit.music.ui.viewmodel.MusicPlayerViewModel = playerViewModel ?: androidx.lifecycle.viewmodel.compose.viewModel()
+
+    // 添加到网络歌单弹窗
+    if (songToAddToPlaylist != null) {
+        AddToPlaylistDialog(
+            onlineSong = songToAddToPlaylist,
+            viewModel = resolvedViewModel,
+            onDismiss = { songToAddToPlaylist = null }
+        )
+    }
 
     val filteredSongs = remember(songs, searchQuery) {
         val q = searchQuery.trim()
@@ -1358,6 +1372,27 @@ fun OnlinePlaylistDetailView(
                                 text = formatDuration(song.durationMs),
                                 fontSize = 11.sp,
                                 color = OrbitTheme.colors.textSecondary.copy(alpha = 0.6f)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        // 添加到歌单按钮
+                        IconButton(
+                            onClick = {
+                                if (onAddSongToPlaylist != null) {
+                                    onAddSongToPlaylist(song)
+                                } else {
+                                    songToAddToPlaylist = song
+                                }
+                            },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlaylistAdd,
+                                contentDescription = "添加到歌单",
+                                tint = OrbitTheme.colors.primary.copy(alpha = 0.8f),
+                                modifier = Modifier.size(17.dp)
                             )
                         }
                     }

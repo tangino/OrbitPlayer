@@ -670,6 +670,16 @@ fun OnlineArtistDetailView(
     var isLoadingAlbums by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var currentArtistInfo by remember { mutableStateOf(artist) }
+    var songToAddToPlaylist by remember { mutableStateOf<OnlineSongItem?>(null) }
+    val playerViewModel: com.orbit.music.ui.viewmodel.MusicPlayerViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+
+    if (songToAddToPlaylist != null) {
+        AddToPlaylistDialog(
+            onlineSong = songToAddToPlaylist,
+            viewModel = playerViewModel,
+            onDismiss = { songToAddToPlaylist = null }
+        )
+    }
 
     // 分页状态
     var songPage by remember { mutableStateOf(1) }
@@ -1081,7 +1091,8 @@ fun OnlineArtistDetailView(
                             song = song,
                             isCurrentPlaying = isCurrent,
                             isPlaying = isPlaying && isCurrent,
-                            onClick = { onSongClick(index, song, filteredSongs) }
+                            onClick = { onSongClick(index, song, filteredSongs) },
+                            onAddPlaylist = { songToAddToPlaylist = song }
                         )
                     }
 
@@ -1295,6 +1306,16 @@ fun OnlineAlbumDetailView(
     var currentAlbum by remember { mutableStateOf(album) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var songToAddToPlaylist by remember { mutableStateOf<OnlineSongItem?>(null) }
+    val playerViewModel: com.orbit.music.ui.viewmodel.MusicPlayerViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+
+    if (songToAddToPlaylist != null) {
+        AddToPlaylistDialog(
+            onlineSong = songToAddToPlaylist,
+            viewModel = playerViewModel,
+            onDismiss = { songToAddToPlaylist = null }
+        )
+    }
 
     val filteredSongs = remember(songs, searchQuery) {
         val q = searchQuery.trim()
@@ -1557,7 +1578,8 @@ fun OnlineAlbumDetailView(
                         song = song,
                         isCurrentPlaying = isCurrent,
                         isPlaying = isPlaying && isCurrent,
-                        onClick = { onSongClick(index, song, filteredSongs) }
+                        onClick = { onSongClick(index, song, filteredSongs) },
+                        onAddPlaylist = { songToAddToPlaylist = song }
                     )
                 }
             }
@@ -1574,7 +1596,8 @@ private fun OnlineSongListItem(
     song: OnlineSongItem,
     isCurrentPlaying: Boolean,
     isPlaying: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onAddPlaylist: (() -> Unit)? = null
 ) {
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -1656,6 +1679,21 @@ private fun OnlineSongListItem(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+
+            if (onAddPlaylist != null) {
+                Spacer(modifier = Modifier.width(4.dp))
+                IconButton(
+                    onClick = onAddPlaylist,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlaylistAdd,
+                        contentDescription = "添加到歌单",
+                        tint = OrbitTheme.colors.primary.copy(alpha = 0.8f),
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
             }
         }
     }

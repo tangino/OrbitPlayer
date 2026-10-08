@@ -662,6 +662,28 @@ class MusicPlayerManager private constructor(private val context: Context) {
                     )
                 }
 
+                // 若该网络歌曲缺少封面，在后台异步嗅探并持久化至本地库
+                if (resolvedSong.albumArtUri.isNullOrBlank()) {
+                    scope.launch(Dispatchers.IO) {
+                        try {
+                            val kw = "${resolvedSong.title} ${resolvedSong.artist}".trim()
+                            val searchResults = com.orbit.music.data.online.repository.OnlineMusicRepository.getInstance().searchSongs(kw, page = 1, pageSize = 3).getOrNull() ?: emptyList()
+                            val matched = searchResults.firstOrNull { !it.coverUrl.isNullOrBlank() }
+                            if (matched != null && !matched.coverUrl.isNullOrBlank()) {
+                                val finalArt = if (matched.coverUrl.startsWith("//")) "https:${matched.coverUrl}" else matched.coverUrl
+                                com.orbit.music.data.repository.MusicRepository.getInstance(context).updateSongAlbumArt(resolvedSong.id, finalArt)
+                                _playbackState.update { state ->
+                                    val updatedWithCover = state.currentSong?.copy(albumArtUri = finalArt)
+                                    val updatedPlaylistWithCover = state.currentPlaylist.map { s ->
+                                        if (s.id == resolvedSong.id) s.copy(albumArtUri = finalArt) else s
+                                    }
+                                    state.copy(currentSong = updatedWithCover, currentPlaylist = updatedPlaylistWithCover)
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
+
                 if (resolvedSource.isFallback) {
                     com.orbit.music.utils.FastToast.show(
                         context,

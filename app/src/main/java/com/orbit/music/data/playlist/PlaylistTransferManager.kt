@@ -340,12 +340,13 @@ object PlaylistTransferManager {
             val root = JSONObject(jsonStr)
             val title = root.optString("title", "导入歌单").ifBlank { "导入歌单" }
             val description = root.optString("description", "")
-            val coverUrl = root.optString("coverUrl", null).takeIf { !it.isNullOrBlank() }
-            val platformStr = root.optString("platform", null).takeIf { !it.isNullOrBlank() }
+            val rawCover = root.optString("coverUrl", "").takeIf { it.isNotBlank() }
+            val coverUrl = rawCover?.let { if (it.startsWith("//")) "https:$it" else it }
+            val platformStr = root.optString("platform", "").takeIf { it.isNotBlank() }
             val platform = OnlinePlatform.values().firstOrNull { it.id == platformStr }
-            val originalId = root.optString("originalId", null).takeIf { !it.isNullOrBlank() }
-            val creatorName = root.optString("creatorName", null).takeIf { !it.isNullOrBlank() }
-            val creatorAvatarUrl = root.optString("creatorAvatarUrl", null).takeIf { !it.isNullOrBlank() }
+            val originalId = root.optString("originalId", "").takeIf { it.isNotBlank() }
+            val creatorName = root.optString("creatorName", "").takeIf { it.isNotBlank() }
+            val creatorAvatarUrl = root.optString("creatorAvatarUrl", "").takeIf { it.isNotBlank() }
             val playCount = root.optLong("playCount", 0L)
             val trackCount = root.optInt("trackCount", 0)
             val timestamp = root.optLong("exportTimestamp", System.currentTimeMillis())
@@ -361,10 +362,11 @@ object PlaylistTransferManager {
                 val sAlbum = item.optString("album", "")
                 val sDur = item.optLong("durationMs", 0L)
                 val sPath = item.optString("path", "")
-                val sPlatStr = item.optString("platform", null)
+                val sPlatStr = item.optString("platform", "").takeIf { it.isNotBlank() }
                 val sPlat = OnlinePlatform.values().firstOrNull { it.id == sPlatStr } ?: platform
-                val sId = item.optString("songId", null)
-                val sCover = item.optString("coverUrl", null)
+                val sId = item.optString("songId", "").takeIf { it.isNotBlank() }
+                val rawSongCover = item.optString("coverUrl", "").ifBlank { item.optString("albumArtUri", "") }.takeIf { it.isNotBlank() }
+                val sCover = rawSongCover?.let { if (it.startsWith("//")) "https:$it" else it }
 
                 songs.add(
                     TransferSongItem(

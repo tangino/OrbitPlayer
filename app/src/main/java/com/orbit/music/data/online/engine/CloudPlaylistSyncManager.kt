@@ -8,8 +8,11 @@ import com.orbit.music.data.online.model.OnlinePlaylist
 import com.orbit.music.data.online.repository.OnlinePlaylistFavoriteManager
 import com.orbit.music.data.playlist.PlaylistGroupManager
 import com.orbit.music.data.repository.MusicRepository
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.orbit.music.data.online.repository.OnlineMusicRepository
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -28,7 +31,8 @@ data class CloudPlaylistSong(
     val durationMs: Long,
     val path: String,
     val isOnline: Boolean = false,
-    val sourcePlatform: String? = null
+    val sourcePlatform: String? = null,
+    val albumArtUri: String? = null
 )
 
 /**
@@ -121,8 +125,11 @@ class CloudPlaylistSyncManager private constructor(private val context: Context)
                             put("album", s.album)
                             put("durationMs", s.durationMs)
                             put("path", s.path)
+                            val art = s.albumArtUri?.let { if (it.startsWith("//")) "https:$it" else it } ?: ""
+                            put("albumArtUri", art)
+                            put("coverUrl", art)
                             put("isOnline", s.isOnlineSong)
-                            put("sourcePlatform", s.sourcePlatform?.name ?: "")
+                            put("sourcePlatform", s.sourcePlatform?.name ?: s.resolvedPlatform?.name ?: "")
                         }
                         songsArr.put(sObj)
                     }
@@ -245,15 +252,20 @@ class CloudPlaylistSyncManager private constructor(private val context: Context)
                 if (sArr != null) {
                     for (j in 0 until sArr.length()) {
                         val sObj = sArr.getJSONObject(j)
+                        val sPath = sObj.optString("path")
+                        val isOnlineVal = sObj.optBoolean("isOnline", false) || sPath.startsWith("online://") || sPath.startsWith("http://") || sPath.startsWith("https://")
+                        val rawArt = sObj.optString("albumArtUri").ifBlank { sObj.optString("coverUrl") }
+                        val normArt = rawArt.takeIf { it.isNotBlank() }?.let { if (it.startsWith("//")) "https:$it" else it }
                         songs.add(
                             CloudPlaylistSong(
                                 title = sObj.optString("title"),
                                 artist = sObj.optString("artist"),
                                 album = sObj.optString("album"),
                                 durationMs = sObj.optLong("durationMs", 0L),
-                                path = sObj.optString("path"),
-                                isOnline = sObj.optBoolean("isOnline", false),
-                                sourcePlatform = sObj.optString("sourcePlatform").takeIf { it.isNotBlank() }
+                                path = sPath,
+                                isOnline = isOnlineVal,
+                                sourcePlatform = sObj.optString("sourcePlatform").takeIf { it.isNotBlank() },
+                                albumArtUri = normArt
                             )
                         )
                     }
@@ -359,20 +371,90 @@ class CloudPlaylistSyncManager private constructor(private val context: Context)
                 }
 
                 // 将歌单内的歌曲关联进来
-                val songIdsToAdd = mutableListOf<Long>()
+                val songsToAdd = mutableListOf<Song>()
+                val missingArtOnlineSongs = mutableListOf<Song>()
+
                 for (cs in cloudP.songs) {
-                    // 尝试在当前设备本地媒体库中匹配歌曲（同名+同歌手，或同路径）
-                    val matchedSong = allLocalSongs.find {
-                        it.path == cs.path || (it.title.equals(cs.title, ignoreCase = true) && it.artist.equals(cs.artist, ignoreCase = true))
-                    }
-                    if (matchedSong != null && matchedSong.id !in currentSongIds) {
-                        songIdsToAdd.add(matchedSong.id)
+                    val isOnline = cs.isOnline || cs.path.startsWith("online://") || cs.path.startsWith("http://") || cs.path.startsWith("https://")
+                    // 尝试在当前设备本地媒体库中匹配歌曲（非网络歌曲时）
+                    val matchedSong = if (!isOnline) {
+                        allLocalSongs.find {
+                            it.path == cs.path || (it.title.equals(cs.title, ignoreCase = true) && it.artist.equals(cs.artist, ignoreCase = true))
+                        }
+                    } else null
+
+                    if (matchedSong != null) {
+                        if (matchedSong.id !in currentSongIds) {
+                            songsToAdd.add(matchedSong)
+                        }
+                    } else {
+                        // 网络歌曲或当前设备未匹配到的歌曲：构造为虚拟/网络歌曲
+                        val plat: OnlinePlatform = (cs.sourcePlatform?.let { pName ->
+                            runCatching { OnlinePlatform.valueOf(pName) }.getOrNull()
+                                ?: OnlinePlatform.values().firstOrNull { it.id.equals(pName, ignoreCase = true) }
+                        } ?: if (cs.path.startsWith("online://")) {
+                            val pId = cs.path.removePrefix("online://").substringBefore("/")
+                            OnlinePlatform.values().firstOrNull { it.id.equals(pId, ignoreCase = true) }
+                        } else null) ?: OnlinePlatform.NETEASE
+
+                        val songId = if (cs.path.startsWith("online://")) {
+                            cs.path.removePrefix("online://").substringAfter("/")
+                        } else {
+                            "${cs.title}_${cs.artist}".hashCode().toString()
+                        }
+
+                        // 尝试从本地已有库查找是否有现成封面可用
+                        val existingArt = cs.albumArtUri ?: allLocalSongs.find {
+                            it.title.equals(cs.title, ignoreCase = true) && it.artist.equals(cs.artist, ignoreCase = true) && !it.albumArtUri.isNullOrBlank()
+                        }?.albumArtUri
+
+                        val virtualId = OnlineAudioSourceManager.generateVirtualSongId(plat, songId)
+                        if (virtualId !in currentSongIds) {
+                            val virtualSong = Song(
+                                id = virtualId,
+                                title = cs.title,
+                                artist = cs.artist.ifBlank { "未知歌手" },
+                                album = cs.album.ifBlank { cloudP.name },
+                                albumId = virtualId,
+                                durationMs = cs.durationMs,
+                                path = if (cs.path.startsWith("online://") || cs.path.startsWith("http")) cs.path else "online://${plat.id}/$songId",
+                                size = 0L,
+                                albumArtUri = existingArt,
+                                folderPath = "云同步歌单 - ${cloudP.name}",
+                                mimeType = "audio/mpeg",
+                                sourcePlatform = plat,
+                                sourceTag = plat.displayName,
+                                originalPlatform = plat
+                            )
+                            songsToAdd.add(virtualSong)
+                            if (virtualSong.albumArtUri.isNullOrBlank()) {
+                                missingArtOnlineSongs.add(virtualSong)
+                            }
+                        }
                     }
                 }
-                if (songIdsToAdd.isNotEmpty()) {
-                    repository.addSongsToPlaylist(targetPlaylistId, songIdsToAdd)
+                if (songsToAdd.isNotEmpty()) {
+                    repository.addSongsToPlaylist(targetPlaylistId, songsToAdd)
                 }
                 localRestoredCount++
+
+                // 针对缺少封面的网络歌曲，启动后台协程自动在线嗅探封面并持久化更新
+                if (missingArtOnlineSongs.isNotEmpty()) {
+                    CoroutineScope(Dispatchers.IO).launch {
+                        val onlineRepo = OnlineMusicRepository.getInstance()
+                        for (ms in missingArtOnlineSongs) {
+                            try {
+                                val kw = "${ms.title} ${ms.artist}".trim()
+                                val results = onlineRepo.searchSongs(kw, page = 1, pageSize = 3).getOrNull() ?: emptyList()
+                                val matched = results.firstOrNull { !it.coverUrl.isNullOrBlank() }
+                                if (matched != null && !matched.coverUrl.isNullOrBlank()) {
+                                    val finalArt = if (matched.coverUrl.startsWith("//")) "https:${matched.coverUrl}" else matched.coverUrl
+                                    repository.updateSongAlbumArt(ms.id, finalArt)
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    }
+                }
             }
 
             // 3. 恢复在线收藏歌单

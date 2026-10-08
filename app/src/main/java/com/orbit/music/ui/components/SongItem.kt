@@ -91,7 +91,8 @@ fun SongItem(
         else -> 6.dp
     }
 
-    val artUri = song.albumArtUri ?: com.orbit.music.data.provider.AudioCoverProvider.buildSongCoverUri(song.id, song.path, song.album)
+    val artUri = song.albumArtUri?.let { if (it.startsWith("//")) "https:$it" else it }
+        ?: if (song.isOnlineSong) null else com.orbit.music.data.provider.AudioCoverProvider.buildSongCoverUri(song.id, song.path, song.album)
 
     Box(
         modifier = modifier
@@ -124,7 +125,7 @@ fun SongItem(
                         .background(colors.surfaceCard),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (artUri.isNotBlank()) {
+                    if (!artUri.isNullOrBlank()) {
                         SubcomposeAsyncImage(
                             model = ImageRequest.Builder(context)
                                 .data(artUri)
@@ -341,7 +342,7 @@ fun SongItem(
                             .background(colors.surface),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (artUri.isNotBlank()) {
+                        if (!artUri.isNullOrBlank()) {
                             SubcomposeAsyncImage(
                                 model = ImageRequest.Builder(context)
                                     .data(artUri)

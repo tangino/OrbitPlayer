@@ -46,6 +46,20 @@ data class Song(
         }
     val isOnlineSong: Boolean
         get() = id < 0 || path.startsWith("online://") || path.startsWith("http://") || path.startsWith("https://")
+
+    val resolvedPlatform: com.orbit.music.data.online.model.OnlinePlatform?
+        get() {
+            if (sourcePlatform != null) return sourcePlatform
+            if (originalPlatform != null) return originalPlatform
+            if (path.startsWith("online://")) {
+                val platformId = path.removePrefix("online://").substringBefore("/")
+                return com.orbit.music.data.online.model.OnlinePlatform.values().firstOrNull { it.id == platformId }
+            }
+            return null
+        }
+
+    val resolvedSourceTag: String?
+        get() = sourceTag ?: resolvedPlatform?.displayName
 }
 
 /**
@@ -75,6 +89,15 @@ data class ArtistItem(
 )
 
 /**
+ * 歌单类型枚举（智能识别自建歌单构成为纯本地、纯网络还是混合歌单）
+ */
+enum class PlaylistType(val displayName: String) {
+    LOCAL("本地"),
+    ONLINE("网络"),
+    HYBRID("混合")
+}
+
+/**
  * 播放列表模型
  */
 data class Playlist(
@@ -83,8 +106,22 @@ data class Playlist(
     val songCount: Int,
     val createdAt: Long,
     val groupName: String = "默认",
-    val coverArtUri: String? = null
-)
+    val coverArtUri: String? = null,
+    val type: PlaylistType = PlaylistType.LOCAL,
+    val onlineSongCount: Int = 0
+) {
+    val localSongCount: Int
+        get() = (songCount - onlineSongCount).coerceAtLeast(0)
+
+    val isPureOnline: Boolean
+        get() = type == PlaylistType.ONLINE
+
+    val isPureLocal: Boolean
+        get() = type == PlaylistType.LOCAL
+
+    val isHybrid: Boolean
+        get() = type == PlaylistType.HYBRID
+}
 
 
 /**

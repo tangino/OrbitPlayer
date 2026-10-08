@@ -711,9 +711,39 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun toggleShuffle(): Int = playerManager.toggleShuffle()
     fun toggleRepeatMode() = playerManager.toggleRepeatMode()
 
-    fun createPlaylist(name: String, groupName: String = "默认") {
+    fun createPlaylist(name: String, groupName: String = "默认", onCreated: ((Long) -> Unit)? = null) {
         viewModelScope.launch {
-            repository.createPlaylist(name, groupName)
+            val id = repository.createPlaylist(name, groupName)
+            onCreated?.invoke(id)
+        }
+    }
+
+    fun addSongToPlaylist(playlistId: Long, song: Song, onComplete: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            repository.addSongToPlaylist(playlistId, song)
+            onComplete?.invoke()
+        }
+    }
+
+    fun addOnlineSongToPlaylist(
+        playlistId: Long,
+        onlineSong: com.orbit.music.data.online.model.OnlineSongItem,
+        onComplete: (() -> Unit)? = null
+    ) {
+        viewModelScope.launch {
+            repository.addOnlineSongToPlaylist(playlistId, onlineSong)
+            onComplete?.invoke()
+        }
+    }
+
+    fun addOnlineSongsToPlaylist(
+        playlistId: Long,
+        onlineSongs: List<com.orbit.music.data.online.model.OnlineSongItem>,
+        onComplete: (() -> Unit)? = null
+    ) {
+        viewModelScope.launch {
+            repository.addOnlineSongsToPlaylist(playlistId, onlineSongs)
+            onComplete?.invoke()
         }
     }
 

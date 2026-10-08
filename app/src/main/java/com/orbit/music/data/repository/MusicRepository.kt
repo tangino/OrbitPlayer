@@ -318,9 +318,53 @@ class MusicRepository private constructor(private val context: Context) {
         refreshPlaylists()
     }
 
+    suspend fun addSongToPlaylist(playlistId: Long, song: Song) = withContext(Dispatchers.IO) {
+        if (song.isOnlineSong) {
+            db.songDao.insertAll(listOf(song))
+        }
+        db.songDao.insertSongToPlaylist(playlistId, song.id, 0)
+        refreshPlaylists()
+    }
+
+    suspend fun addOnlineSongToPlaylist(playlistId: Long, onlineSong: com.orbit.music.data.online.model.OnlineSongItem) = withContext(Dispatchers.IO) {
+        val song = com.orbit.music.data.online.engine.OnlineAudioSourceManager.getInstance(context).toSong(onlineSong)
+        db.songDao.insertAll(listOf(song))
+        db.songDao.insertSongToPlaylist(playlistId, song.id, 0)
+        refreshPlaylists()
+    }
+
+    suspend fun addOnlineSongsToPlaylist(playlistId: Long, onlineSongs: List<com.orbit.music.data.online.model.OnlineSongItem>) = withContext(Dispatchers.IO) {
+        if (onlineSongs.isEmpty()) return@withContext
+        val songs = onlineSongs.map { com.orbit.music.data.online.engine.OnlineAudioSourceManager.getInstance(context).toSong(it) }
+        db.songDao.insertAll(songs)
+        db.songDao.insertSongsToPlaylist(playlistId, songs.map { it.id })
+        refreshPlaylists()
+    }
+
     suspend fun addSongsToPlaylist(playlistId: Long, songIds: Collection<Long>) = withContext(Dispatchers.IO) {
         if (songIds.isEmpty()) return@withContext
         db.songDao.insertSongsToPlaylist(playlistId, songIds)
+        refreshPlaylists()
+    }
+
+    suspend fun addSongsToPlaylist(playlistId: Long, songs: List<Song>) = withContext(Dispatchers.IO) {
+        if (songs.isEmpty()) return@withContext
+        val onlineSongs = songs.filter { it.isOnlineSong }
+        if (onlineSongs.isNotEmpty()) {
+            db.songDao.insertAll(onlineSongs)
+        }
+        db.songDao.insertSongsToPlaylist(playlistId, songs.map { it.id })
+        refreshPlaylists()
+    }
+
+    suspend fun updateSongAlbumArt(songId: Long, albumArtUri: String) = withContext(Dispatchers.IO) {
+        if (songId == 0L || albumArtUri.isBlank()) return@withContext
+        val normUri = if (albumArtUri.startsWith("//")) "https:$albumArtUri" else albumArtUri
+        db.songDao.updateSongAlbumArt(songId, normUri)
+        val updatedList = _allSongs.value.map {
+            if (it.id == songId) it.copy(albumArtUri = normUri) else it
+        }
+        updateCollections(updatedList)
         refreshPlaylists()
     }
 
