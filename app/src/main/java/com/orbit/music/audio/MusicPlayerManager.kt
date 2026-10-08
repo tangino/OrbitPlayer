@@ -960,19 +960,6 @@ class MusicPlayerManager private constructor(private val context: Context) {
         val playlist = _playbackState.value.currentPlaylist
         if (playlist.isEmpty()) return
 
-        if (player.currentPosition > 3000L) {
-            player.seekTo(0L)
-            _playbackState.update {
-                it.copy(
-                    currentPositionMs = 0L,
-                    progress = 0f
-                )
-            }
-            saveLastPlayedSong(_playbackState.value.currentSong, 0L, syncImmediately = true)
-            if (!player.isPlaying) player.play()
-            return
-        }
-
         val currentSongId = _playbackState.value.currentSong?.id
         val resolvedIndex = if (currentSongId != null) {
             playlist.indexOfFirst { it.id == currentSongId }.takeIf { it >= 0 }

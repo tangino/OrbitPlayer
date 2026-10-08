@@ -276,12 +276,22 @@ fun SettingsScreen(
                     isExpanded = isOnlineExpanded,
                     onToggleExpand = { isOnlineExpanded = !isOnlineExpanded }
                 ) {
-                    SettingsActionItem(
-                        icon = Icons.Default.CloudDownload,
-                        title = "在线音源与脚本管理",
-                        subtitle = if (activeScript != null) "活动音源: ${activeScript?.name} (v${activeScript?.version}) · $qualityLabel" else "官方直链兜底模式 (共 ${scripts.size} 个音源) · $qualityLabel",
-                        onClick = { showAudioSourceManager = true }
-                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        // 在线音乐平台账号登录管理 (QQ 音乐 / 酷狗音乐等)
+                        com.orbit.music.ui.components.auth.PlatformAccountsCard()
+
+                        SettingsActionItem(
+                            icon = Icons.Default.CloudDownload,
+                            title = "在线音源与脚本管理",
+                            subtitle = if (activeScript != null) "活动音源: ${activeScript?.name} (v${activeScript?.version}) · $qualityLabel" else "官方直链兜底模式 (共 ${scripts.size} 个音源) · $qualityLabel",
+                            onClick = { showAudioSourceManager = true }
+                        )
+                    }
                 }
             }
 

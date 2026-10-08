@@ -5082,11 +5082,19 @@ fun NowPlayingLibraryMiddleColumn(
 ) {
     val playbackOrigin by viewModel.playbackOrigin.collectAsState()
     val currentOnlinePlaylist = (playbackOrigin as? PlaybackOrigin.OnlinePlaylistOrigin)?.onlinePlaylist
-    val isOnlinePlaylistPlaying = currentOnlinePlaylist != null ||
-            (playbackState.currentSong?.path?.startsWith("online://") == true && playbackState.currentPlaylist.isNotEmpty())
+    val hasActiveQueue = playbackState.currentPlaylist.isNotEmpty()
 
-    val availableTabs = remember(isOnlinePlaylistPlaying) {
-        if (isOnlinePlaylistPlaying) {
+    val queueTabTitle = when (val origin = playbackOrigin) {
+        is PlaybackOrigin.OnlinePlaylistOrigin -> "网络歌单"
+        is PlaybackOrigin.PlaylistOrigin -> origin.playlist.name.ifBlank { "当前列表" }
+        is PlaybackOrigin.Album -> origin.albumItem.title.ifBlank { "当前列表" }
+        is PlaybackOrigin.Artist -> origin.artistItem.name.ifBlank { "当前列表" }
+        is PlaybackOrigin.Folder -> origin.folderPath.substringAfterLast("/").ifBlank { "当前列表" }
+        else -> "播放列表"
+    }
+
+    val availableTabs = remember(hasActiveQueue) {
+        if (hasActiveQueue) {
             listOf(
                 NowPlayingMiddleTab.ONLINE_PLAYLIST,
                 NowPlayingMiddleTab.SONGS,
@@ -5107,20 +5115,23 @@ fun NowPlayingLibraryMiddleColumn(
     }
 
     var selectedTab by rememberSaveable {
-        mutableStateOf(if (isOnlinePlaylistPlaying) NowPlayingMiddleTab.ONLINE_PLAYLIST else NowPlayingMiddleTab.SONGS)
+        mutableStateOf(if (hasActiveQueue) NowPlayingMiddleTab.ONLINE_PLAYLIST else NowPlayingMiddleTab.SONGS)
     }
 
-    // 优先显示：当正在播放网络歌单或切换不同网络歌单时，优先切换选中网络歌单 Tab
-    var lastHandledPlaylistKey by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(currentOnlinePlaylist?.id, isOnlinePlaylistPlaying) {
-        if (isOnlinePlaylistPlaying) {
-            val key = currentOnlinePlaylist?.let { p -> "${p.platform.name}_${p.id}" } ?: "online_playing"
-            if (lastHandledPlaylistKey != key) {
-                lastHandledPlaylistKey = key
-                selectedTab = NowPlayingMiddleTab.ONLINE_PLAYLIST
-            }
-        } else if (selectedTab == NowPlayingMiddleTab.ONLINE_PLAYLIST) {
-            selectedTab = NowPlayingMiddleTab.SONGS
+    // 优先显示：当播放队列就绪时，默认选中当前播放列表 Tab；但切歌或播完一首歌后绝不强制重置或清空
+    var lastHandledOriginKey by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(playbackOrigin) {
+        val key = when (val origin = playbackOrigin) {
+            is PlaybackOrigin.OnlinePlaylistOrigin -> "online_${origin.onlinePlaylist.id}"
+            is PlaybackOrigin.PlaylistOrigin -> "local_${origin.playlist.id}"
+            is PlaybackOrigin.Album -> "album_${origin.albumItem.title}"
+            is PlaybackOrigin.Artist -> "artist_${origin.artistItem.name}"
+            is PlaybackOrigin.Folder -> "folder_${origin.folderPath}"
+            else -> null
+        }
+        if (key != null && lastHandledOriginKey != key) {
+            lastHandledOriginKey = key
+            selectedTab = NowPlayingMiddleTab.ONLINE_PLAYLIST
         }
     }
 
@@ -5284,7 +5295,7 @@ fun NowPlayingLibraryMiddleColumn(
                                 Spacer(modifier = Modifier.width(3.dp))
                             }
                             Text(
-                                text = tab.title,
+                                text = if (isOnlineTab) queueTabTitle else tab.title,
                                 fontSize = 11.5.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                 color = if (isSelected) Color.White else if (isOnlineTab) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary

@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
@@ -11,8 +11,8 @@ android {
         applicationId = "com.orbit.music"
         minSdk = 21
         targetSdk = 34
-        versionCode = 27
-        versionName = "0.3.7"
+        versionCode = 28
+        versionName = "0.3.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -134,6 +134,9 @@ dependencies {
 
     // libaums: USB Mass Storage (无需存储权限直接读取 U 盘 FAT32)
     implementation("me.jahnen.libaums:core:0.9.1")
+
+    // ZXing (用于二维码生成与扫码登录渲染)
+    implementation("com.google.zxing:core:3.5.3")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

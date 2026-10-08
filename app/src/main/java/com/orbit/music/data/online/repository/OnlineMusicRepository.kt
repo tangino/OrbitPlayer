@@ -48,6 +48,18 @@ class OnlineMusicRepository private constructor() {
         OnlinePlatform.MIGU to miguSource
     )
 
+    /**
+     * 绑定平台账号管理器，实现音源网络请求自动携带登录 Cookie
+     */
+    fun bindAuthManager(accountManager: com.orbit.music.data.online.auth.PlatformAccountManager) {
+        qqSource.setCookieProvider {
+            accountManager.getCookieHeader(OnlinePlatform.QQ)
+        }
+        kugouSource.setCookieProvider {
+            accountManager.getCookieHeader(OnlinePlatform.KUGOU)
+        }
+    }
+
     // 当前选中的平台
     private val _currentPlatform = MutableStateFlow(OnlinePlatform.NETEASE)
     val currentPlatform: StateFlow<OnlinePlatform> = _currentPlatform.asStateFlow()

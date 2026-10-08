@@ -23,21 +23,29 @@ class KugouMusicSource(
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .followRedirects(true)
-        .build()
+        .build(),
+    private var cookieProvider: (() -> String)? = null
 ) : IOnlineMusicSource {
 
     override val platform: OnlinePlatform = OnlinePlatform.KUGOU
 
     private val userAgent = "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
 
+    fun setCookieProvider(provider: () -> String) {
+        this.cookieProvider = provider
+    }
+
     private suspend fun getApi(url: String): JSONObject = withContext(Dispatchers.IO) {
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url(url)
             .header("User-Agent", userAgent)
             .header("Referer", "http://m.kugou.com/")
-            .get()
-            .build()
 
+        cookieProvider?.invoke()?.takeIf { it.isNotBlank() }?.let { cookie ->
+            requestBuilder.header("Cookie", cookie)
+        }
+
+        val request = requestBuilder.get().build()
         val response = client.newCall(request).execute()
         val bodyStr = response.body?.string() ?: throw IllegalStateException("酷狗网络响应为空")
         JSONObject(bodyStr)

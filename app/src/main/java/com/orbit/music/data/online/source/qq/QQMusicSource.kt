@@ -25,12 +25,17 @@ class QQMusicSource(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
-        .build()
+        .build(),
+    private var cookieProvider: (() -> String)? = null
 ) : IOnlineMusicSource {
 
     override val platform: OnlinePlatform = OnlinePlatform.QQ
 
     private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+    fun setCookieProvider(provider: () -> String) {
+        this.cookieProvider = provider
+    }
 
     /**
      * 向 QQ 音乐 musicu.fcg 发送通用网关请求
@@ -39,14 +44,17 @@ class QQMusicSource(
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val body = payload.toString().toRequestBody(mediaType)
 
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url("https://u.y.qq.com/cgi-bin/musicu.fcg")
             .header("User-Agent", userAgent)
             .header("Referer", "https://y.qq.com/")
             .header("Host", "u.y.qq.com")
-            .post(body)
-            .build()
 
+        cookieProvider?.invoke()?.takeIf { it.isNotBlank() }?.let { cookie ->
+            requestBuilder.header("Cookie", cookie)
+        }
+
+        val request = requestBuilder.post(body).build()
         val response = client.newCall(request).execute()
         val bodyStr = response.body?.string() ?: throw IllegalStateException("QQ 音乐网络响应为空")
         JSONObject(bodyStr)

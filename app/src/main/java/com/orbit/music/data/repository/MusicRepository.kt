@@ -319,7 +319,8 @@ class MusicRepository private constructor(private val context: Context) {
     }
 
     suspend fun addSongToPlaylist(playlistId: Long, song: Song) = withContext(Dispatchers.IO) {
-        if (song.isOnlineSong) {
+        val isOnline = song.isOnlineSong || song.path.startsWith("online://") || song.path.startsWith("http://") || song.path.startsWith("https://") || song.id < 0
+        if (isOnline) {
             db.songDao.insertAll(listOf(song))
         }
         db.songDao.insertSongToPlaylist(playlistId, song.id, 0)
@@ -349,7 +350,7 @@ class MusicRepository private constructor(private val context: Context) {
 
     suspend fun addSongsToPlaylist(playlistId: Long, songs: List<Song>) = withContext(Dispatchers.IO) {
         if (songs.isEmpty()) return@withContext
-        val onlineSongs = songs.filter { it.isOnlineSong }
+        val onlineSongs = songs.filter { it.isOnlineSong || it.path.startsWith("online://") || it.path.startsWith("http://") || it.path.startsWith("https://") || it.id < 0 }
         if (onlineSongs.isNotEmpty()) {
             db.songDao.insertAll(onlineSongs)
         }
