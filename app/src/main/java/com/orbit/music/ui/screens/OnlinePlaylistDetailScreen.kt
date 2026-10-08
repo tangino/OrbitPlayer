@@ -32,6 +32,7 @@ import com.orbit.music.data.online.model.OnlinePlatform
 import com.orbit.music.data.online.model.OnlinePlaylist
 import com.orbit.music.data.online.model.OnlineSongItem
 import com.orbit.music.ui.theme.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,6 +50,18 @@ fun OnlinePlaylistDetailScreen(
     val playbackState by playerManager.playbackState.collectAsState()
 
     var isDescExpanded by remember { mutableStateOf(false) }
+    var showExportDialog by remember { mutableStateOf(false) }
+    var isSavingToLocal by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+
+    if (showExportDialog) {
+        com.orbit.music.ui.components.ExportPlaylistDialog(
+            playlistTitle = playlist.title,
+            onlinePlaylist = playlist,
+            onlineSongs = songs,
+            onDismiss = { showExportDialog = false }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -67,6 +80,49 @@ fun OnlinePlaylistDetailScreen(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "返回"
                         )
+                    }
+                },
+                actions = {
+                    // 导出歌单按钮
+                    IconButton(
+                        onClick = { showExportDialog = true },
+                        enabled = songs.isNotEmpty()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FileUpload,
+                            contentDescription = "导出歌单",
+                            tint = if (songs.isNotEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                        )
+                    }
+
+                    // 导入为本地自建歌单
+                    IconButton(
+                        onClick = {
+                            if (songs.isNotEmpty() && !isSavingToLocal) {
+                                isSavingToLocal = true
+                                coroutineScope.launch {
+                                    val transferPlaylist = com.orbit.music.data.playlist.PlaylistTransferManager.toTransferPlaylist(playlist, songs)
+                                    val pId = com.orbit.music.data.playlist.PlaylistTransferManager.saveTransferPlaylistToLocal(context, transferPlaylist)
+                                    isSavingToLocal = false
+                                    com.orbit.music.utils.FastToast.show(context, "已成功导入为本地歌单「${playlist.title}」")
+                                }
+                            }
+                        },
+                        enabled = songs.isNotEmpty() && !isSavingToLocal
+                    ) {
+                        if (isSavingToLocal) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.PlaylistAdd,
+                                contentDescription = "导入为本地歌单",
+                                tint = if (songs.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -103,7 +159,7 @@ fun OnlinePlaylistDetailScreen(
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         // 播放全部主按键
                         Button(
@@ -135,15 +191,20 @@ fun OnlinePlaylistDetailScreen(
                             )
                         }
 
-                        // 随机播放按键
+                        // 导入本地按钮
                         OutlinedButton(
                             onClick = {
-                                if (songs.isNotEmpty()) {
-                                    val shuffled = songs.shuffled()
-                                    playerManager.playOnlineSongList(shuffled, 0)
+                                if (songs.isNotEmpty() && !isSavingToLocal) {
+                                    isSavingToLocal = true
+                                    coroutineScope.launch {
+                                        val transferPlaylist = com.orbit.music.data.playlist.PlaylistTransferManager.toTransferPlaylist(playlist, songs)
+                                        com.orbit.music.data.playlist.PlaylistTransferManager.saveTransferPlaylistToLocal(context, transferPlaylist)
+                                        isSavingToLocal = false
+                                        com.orbit.music.utils.FastToast.show(context, "已成功导入为本地歌单「${playlist.title}」")
+                                    }
                                 }
                             },
-                            enabled = songs.isNotEmpty(),
+                            enabled = songs.isNotEmpty() && !isSavingToLocal,
                             modifier = Modifier.height(44.dp),
                             shape = RoundedCornerShape(22.dp),
                             border = ButtonDefaults.outlinedButtonBorder.copy(
@@ -154,13 +215,13 @@ fun OnlinePlaylistDetailScreen(
                             )
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Shuffle,
+                                imageVector = Icons.Default.Download,
                                 contentDescription = null,
-                                modifier = Modifier.size(18.dp),
+                                modifier = Modifier.size(17.dp),
                                 tint = PrimaryNeonCyan
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text(text = "随机", fontSize = 13.sp)
+                            Text(text = "导入歌单", fontSize = 12.5.sp)
                         }
                     }
                 }

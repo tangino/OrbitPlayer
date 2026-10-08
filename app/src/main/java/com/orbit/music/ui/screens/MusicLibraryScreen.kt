@@ -62,6 +62,8 @@ import com.orbit.music.ui.components.CoverFlowLayout
 import com.orbit.music.ui.components.MiniPlayerBar
 import com.orbit.music.ui.components.SelectAlbumCoverDialog
 import com.orbit.music.ui.components.SongItem
+import com.orbit.music.ui.components.ExportPlaylistDialog
+import com.orbit.music.ui.components.ImportPlaylistDialog
 import com.orbit.music.utils.FastToast
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.BorderStroke
@@ -164,10 +166,16 @@ fun MusicLibraryScreen(
     var showNewPlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
 
-    // 播放列表管理状态 (重命名 / 删除)
+    // 播放列表管理状态 (重命名 / 删除 / 导入 / 导出)
     var renamingPlaylist by remember { mutableStateOf<Playlist?>(null) }
     var renamePlaylistName by remember { mutableStateOf("") }
     var deletingPlaylist by remember { mutableStateOf<Playlist?>(null) }
+    var showExportPlaylistDialog by remember { mutableStateOf(false) }
+    var exportPlaylistTitle by remember { mutableStateOf("") }
+    var exportPlaylistSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var exportOnlinePlaylist by remember { mutableStateOf<com.orbit.music.data.online.model.OnlinePlaylist?>(null) }
+    var exportOnlineSongs by remember { mutableStateOf<List<com.orbit.music.data.online.model.OnlineSongItem>>(emptyList()) }
+    var showImportPlaylistDialog by remember { mutableStateOf(false) }
 
     // 播放列表下钻状态：直接由 ViewModel 的 libraryState 驱动，跨页面切换时状态完全保持
     val openedPlaylist = libraryState.selectedPlaylist
@@ -184,10 +192,16 @@ fun MusicLibraryScreen(
     var openedOnlineArtist by remember { mutableStateOf<com.orbit.music.data.online.model.OnlineArtist?>(null) }
     var openedOnlineAlbum by remember { mutableStateOf<com.orbit.music.data.online.model.OnlineAlbum?>(null) }
 
-    // 切换 Tab 时自动清空网络歌手/专辑下钻
+    // 下钻详情页（专辑/艺术家/文件夹/歌单等）内部独立即时搜索状态，隔离主库全局搜索状态
+    var isDetailSearching by remember { mutableStateOf(false) }
+    var detailSearchQuery by remember { mutableStateOf("") }
+
+    // 切换 Tab 时自动清空网络歌手/专辑下钻及详情搜索状态
     LaunchedEffect(libraryState.currentTab) {
         openedOnlineArtist = null
         openedOnlineAlbum = null
+        isDetailSearching = false
+        detailSearchQuery = ""
     }
 
     // 监听 openedOnlinePlaylist 变化自动抓取歌单详情与歌曲
@@ -279,9 +293,7 @@ fun MusicLibraryScreen(
         }
     }
 
-    // 下钻详情页（专辑/艺术家/文件夹/歌单等）内部独立即时搜索状态，隔离主库全局搜索状态
-    var isDetailSearching by remember { mutableStateOf(false) }
-    var detailSearchQuery by remember { mutableStateOf("") }
+
 
     val isDrillDown = openedFolderPath != null || openedAlbum != null || openedArtist != null || openedPlaylist != null || openedOnlinePlaylist != null || openedOnlineArtist != null || openedOnlineAlbum != null
 
@@ -373,45 +385,105 @@ fun MusicLibraryScreen(
             viewModel.setSearchQuery("")
         }
 
-        // 2. 根据记录的播放来源上下文（PlaybackOrigin），跳回对应页面并定位
-        when (origin) {
-            is PlaybackOrigin.OnlinePlaylistOrigin -> {
-                val targetPlaylist = origin.onlinePlaylist
-                val targetTab = when (targetPlaylist.platform) {
-                    com.orbit.music.data.online.model.OnlinePlatform.NETEASE -> LibraryTab.NETEASE_SQUARE
-                    com.orbit.music.data.online.model.OnlinePlatform.QQ -> LibraryTab.QQ_SQUARE
-                    com.orbit.music.data.online.model.OnlinePlatform.KUGOU -> LibraryTab.KUGOU_SQUARE
-                    com.orbit.music.data.online.model.OnlinePlatform.KUWO -> LibraryTab.KUWO_SQUARE
-                    com.orbit.music.data.online.model.OnlinePlatform.MIGU -> LibraryTab.MIGU_SQUARE
+        // ════════════════════════════════════════════════════════════════
+        // 🛡️ 严格隔离：网络歌曲 与 本地歌曲
+        // ════════════════════════════════════════════════════════════════
+        if (currentSong.isOnlineSong) {
+            // ── 网络歌曲定位逻辑（绝不跳转本地 Tab，绝不在本地歌曲列表中匹配） ──
+            when (origin) {
+                is PlaybackOrigin.OnlinePlaylistOrigin -> {
+                    val targetPlaylist = origin.onlinePlaylist
+                    val targetTab = when (targetPlaylist.platform) {
+                        com.orbit.music.data.online.model.OnlinePlatform.NETEASE -> LibraryTab.NETEASE_SQUARE
+                        com.orbit.music.data.online.model.OnlinePlatform.QQ -> LibraryTab.QQ_SQUARE
+                        com.orbit.music.data.online.model.OnlinePlatform.KUGOU -> LibraryTab.KUGOU_SQUARE
+                        com.orbit.music.data.online.model.OnlinePlatform.KUWO -> LibraryTab.KUWO_SQUARE
+                        com.orbit.music.data.online.model.OnlinePlatform.MIGU -> LibraryTab.MIGU_SQUARE
+                    }
+
+                    // 判断是否已经打开了目标网络歌单
+                    val isAlreadyInTarget = openedOnlinePlaylist?.id == targetPlaylist.id &&
+                            openedOnlinePlaylist?.platform == targetPlaylist.platform
+
+                    if (!isAlreadyInTarget) {
+                        // 原子切换 Tab 并直接打开目标歌单，避免先切换 Tab 显示广场再打开歌单的跳跃和闪烁
+                        viewModel.navigateToOnlinePlaylist(targetPlaylist, targetTab)
+                    }
+
+                    coroutineScope.launch {
+                        var retry = 0
+                        while (retry < 30) {
+                            val currentList = onlinePlaylistSongs
+                            val targetIndex = currentList.indexOfFirst {
+                                it.title == currentSong.title && (currentSong.artist.isBlank() || it.artist == currentSong.artist)
+                            }
+                            if (targetIndex >= 0) {
+                                onlineSongsLocateIndex = targetIndex
+                                onlineSongsLocateTrigger = System.currentTimeMillis()
+                                break
+                            }
+                            kotlinx.coroutines.delay(60)
+                            retry++
+                        }
+                    }
                 }
 
-                // 判断是否已经打开了目标网络歌单
-                val isAlreadyInTarget = openedOnlinePlaylist?.id == targetPlaylist.id &&
-                        openedOnlinePlaylist?.platform == targetPlaylist.platform
-
-                if (!isAlreadyInTarget) {
-                    // 原子切换 Tab 并直接打开目标歌单，避免先切换 Tab 显示广场再打开歌单的跳跃和闪烁
-                    viewModel.navigateToOnlinePlaylist(targetPlaylist, targetTab)
+                is PlaybackOrigin.OnlineArtistOrigin -> {
+                    viewModel.clearAllDrillDown()
+                    if (libraryState.currentTab != LibraryTab.ONLINE_ARTISTS) {
+                        viewModel.setTab(LibraryTab.ONLINE_ARTISTS)
+                    }
+                    openedOnlineArtist = origin.onlineArtist
+                    openedOnlineAlbum = null
                 }
 
-                coroutineScope.launch {
-                    var retry = 0
-                    while (retry < 30) {
-                        val currentList = onlinePlaylistSongs
-                        val targetIndex = currentList.indexOfFirst {
+                is PlaybackOrigin.OnlineAlbumOrigin -> {
+                    viewModel.clearAllDrillDown()
+                    if (libraryState.currentTab != LibraryTab.ONLINE_ARTISTS) {
+                        viewModel.setTab(LibraryTab.ONLINE_ARTISTS)
+                    }
+                    openedOnlineAlbum = origin.onlineAlbum
+                }
+
+                is PlaybackOrigin.OnlineSearchOrigin -> {
+                    viewModel.clearAllDrillDown()
+                    if (libraryState.currentTab != LibraryTab.ONLINE_SEARCH) {
+                        viewModel.setTab(LibraryTab.ONLINE_SEARCH)
+                    }
+                }
+
+                is PlaybackOrigin.OnlineSquareOrigin -> {
+                    viewModel.clearAllDrillDown()
+                    val targetTab = when (origin.platform) {
+                        com.orbit.music.data.online.model.OnlinePlatform.NETEASE -> LibraryTab.NETEASE_SQUARE
+                        com.orbit.music.data.online.model.OnlinePlatform.QQ -> LibraryTab.QQ_SQUARE
+                        com.orbit.music.data.online.model.OnlinePlatform.KUGOU -> LibraryTab.KUGOU_SQUARE
+                        com.orbit.music.data.online.model.OnlinePlatform.KUWO -> LibraryTab.KUWO_SQUARE
+                        com.orbit.music.data.online.model.OnlinePlatform.MIGU -> LibraryTab.MIGU_SQUARE
+                    }
+                    if (libraryState.currentTab != targetTab) {
+                        viewModel.setTab(targetTab)
+                    }
+                }
+
+                else -> {
+                    // 若当前正处于网络歌单下钻并且包含该歌曲，则在当前歌单内定位
+                    if (openedOnlinePlaylist != null) {
+                        val targetIndex = onlinePlaylistSongs.indexOfFirst {
                             it.title == currentSong.title && (currentSong.artist.isBlank() || it.artist == currentSong.artist)
                         }
                         if (targetIndex >= 0) {
                             onlineSongsLocateIndex = targetIndex
                             onlineSongsLocateTrigger = System.currentTimeMillis()
-                            break
                         }
-                        kotlinx.coroutines.delay(60)
-                        retry++
                     }
                 }
             }
+            return
+        }
 
+        // ── 本地歌曲定位逻辑（绝不匹配网络歌曲，只使用严格的本地 ID / 路径匹配） ──
+        when (origin) {
             is PlaybackOrigin.Folder -> {
                 val targetPath = origin.folderPath.ifBlank { currentSong.folderPath }
                 viewModel.clearAllDrillDown()
@@ -519,18 +591,8 @@ fun MusicLibraryScreen(
                 }
             }
 
-            is PlaybackOrigin.AllSongs -> {
-                if (currentSong.id < 0 && openedOnlinePlaylist != null) {
-                    // 当前正在播放网络歌曲且当前打开了网络歌单下钻
-                    val targetIndex = onlinePlaylistSongs.indexOfFirst {
-                        it.title == currentSong.title && (currentSong.artist.isBlank() || it.artist == currentSong.artist)
-                    }
-                    if (targetIndex >= 0) {
-                        onlineSongsLocateIndex = targetIndex
-                        onlineSongsLocateTrigger = System.currentTimeMillis()
-                        return
-                    }
-                }
+            else -> {
+                // 本地全部歌曲列表
                 viewModel.clearAllDrillDown()
                 if (libraryState.currentTab != LibraryTab.SONGS) {
                     viewModel.setTab(LibraryTab.SONGS)
@@ -2987,6 +3049,26 @@ fun MusicLibraryScreen(
                                                     }
                                                 }
 
+                                                // 导出歌单按钮
+                                                if (playlistSongs.isNotEmpty()) {
+                                                    OutlinedButton(
+                                                        onClick = {
+                                                            exportPlaylistTitle = currentPlaylist.name
+                                                            exportPlaylistSongs = playlistSongs
+                                                            showExportPlaylistDialog = true
+                                                        },
+                                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = OrbitTheme.colors.primary),
+                                                        border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f)),
+                                                        shape = RoundedCornerShape(20.dp),
+                                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                        modifier = Modifier.height(32.dp)
+                                                    ) {
+                                                        Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                        Spacer(modifier = Modifier.width(2.dp))
+                                                        Text("导出", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                                    }
+                                                }
+
                                                 Spacer(modifier = Modifier.weight(1f))
 
                                                 // 搜索状态统计
@@ -3467,28 +3549,55 @@ fun MusicLibraryScreen(
                                             )
                                             if (selectedPlaylistGroup in listOf("LOCAL", "ALL") && localTotalCount == 0 && q.isBlank()) {
                                                 Spacer(modifier = Modifier.height(16.dp))
-                                                Button(
-                                                    onClick = {
-                                                        newPlaylistName = ""
-                                                        showNewPlaylistDialog = true
-                                                    },
-                                                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary.copy(alpha = 0.2f)),
-                                                    border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f)),
-                                                    shape = RoundedCornerShape(20.dp)
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
                                                 ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Add,
-                                                        contentDescription = null,
-                                                        tint = OrbitTheme.colors.primary,
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
-                                                    Spacer(modifier = Modifier.width(6.dp))
-                                                    Text(
-                                                        text = stringResource(R.string.create_new_playlist),
-                                                        color = OrbitTheme.colors.primary,
-                                                        fontSize = 12.5.sp,
-                                                        fontWeight = FontWeight.Bold
-                                                    )
+                                                    Button(
+                                                        onClick = {
+                                                            newPlaylistName = ""
+                                                            showNewPlaylistDialog = true
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary.copy(alpha = 0.2f)),
+                                                        border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f)),
+                                                        shape = RoundedCornerShape(20.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Add,
+                                                            contentDescription = null,
+                                                            tint = OrbitTheme.colors.primary,
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text(
+                                                            text = stringResource(R.string.create_new_playlist),
+                                                            color = OrbitTheme.colors.primary,
+                                                            fontSize = 12.5.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
+                                                    Button(
+                                                        onClick = {
+                                                            showImportPlaylistDialog = true
+                                                        },
+                                                        colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary.copy(alpha = 0.2f)),
+                                                        border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f)),
+                                                        shape = RoundedCornerShape(20.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.FileDownload,
+                                                            contentDescription = null,
+                                                            tint = OrbitTheme.colors.primary,
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text(
+                                                            text = "导入歌单",
+                                                            color = OrbitTheme.colors.primary,
+                                                            fontSize = 12.5.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
                                                 }
                                             } else if (selectedPlaylistGroup in listOf("NETEASE", "QQ", "KUGOU", "KUWO", "MIGU") && q.isBlank()) {
                                                 Spacer(modifier = Modifier.height(16.dp))
@@ -3675,8 +3784,29 @@ fun MusicLibraryScreen(
                                                     }
                                                     Row(
                                                         verticalAlignment = Alignment.CenterVertically,
-                                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                                                     ) {
+                                                        TextButton(
+                                                            onClick = {
+                                                                showImportPlaylistDialog = true
+                                                            },
+                                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                            modifier = Modifier.height(28.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.FileDownload,
+                                                                contentDescription = null,
+                                                                tint = OrbitTheme.colors.primary,
+                                                                modifier = Modifier.size(14.dp)
+                                                            )
+                                                            Spacer(modifier = Modifier.width(2.dp))
+                                                            Text(
+                                                                text = "导入歌单",
+                                                                fontSize = 11.5.sp,
+                                                                color = OrbitTheme.colors.primary,
+                                                                fontWeight = FontWeight.Medium
+                                                            )
+                                                        }
                                                         TextButton(
                                                             onClick = {
                                                                 newPlaylistName = ""
@@ -3876,6 +4006,14 @@ fun MusicLibraryScreen(
                                                                 onDelete = {
                                                                     deletingPlaylist = p1
                                                                 },
+                                                                onExport = {
+                                                                    coroutineScope.launch {
+                                                                        val songs = withContext(Dispatchers.IO) { viewModel.getSongsInPlaylist(p1.id) }
+                                                                        exportPlaylistTitle = p1.name
+                                                                        exportPlaylistSongs = songs
+                                                                        showExportPlaylistDialog = true
+                                                                    }
+                                                                },
                                                                 modifier = Modifier.weight(1f)
                                                             )
                                                             if (pair.size > 1) {
@@ -3897,6 +4035,14 @@ fun MusicLibraryScreen(
                                                                     },
                                                                     onDelete = {
                                                                         deletingPlaylist = p2
+                                                                    },
+                                                                    onExport = {
+                                                                        coroutineScope.launch {
+                                                                            val songs = withContext(Dispatchers.IO) { viewModel.getSongsInPlaylist(p2.id) }
+                                                                            exportPlaylistTitle = p2.name
+                                                                            exportPlaylistSongs = songs
+                                                                            showExportPlaylistDialog = true
+                                                                        }
                                                                     },
                                                                     modifier = Modifier.weight(1f)
                                                                 )
@@ -3993,6 +4139,14 @@ fun MusicLibraryScreen(
                                                             },
                                                             onDelete = {
                                                                 deletingPlaylist = playlist
+                                                            },
+                                                            onExport = {
+                                                                coroutineScope.launch {
+                                                                    val songs = withContext(Dispatchers.IO) { viewModel.getSongsInPlaylist(playlist.id) }
+                                                                    exportPlaylistTitle = playlist.name
+                                                                    exportPlaylistSongs = songs
+                                                                    showExportPlaylistDialog = true
+                                                                }
                                                             },
                                                             modifier = Modifier.fillMaxWidth()
                                                         )
@@ -4135,6 +4289,38 @@ fun MusicLibraryScreen(
 
                                                 // 歌单内容 (未折叠时渲染)
                                                 if (!isPlatformCollapsed) {
+                                                    val handleExportOnline: (OnlinePlaylist) -> Unit = { op ->
+                                                        coroutineScope.launch {
+                                                            Toast.makeText(context, "正在获取歌单曲目...", Toast.LENGTH_SHORT).show()
+                                                            val repo = com.orbit.music.data.online.repository.OnlineMusicRepository.getInstance()
+                                                            val res = repo.getPlaylistDetail(op.id, op.platform)
+                                                            res.onSuccess { (detail, songs) ->
+                                                                exportPlaylistTitle = detail.title.ifBlank { op.title }
+                                                                exportPlaylistSongs = emptyList()
+                                                                exportOnlinePlaylist = detail
+                                                                exportOnlineSongs = songs
+                                                                showExportPlaylistDialog = true
+                                                            }.onFailure {
+                                                                Toast.makeText(context, "获取歌单失败: ${it.localizedMessage}", Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        }
+                                                    }
+
+                                                    val handleImportOnlineToLocal: (OnlinePlaylist) -> Unit = { op ->
+                                                        coroutineScope.launch {
+                                                            Toast.makeText(context, "正在导入歌单...", Toast.LENGTH_SHORT).show()
+                                                            val repo = com.orbit.music.data.online.repository.OnlineMusicRepository.getInstance()
+                                                            val res = repo.getPlaylistDetail(op.id, op.platform)
+                                                            res.onSuccess { (detail, songs) ->
+                                                                val transfer = com.orbit.music.data.playlist.PlaylistTransferManager.toTransferPlaylist(detail, songs)
+                                                                com.orbit.music.data.playlist.PlaylistTransferManager.saveTransferPlaylistToLocal(context, transfer)
+                                                                com.orbit.music.utils.FastToast.show(context, "已成功导入为本地歌单「${detail.title}」")
+                                                            }.onFailure {
+                                                                Toast.makeText(context, "导入歌单失败: ${it.localizedMessage}", Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        }
+                                                    }
+
                                                     if (useTabletLayout) {
                                                         // 平板双列展示在线收藏歌单
                                                         val onlineChunks = favList.chunked(2)
@@ -4155,6 +4341,8 @@ fun MusicLibraryScreen(
                                                                         onlineFavoriteManager.removeFavorite(op1)
                                                                         Toast.makeText(context, "已取消收藏「${op1.title}」", Toast.LENGTH_SHORT).show()
                                                                     },
+                                                                    onExport = { handleExportOnline(op1) },
+                                                                    onImportToLocal = { handleImportOnlineToLocal(op1) },
                                                                     modifier = Modifier.weight(1f)
                                                                 )
                                                                 if (pair.size > 1) {
@@ -4170,6 +4358,8 @@ fun MusicLibraryScreen(
                                                                             onlineFavoriteManager.removeFavorite(op2)
                                                                             Toast.makeText(context, "已取消收藏「${op2.title}」", Toast.LENGTH_SHORT).show()
                                                                         },
+                                                                        onExport = { handleExportOnline(op2) },
+                                                                        onImportToLocal = { handleImportOnlineToLocal(op2) },
                                                                         modifier = Modifier.weight(1f)
                                                                     )
                                                                 } else {
@@ -4191,6 +4381,8 @@ fun MusicLibraryScreen(
                                                                     onlineFavoriteManager.removeFavorite(onlinePlaylist)
                                                                     Toast.makeText(context, "已取消收藏「${onlinePlaylist.title}」", Toast.LENGTH_SHORT).show()
                                                                 },
+                                                                onExport = { handleExportOnline(onlinePlaylist) },
+                                                                onImportToLocal = { handleImportOnlineToLocal(onlinePlaylist) },
                                                                 modifier = Modifier.fillMaxWidth()
                                                             )
                                                         }
@@ -4241,7 +4433,7 @@ fun MusicLibraryScreen(
                             com.orbit.music.ui.components.OnlinePlaylistSquareView(
                                 platform = com.orbit.music.data.online.model.OnlinePlatform.NETEASE,
                                 onPlaylistClick = { viewModel.selectOnlinePlaylist(it) },
-                                onPlayOnlineSong = { songs, index -> viewModel.playOnlineSongs(songs, index) }
+                                onPlayOnlineSong = { songs, index -> viewModel.playOnlineSongs(songs, index, PlaybackOrigin.OnlineSquareOrigin(com.orbit.music.data.online.model.OnlinePlatform.NETEASE)) }
                             )
                         }
                     }
@@ -4270,8 +4462,8 @@ fun MusicLibraryScreen(
                                         viewModel.playOnlineSongs(onlinePlaylistSongs.shuffled(), 0, origin)
                                     }
                                 },
-                                currentPlayingTitle = playbackState.currentSong?.title,
-                                currentPlayingArtist = playbackState.currentSong?.artist,
+                                currentPlayingTitle = if (playbackState.currentSong?.isOnlineSong == true) playbackState.currentSong?.title else null,
+                                currentPlayingArtist = if (playbackState.currentSong?.isOnlineSong == true) playbackState.currentSong?.artist else null,
                                 isPlaying = playbackState.isPlaying,
                                 locateIndex = onlineSongsLocateIndex,
                                 locateTrigger = onlineSongsLocateTrigger,
@@ -4283,7 +4475,7 @@ fun MusicLibraryScreen(
                             com.orbit.music.ui.components.OnlinePlaylistSquareView(
                                 platform = com.orbit.music.data.online.model.OnlinePlatform.QQ,
                                 onPlaylistClick = { viewModel.selectOnlinePlaylist(it) },
-                                onPlayOnlineSong = { songs, index -> viewModel.playOnlineSongs(songs, index) }
+                                onPlayOnlineSong = { songs, index -> viewModel.playOnlineSongs(songs, index, PlaybackOrigin.OnlineSquareOrigin(com.orbit.music.data.online.model.OnlinePlatform.QQ)) }
                             )
                         }
                     }
@@ -4312,8 +4504,8 @@ fun MusicLibraryScreen(
                                         viewModel.playOnlineSongs(onlinePlaylistSongs.shuffled(), 0, origin)
                                     }
                                 },
-                                currentPlayingTitle = playbackState.currentSong?.title,
-                                currentPlayingArtist = playbackState.currentSong?.artist,
+                                currentPlayingTitle = if (playbackState.currentSong?.isOnlineSong == true) playbackState.currentSong?.title else null,
+                                currentPlayingArtist = if (playbackState.currentSong?.isOnlineSong == true) playbackState.currentSong?.artist else null,
                                 isPlaying = playbackState.isPlaying,
                                 locateIndex = onlineSongsLocateIndex,
                                 locateTrigger = onlineSongsLocateTrigger,
@@ -4325,7 +4517,7 @@ fun MusicLibraryScreen(
                             com.orbit.music.ui.components.OnlinePlaylistSquareView(
                                 platform = com.orbit.music.data.online.model.OnlinePlatform.KUGOU,
                                 onPlaylistClick = { viewModel.selectOnlinePlaylist(it) },
-                                onPlayOnlineSong = { songs, index -> viewModel.playOnlineSongs(songs, index) }
+                                onPlayOnlineSong = { songs, index -> viewModel.playOnlineSongs(songs, index, PlaybackOrigin.OnlineSquareOrigin(com.orbit.music.data.online.model.OnlinePlatform.KUGOU)) }
                             )
                         }
                     }
@@ -4354,8 +4546,8 @@ fun MusicLibraryScreen(
                                         viewModel.playOnlineSongs(onlinePlaylistSongs.shuffled(), 0, origin)
                                     }
                                 },
-                                currentPlayingTitle = playbackState.currentSong?.title,
-                                currentPlayingArtist = playbackState.currentSong?.artist,
+                                currentPlayingTitle = if (playbackState.currentSong?.isOnlineSong == true) playbackState.currentSong?.title else null,
+                                currentPlayingArtist = if (playbackState.currentSong?.isOnlineSong == true) playbackState.currentSong?.artist else null,
                                 isPlaying = playbackState.isPlaying,
                                 locateIndex = onlineSongsLocateIndex,
                                 locateTrigger = onlineSongsLocateTrigger,
@@ -4367,7 +4559,7 @@ fun MusicLibraryScreen(
                             com.orbit.music.ui.components.OnlinePlaylistSquareView(
                                 platform = com.orbit.music.data.online.model.OnlinePlatform.KUWO,
                                 onPlaylistClick = { viewModel.selectOnlinePlaylist(it) },
-                                onPlayOnlineSong = { songs, index -> viewModel.playOnlineSongs(songs, index) }
+                                onPlayOnlineSong = { songs, index -> viewModel.playOnlineSongs(songs, index, PlaybackOrigin.OnlineSquareOrigin(com.orbit.music.data.online.model.OnlinePlatform.KUWO)) }
                             )
                         }
                     }
@@ -4396,8 +4588,8 @@ fun MusicLibraryScreen(
                                         viewModel.playOnlineSongs(onlinePlaylistSongs.shuffled(), 0, origin)
                                     }
                                 },
-                                currentPlayingTitle = playbackState.currentSong?.title,
-                                currentPlayingArtist = playbackState.currentSong?.artist,
+                                currentPlayingTitle = if (playbackState.currentSong?.isOnlineSong == true) playbackState.currentSong?.title else null,
+                                currentPlayingArtist = if (playbackState.currentSong?.isOnlineSong == true) playbackState.currentSong?.artist else null,
                                 isPlaying = playbackState.isPlaying,
                                 locateIndex = onlineSongsLocateIndex,
                                 locateTrigger = onlineSongsLocateTrigger,
@@ -4409,7 +4601,7 @@ fun MusicLibraryScreen(
                             com.orbit.music.ui.components.OnlinePlaylistSquareView(
                                 platform = com.orbit.music.data.online.model.OnlinePlatform.MIGU,
                                 onPlaylistClick = { viewModel.selectOnlinePlaylist(it) },
-                                onPlayOnlineSong = { songs, index -> viewModel.playOnlineSongs(songs, index) }
+                                onPlayOnlineSong = { songs, index -> viewModel.playOnlineSongs(songs, index, PlaybackOrigin.OnlineSquareOrigin(com.orbit.music.data.online.model.OnlinePlatform.MIGU)) }
                             )
                         }
                     }
@@ -4417,31 +4609,33 @@ fun MusicLibraryScreen(
                     LibraryTab.ONLINE_ARTISTS -> {
                         // 11. 在线歌手库广场与歌手/专辑下钻详情
                         if (openedOnlineAlbum != null) {
+                            val curOnlineAlbum = openedOnlineAlbum!!
                             com.orbit.music.ui.components.OnlineAlbumDetailView(
-                                album = openedOnlineAlbum!!,
+                                album = curOnlineAlbum,
                                 onBack = { openedOnlineAlbum = null },
                                 onSongClick = { index, song, allSongs ->
-                                    viewModel.playOnlineSongs(allSongs, index)
+                                    viewModel.playOnlineSongs(allSongs, index, PlaybackOrigin.OnlineAlbumOrigin(curOnlineAlbum))
                                 },
-                                currentPlayingTitle = playbackState.currentSong?.title,
-                                currentPlayingArtist = playbackState.currentSong?.artist,
+                                currentPlayingTitle = if (playbackState.currentSong?.isOnlineSong == true) playbackState.currentSong?.title else null,
+                                currentPlayingArtist = if (playbackState.currentSong?.isOnlineSong == true) playbackState.currentSong?.artist else null,
                                 isPlaying = playbackState.isPlaying,
                                 isSearching = isDetailSearching,
                                 searchQuery = detailSearchQuery,
                                 onSearchQueryChange = { detailSearchQuery = it }
                             )
                         } else if (openedOnlineArtist != null) {
+                            val curOnlineArtist = openedOnlineArtist!!
                             com.orbit.music.ui.components.OnlineArtistDetailView(
-                                artist = openedOnlineArtist!!,
+                                artist = curOnlineArtist,
                                 onBack = { openedOnlineArtist = null },
                                 onSongClick = { index, song, allSongs ->
-                                    viewModel.playOnlineSongs(allSongs, index)
+                                    viewModel.playOnlineSongs(allSongs, index, PlaybackOrigin.OnlineArtistOrigin(curOnlineArtist))
                                 },
                                 onAlbumClick = { album ->
                                     openedOnlineAlbum = album
                                 },
-                                currentPlayingTitle = playbackState.currentSong?.title,
-                                currentPlayingArtist = playbackState.currentSong?.artist,
+                                currentPlayingTitle = if (playbackState.currentSong?.isOnlineSong == true) playbackState.currentSong?.title else null,
+                                currentPlayingArtist = if (playbackState.currentSong?.isOnlineSong == true) playbackState.currentSong?.artist else null,
                                 isPlaying = playbackState.isPlaying,
                                 isSearching = isDetailSearching,
                                 searchQuery = detailSearchQuery,
@@ -4458,7 +4652,7 @@ fun MusicLibraryScreen(
                         // 12. 全网多平台歌曲检索主视图
                         com.orbit.music.ui.components.OnlineSongSearchView(
                             onPlaySong = { songs, index ->
-                                viewModel.playOnlineSongs(songs, index)
+                                viewModel.playOnlineSongs(songs, index, PlaybackOrigin.OnlineSearchOrigin())
                             },
                             onViewAlbum = { songItem ->
                                 viewModel.openOnlineAlbumBySongItem(songItem)
@@ -4760,6 +4954,31 @@ fun MusicLibraryScreen(
                 }
             },
             containerColor = OrbitTheme.colors.surfaceDialog
+        )
+    }
+
+    // 1.1 导出歌单弹窗
+    if (showExportPlaylistDialog) {
+        ExportPlaylistDialog(
+            playlistTitle = exportPlaylistTitle,
+            songs = exportPlaylistSongs,
+            onlinePlaylist = exportOnlinePlaylist,
+            onlineSongs = exportOnlineSongs,
+            onDismiss = {
+                showExportPlaylistDialog = false
+                exportOnlinePlaylist = null
+                exportOnlineSongs = emptyList()
+            }
+        )
+    }
+
+    // 1.2 导入歌单弹窗
+    if (showImportPlaylistDialog) {
+        ImportPlaylistDialog(
+            onDismiss = { showImportPlaylistDialog = false },
+            onImportSuccess = { newPlaylistId, name, count ->
+                FastToast.show(context, "歌单「$name」导入成功（共 $count 首）")
+            }
         )
     }
 
@@ -5812,14 +6031,15 @@ fun MusicLibraryScreen(
     // 全局在线专辑详情弹窗
     val activeOnlineAlbumForDialog by viewModel.activeOnlineAlbumForDialog.collectAsState()
     if (activeOnlineAlbumForDialog != null) {
+        val curDialogAlbum = activeOnlineAlbumForDialog!!
         com.orbit.music.ui.components.OnlineAlbumDetailDialog(
-            album = activeOnlineAlbumForDialog!!,
+            album = curDialogAlbum,
             onDismiss = { viewModel.dismissOnlineAlbumDialog() },
             onSongClick = { index, song, allSongs ->
-                viewModel.playOnlineSongs(allSongs, index)
+                viewModel.playOnlineSongs(allSongs, index, PlaybackOrigin.OnlineAlbumOrigin(curDialogAlbum))
             },
-            currentPlayingTitle = playbackState.currentSong?.title,
-            currentPlayingArtist = playbackState.currentSong?.artist,
+            currentPlayingTitle = if (playbackState.currentSong?.isOnlineSong == true) playbackState.currentSong?.title else null,
+            currentPlayingArtist = if (playbackState.currentSong?.isOnlineSong == true) playbackState.currentSong?.artist else null,
             isPlaying = playbackState.isPlaying
         )
     }
@@ -6724,6 +6944,7 @@ private fun LocalPlaylistItemCard(
     onPlay: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    onExport: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -6779,7 +7000,7 @@ private fun LocalPlaylistItemCard(
             )
         }
 
-        // 更多操作菜单 (重命名 / 删除)
+        // 更多操作菜单 (导出 / 重命名 / 删除)
         var showMenu by remember { mutableStateOf(false) }
         Box {
             IconButton(
@@ -6798,6 +7019,16 @@ private fun LocalPlaylistItemCard(
                 onDismissRequest = { showMenu = false },
                 modifier = Modifier.background(OrbitTheme.colors.surfaceCard)
             ) {
+                DropdownMenuItem(
+                    text = { Text("导出歌单", color = OrbitTheme.colors.textPrimary) },
+                    onClick = {
+                        showMenu = false
+                        onExport()
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.FileUpload, contentDescription = null, tint = OrbitTheme.colors.primary)
+                    }
+                )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.rename_playlist), color = OrbitTheme.colors.textPrimary) },
                     onClick = {
@@ -6832,6 +7063,8 @@ private fun OnlinePlaylistItemCard(
     onPlay: () -> Unit,
     onShowDetail: () -> Unit,
     onRemoveFavorite: () -> Unit,
+    onExport: () -> Unit,
+    onImportToLocal: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -6944,7 +7177,7 @@ private fun OnlinePlaylistItemCard(
             }
         }
 
-        // 更多操作菜单 (取消收藏 / 查看详情)
+        // 更多操作菜单 (查看详情 / 导出歌单 / 导入本地 / 取消收藏)
         var showOnlineMenu by remember { mutableStateOf(false) }
         Box {
             IconButton(
@@ -6971,6 +7204,26 @@ private fun OnlinePlaylistItemCard(
                     },
                     leadingIcon = {
                         Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, tint = OrbitTheme.colors.textSecondary)
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("导出歌单", color = OrbitTheme.colors.textPrimary) },
+                    onClick = {
+                        showOnlineMenu = false
+                        onExport()
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.FileUpload, contentDescription = null, tint = OrbitTheme.colors.primary)
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("导入为本地歌单", color = OrbitTheme.colors.textPrimary) },
+                    onClick = {
+                        showOnlineMenu = false
+                        onImportToLocal()
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.PlaylistAdd, contentDescription = null, tint = OrbitTheme.colors.primary)
                     }
                 )
                 DropdownMenuItem(

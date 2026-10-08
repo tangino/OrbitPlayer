@@ -91,7 +91,15 @@ class OnlinePlaylistViewModel(
      * 切换顶部 Tab
      */
     fun selectTab(tabIndex: Int) {
-        _uiState.update { it.copy(selectedTab = tabIndex) }
+        _uiState.update {
+            it.copy(
+                selectedTab = tabIndex,
+                isSearchMode = false,
+                isSearching = false,
+                searchKeyword = "",
+                searchResults = emptyList()
+            )
+        }
         val leaderboardTabIndex = if (_uiState.value.currentPlatform == OnlinePlatform.QQ) 3 else 2
         if (tabIndex == leaderboardTabIndex && _uiState.value.leaderboards.isEmpty()) {
             loadLeaderboards()

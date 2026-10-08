@@ -317,7 +317,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 selectedAlbum = null,
                 selectedArtist = null,
                 selectedPlaylist = null,
-                selectedOnlinePlaylist = null
+                selectedOnlinePlaylist = null,
+                isSearching = false,
+                searchQuery = ""
             )
         }
         saveLibraryUiState()
@@ -466,9 +468,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 selectedPlaylist = null,
                 selectedOnlinePlaylist = null,
                 selectedOnlineAlbum = null,
-                isNowPlayingExpanded = false
+                isNowPlayingExpanded = false,
+                isSearching = false,
+                searchQuery = ""
             )
         }
+        saveLibraryUiState()
     }
 
     fun selectArtist(artist: ArtistItem?) {
@@ -590,7 +595,7 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         startIndex: Int = 0,
         origin: PlaybackOrigin? = null
     ) {
-        val actualOrigin = origin ?: PlaybackOrigin.AllSongs
+        val actualOrigin = origin ?: PlaybackOrigin.OnlineGeneral()
         _playbackOrigin.value = actualOrigin
         val curOnline = if (startIndex in songs.indices) songs[startIndex] else songs.firstOrNull()
         val curSong = curOnline?.let {
