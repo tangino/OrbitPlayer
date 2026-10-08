@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.orbit.music.data.db.AppDatabase
 import com.orbit.music.data.model.Song
 import com.orbit.music.data.provider.AudioCoverProvider
@@ -18,6 +19,7 @@ import java.io.File
 class MediaStoreScanner(private val context: Context) {
 
     private val db = AppDatabase.getInstance(context)
+    private val usbScanner = UsbStorageScanner(context)
 
     suspend fun scanLocalMedia(
         includedFolders: Set<String> = emptySet(),
@@ -162,6 +164,21 @@ class MediaStoreScanner(private val context: Context) {
             Log.e(TAG, "Direct directory scan error", e)
         }
 
+        // 3. USB Host 硬件层扫描 (方案二: libaums 直接访问 U 盘大容量存储设备)
+        try {
+            val usbSongs = usbScanner.scanUsbDevices()
+            for (usbSong in usbSongs) {
+                if (!songMap.containsKey(usbSong.path)) {
+                    songMap[usbSong.path] = usbSong
+                }
+            }
+            if (usbSongs.isNotEmpty()) {
+                Log.i(TAG, "Indexed ${usbSongs.size} song(s) from USB Host.")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "USB Host media scan error", e)
+        }
+
         val resultList = songMap.values.toList().sortedBy { it.title.lowercase() }
 
         // 持久化存入原生 SQLite
@@ -218,6 +235,29 @@ class MediaStoreScanner(private val context: Context) {
                 rootDirs.add(File(externalStorage, "qqmusic/song"))
                 rootDirs.add(File(externalStorage, "KuGou/Song"))
                 rootDirs.add(externalStorage) // 全局扫描
+            }
+
+            // 自动侦测外接存储设备（包括 U 盘挂载点和外接专属私有目录）
+            val extDirs = ContextCompat.getExternalFilesDirs(context, null)
+            for (extFile in extDirs) {
+                if (extFile != null && extFile.exists()) {
+                    rootDirs.add(extFile)
+                    val parentRoot = extFile.parentFile?.parentFile?.parentFile?.parentFile
+                    if (parentRoot != null && parentRoot.exists()) {
+                        val usbMusic = File(parentRoot, "Music")
+                        if (usbMusic.exists()) rootDirs.add(usbMusic)
+                    }
+                }
+            }
+
+            // 扫描 /storage/ 下的其它挂载卷 (如 /storage/ABCD-1234)
+            val storageRoot = File("/storage")
+            if (storageRoot.exists() && storageRoot.isDirectory) {
+                storageRoot.listFiles()?.forEach { v ->
+                    if (v.isDirectory && !v.name.equals("emulated", ignoreCase = true) && !v.name.equals("self", ignoreCase = true)) {
+                        rootDirs.add(v)
+                    }
+                }
             }
         }
 

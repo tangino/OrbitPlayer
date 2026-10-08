@@ -16,7 +16,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -413,7 +413,10 @@ private fun ActiveSourceStatusCard(
             Spacer(modifier = Modifier.height(8.dp))
 
             if (activeScript != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Surface(
                         shape = RoundedCornerShape(4.dp),
                         color = Color(0xFFFFD700).copy(alpha = 0.16f),
@@ -429,11 +432,29 @@ private fun ActiveSourceStatusCard(
                     }
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "${activeScript.name} (v${activeScript.version})",
+                        text = activeScript.name,
                         fontSize = 14.5.sp,
                         fontWeight = FontWeight.Bold,
-                        color = OrbitTheme.colors.primary
+                        color = OrbitTheme.colors.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = OrbitTheme.colors.surface,
+                        border = BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder)
+                    ) {
+                        Text(
+                            text = "v${activeScript.version}",
+                            fontSize = 10.sp,
+                            color = OrbitTheme.colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
                 }
 
                 if (enabledCount > 1) {
@@ -551,7 +572,7 @@ private fun QualityPreferenceCard(
 }
 
 /**
- * 单个音源卡片项 (支持 Switch 开关、设为主音源、更新与删除)
+ * 单个音源卡片项 (分层优雅布局，支持 Switch 开关、设为主音源、更新与删除确认)
  */
 @Composable
 private fun SourceScriptCard(
@@ -562,151 +583,288 @@ private fun SourceScriptCard(
     onDelete: () -> Unit,
     onUpdate: () -> Unit
 ) {
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
     Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = if (script.isEnabled) OrbitTheme.colors.surfaceCard else OrbitTheme.colors.surfaceCard.copy(alpha = 0.6f),
+        shape = RoundedCornerShape(16.dp),
+        color = if (script.isEnabled) OrbitTheme.colors.surfaceCard else OrbitTheme.colors.surfaceCard.copy(alpha = 0.5f),
         border = BorderStroke(
-            1.dp,
-            if (script.isPrimary) Color(0xFFFFD700).copy(alpha = 0.6f) else if (script.isEnabled) OrbitTheme.colors.primary.copy(alpha = 0.5f) else OrbitTheme.colors.surfaceBorder
+            1.2.dp,
+            if (script.isPrimary) Color(0xFFFFD700).copy(alpha = 0.7f)
+            else if (script.isEnabled) OrbitTheme.colors.primary.copy(alpha = 0.45f)
+            else OrbitTheme.colors.surfaceBorder
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            // 1. 顶部主行：左侧音源标识与名称、版本；右侧独立开关
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // 开启/停用 Switch 开关
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // 主备徽章
+                    if (script.isPrimary) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFFFFD700).copy(alpha = 0.18f),
+                            border = BorderStroke(0.8.dp, Color(0xFFFFD700).copy(alpha = 0.8f))
+                        ) {
+                            Text(
+                                text = "主音源",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFFD700),
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                    } else if (script.isEnabled) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color(0xFF10B981).copy(alpha = 0.15f),
+                            border = BorderStroke(0.8.dp, Color(0xFF10B981).copy(alpha = 0.6f))
+                        ) {
+                            Text(
+                                text = "备用协同",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF10B981),
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+
+                    // 音源名称
+                    Text(
+                        text = script.name,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (script.isEnabled) OrbitTheme.colors.textPrimary else OrbitTheme.colors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    // 版本号胶囊 (单行不换行，超长优雅截断)
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = OrbitTheme.colors.surface,
+                        border = BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder)
+                    ) {
+                        Text(
+                            text = "v${script.version}",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = OrbitTheme.colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            softWrap = false,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                // 右侧独立 Switch 开关
                 Switch(
                     checked = script.isEnabled,
                     onCheckedChange = onToggleEnabled,
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,
-                        checkedTrackColor = OrbitTheme.colors.primary
+                        checkedTrackColor = OrbitTheme.colors.primary,
+                        uncheckedThumbColor = OrbitTheme.colors.textSecondary,
+                        uncheckedTrackColor = OrbitTheme.colors.surface
                     ),
                     modifier = Modifier.scale(0.85f)
                 )
+            }
 
-                Spacer(modifier = Modifier.width(6.dp))
+            // 2. 中部详情与描述
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "作者: ${script.author.ifBlank { "未知" }}",
+                    fontSize = 12.sp,
+                    color = OrbitTheme.colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
 
-                Column(modifier = Modifier.weight(1f)) {
+            if (script.description.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = script.description,
+                    fontSize = 12.sp,
+                    color = OrbitTheme.colors.textSecondary.copy(alpha = 0.85f),
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 16.sp
+                )
+            }
+
+            // 3. 底部操作栏
+            Spacer(modifier = Modifier.height(10.dp))
+            HorizontalDivider(
+                color = OrbitTheme.colors.surfaceBorder.copy(alpha = 0.5f),
+                thickness = 0.6.dp
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // 左侧状态说明
+                if (script.isPrimary) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (script.isPrimary) {
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = Color(0xFFFFD700).copy(alpha = 0.20f),
-                                border = BorderStroke(0.6.dp, Color(0xFFFFD700).copy(alpha = 0.7f))
-                            ) {
-                                Text(
-                                    text = "主音源",
-                                    fontSize = 9.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFFFD700),
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(5.dp))
-                        } else if (script.isEnabled) {
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = OrbitTheme.colors.primary.copy(alpha = 0.15f),
-                                border = BorderStroke(0.6.dp, OrbitTheme.colors.primary.copy(alpha = 0.4f))
-                            ) {
-                                Text(
-                                    text = "备用协同源",
-                                    fontSize = 9.5.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = OrbitTheme.colors.primary,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(5.dp))
-                        }
-
-                        Text(
-                            text = script.name,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (script.isEnabled) OrbitTheme.colors.textPrimary else OrbitTheme.colors.textSecondary
+                        Icon(
+                            imageVector = Icons.Default.Stars,
+                            contentDescription = null,
+                            tint = Color(0xFFFFD700),
+                            modifier = Modifier.size(15.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .background(OrbitTheme.colors.surface, RoundedCornerShape(4.dp))
-                                .padding(horizontal = 4.dp, vertical = 1.dp)
-                        ) {
-                            Text(
-                                text = "v${script.version}",
-                                fontSize = 10.sp,
-                                color = OrbitTheme.colors.textSecondary
-                            )
-                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "首选解析主源",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFFFD700)
+                        )
                     }
-
-                    Spacer(modifier = Modifier.height(2.dp))
+                } else if (script.isEnabled) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Sync,
+                            contentDescription = null,
+                            tint = Color(0xFF10B981),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "协同备用源",
+                            fontSize = 11.5.sp,
+                            color = Color(0xFF10B981)
+                        )
+                    }
+                } else {
                     Text(
-                        text = "作者: ${script.author}",
+                        text = "未启用",
                         fontSize = 11.5.sp,
-                        color = OrbitTheme.colors.textSecondary
+                        color = OrbitTheme.colors.textSecondary.copy(alpha = 0.6f)
                     )
                 }
 
-                // 操作按钮组
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // 右侧操作按钮组
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // 设为主源按钮
                     if (script.isEnabled && !script.isPrimary) {
-                        TextButton(
+                        FilledTonalButton(
                             onClick = onSetPrimary,
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = OrbitTheme.colors.primary.copy(alpha = 0.15f),
+                                contentColor = OrbitTheme.colors.primary
+                            ),
+                            modifier = Modifier.height(30.dp)
                         ) {
-                            Text("设为主源", fontSize = 11.5.sp, color = OrbitTheme.colors.primary)
+                            Text("设为主源", fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
 
+                    // 在线更新按钮
                     if (!script.sourceUrl.isNullOrBlank()) {
                         IconButton(
                             onClick = onUpdate,
                             enabled = !isUpdating,
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(30.dp)
                         ) {
                             if (isUpdating) {
-                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = OrbitTheme.colors.primary)
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(15.dp),
+                                    strokeWidth = 2.dp,
+                                    color = OrbitTheme.colors.primary
+                                )
                             } else {
                                 Icon(
                                     imageVector = Icons.Default.Refresh,
-                                    contentDescription = "在线检查更新",
+                                    contentDescription = "检查更新",
                                     tint = OrbitTheme.colors.primary,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(17.dp)
                                 )
                             }
                         }
                     }
 
+                    // 删除按钮 (带二次确认)
                     IconButton(
-                        onClick = onDelete,
-                        modifier = Modifier.size(32.dp)
+                        onClick = { showDeleteConfirm = true },
+                        modifier = Modifier.size(30.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.DeleteOutline,
                             contentDescription = "删除音源",
-                            tint = Color(0xFFF43F5E).copy(alpha = 0.8f),
-                            modifier = Modifier.size(18.dp)
+                            tint = Color(0xFFF43F5E),
+                            modifier = Modifier.size(17.dp)
                         )
                     }
                 }
             }
-
-            if (script.description.isNotBlank()) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = script.description,
-                    fontSize = 11.5.sp,
-                    color = OrbitTheme.colors.textSecondary.copy(alpha = 0.8f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    lineHeight = 15.sp
-                )
-            }
         }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = {
+                Text(
+                    text = "删除音源脚本",
+                    fontWeight = FontWeight.Bold,
+                    color = OrbitTheme.colors.textPrimary
+                )
+            },
+            text = {
+                Text(
+                    text = "确定要删除音源「${script.name}」吗？删除后将无法通过此脚本在线解析音乐。",
+                    fontSize = 13.5.sp,
+                    color = OrbitTheme.colors.textSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDelete()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF43F5E))
+                ) {
+                    Text("确认删除", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("取消", color = OrbitTheme.colors.textSecondary)
+                }
+            },
+            containerColor = OrbitTheme.colors.surfaceDialog
+        )
     }
 }
 
@@ -1151,7 +1309,7 @@ private fun CloudSourceSyncDialog(
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text("正在验证...", fontSize = 12.sp)
                                 } else {
-                                    Icon(imageVector = Icons.Default.Login, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Icon(imageVector = Icons.AutoMirrored.Filled.Login, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text("登录 / 自动注册", fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
                                 }

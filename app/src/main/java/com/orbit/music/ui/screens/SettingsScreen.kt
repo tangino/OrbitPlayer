@@ -4,6 +4,13 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,11 +30,13 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -83,6 +92,17 @@ fun SettingsScreen(
     var editingGradientColorIndex by remember { mutableIntStateOf(0) }
     var isAddingNewGradientColor by remember { mutableStateOf(false) }
 
+    // 折叠展开状态管理 (支持记住状态与一键全部展开/折叠)
+    var isThemeExpanded by rememberSaveable { mutableStateOf(true) }
+    var isOnlineExpanded by rememberSaveable { mutableStateOf(true) }
+    var isBgExpanded by rememberSaveable { mutableStateOf(true) }
+    var isTrailExpanded by rememberSaveable { mutableStateOf(false) }
+    var isVisualizerExpanded by rememberSaveable { mutableStateOf(true) }
+    var isLangStartupExpanded by rememberSaveable { mutableStateOf(false) }
+    var isAudioLibExpanded by rememberSaveable { mutableStateOf(true) }
+    var isBackupExpanded by rememberSaveable { mutableStateOf(false) }
+    var isDeviceInfoExpanded by rememberSaveable { mutableStateOf(false) }
+
     val includedFolders by musicViewModel?.includedFolders?.collectAsState() ?: remember { mutableStateOf(emptySet()) }
     val excludedFolders by musicViewModel?.excludedFolders?.collectAsState() ?: remember { mutableStateOf(emptySet()) }
     val isScanning by musicViewModel?.isScanning?.collectAsState() ?: remember { mutableStateOf(false) }
@@ -108,6 +128,37 @@ fun SettingsScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.cancel), tint = OrbitTheme.colors.textPrimary)
                     }
                 },
+                actions = {
+                    val anyExpanded = isThemeExpanded || isOnlineExpanded || isBgExpanded || isTrailExpanded || isVisualizerExpanded || isLangStartupExpanded || isAudioLibExpanded || isBackupExpanded || isDeviceInfoExpanded
+                    TextButton(
+                        onClick = {
+                            val target = !anyExpanded
+                            isThemeExpanded = target
+                            isOnlineExpanded = target
+                            isBgExpanded = target
+                            isTrailExpanded = target
+                            isVisualizerExpanded = target
+                            isLangStartupExpanded = target
+                            isAudioLibExpanded = target
+                            isBackupExpanded = target
+                            isDeviceInfoExpanded = target
+                        }
+                    ) {
+                        Icon(
+                            imageVector = if (anyExpanded) Icons.Default.UnfoldLess else Icons.Default.UnfoldMore,
+                            contentDescription = null,
+                            tint = OrbitTheme.colors.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (anyExpanded) "全部折叠" else "全部展开",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = OrbitTheme.colors.primary
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = OrbitTheme.colors.background)
             )
         },
@@ -127,18 +178,23 @@ fun SettingsScreen(
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-            // 0.1 Theme 外观主题设置
+            // 1. Theme 外观与显示布局设置
             item {
-                SettingsSectionHeader(stringResource(R.string.theme_title))
-                SettingsCard {
-                    val themeOptions = listOf(
-                        "system" to stringResource(R.string.theme_system),
-                        "dark" to stringResource(R.string.theme_dark),
-                        "light" to stringResource(R.string.theme_light)
-                    )
-                    val currentThemeLabel = themeOptions.find { it.first == uiState.themeMode }?.second
-                        ?: stringResource(R.string.theme_system)
+                val themeOptions = listOf(
+                    "system" to stringResource(R.string.theme_system),
+                    "dark" to stringResource(R.string.theme_dark),
+                    "light" to stringResource(R.string.theme_light)
+                )
+                val currentThemeLabel = themeOptions.find { it.first == uiState.themeMode }?.second
+                    ?: stringResource(R.string.theme_system)
 
+                CollapsibleSettingsCard(
+                    icon = Icons.Default.Brightness4,
+                    title = stringResource(R.string.theme_title),
+                    subtitle = "当前主题: $currentThemeLabel · 缩放 ${uiState.uiScaleMode}",
+                    isExpanded = isThemeExpanded,
+                    onToggleExpand = { isThemeExpanded = !isThemeExpanded }
+                ) {
                     SettingsDropdownItem(
                         icon = Icons.Default.Brightness4,
                         title = stringResource(R.string.theme_title),
@@ -198,22 +254,28 @@ fun SettingsScreen(
                 }
             }
 
-            // 在线音源管理
+            // 2. 在线音源管理
             item {
-                SettingsSectionHeader("在线音乐与音源")
-                SettingsCard {
-                    val sourceManager = remember { com.orbit.music.data.online.engine.SourceScriptManager.getInstance(context) }
-                    val activeScript by sourceManager.activeScript.collectAsState()
-                    val scripts by sourceManager.scripts.collectAsState()
-                    val preferredQuality by sourceManager.preferredQuality.collectAsState()
+                val sourceManager = remember { com.orbit.music.data.online.engine.SourceScriptManager.getInstance(context) }
+                val activeScript by sourceManager.activeScript.collectAsState()
+                val scripts by sourceManager.scripts.collectAsState()
+                val preferredQuality by sourceManager.preferredQuality.collectAsState()
 
-                    val qualityLabel = when (preferredQuality) {
-                        "flac24bit" -> "母带 Hi-Res"
-                        "flac" -> "无损 FLAC"
-                        "320k" -> "高品 320K"
-                        else -> "标准 128K"
-                    }
+                val qualityLabel = when (preferredQuality) {
+                    "flac24bit" -> "母带 Hi-Res"
+                    "flac" -> "无损 FLAC"
+                    "320k" -> "高品 320K"
+                    else -> "标准 128K"
+                }
 
+                CollapsibleSettingsCard(
+                    icon = Icons.Default.CloudDownload,
+                    title = "在线音乐与音源管理",
+                    subtitle = if (activeScript != null) "活动音源: ${activeScript?.name} · $qualityLabel" else "官方直链模式 (共 ${scripts.size} 个音源) · $qualityLabel",
+                    badgeText = if (activeScript != null) "已启用音源" else null,
+                    isExpanded = isOnlineExpanded,
+                    onToggleExpand = { isOnlineExpanded = !isOnlineExpanded }
+                ) {
                     SettingsActionItem(
                         icon = Icons.Default.CloudDownload,
                         title = "在线音源与脚本管理",
@@ -223,23 +285,36 @@ fun SettingsScreen(
                 }
             }
 
-            // 0.1.0 自定义纯色背景
+            // 3. 个性化背景与视觉效果 (纯色、多色流光渐变、壁纸毛玻璃)
             item {
-                SettingsSectionHeader(stringResource(R.string.custom_solid_background_title))
-                SettingsCard {
+                val bgSummary = when {
+                    uiState.customBackgroundPath != null -> "自定义壁纸 (${if (uiState.backgroundBlurStyle == "frosted_glass") "毛玻璃" else "高斯模糊"})"
+                    uiState.isGradientEnabled -> "多色流光渐变 (${uiState.customGradientColors.size}色)"
+                    uiState.customSolidBackgroundColor != null -> "自定义纯色背景"
+                    else -> "默认背景底色"
+                }
+
+                CollapsibleSettingsCard(
+                    icon = Icons.Default.Wallpaper,
+                    title = "个性化背景与视觉效果",
+                    subtitle = bgSummary,
+                    badgeText = if (uiState.isGradientEnabled || uiState.customBackgroundPath != null) "已自定义" else null,
+                    isExpanded = isBgExpanded,
+                    onToggleExpand = { isBgExpanded = !isBgExpanded }
+                ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        // 顶部标题与说明
+                        // 子分类 A: 自定义纯色背景
                         Row(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(40.dp)
+                                    .size(36.dp)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(OrbitTheme.colors.primary.copy(alpha = 0.12f)),
                                 contentAlignment = Alignment.Center
@@ -248,15 +323,15 @@ fun SettingsScreen(
                                     imageVector = Icons.Default.Palette,
                                     contentDescription = null,
                                     tint = OrbitTheme.colors.primary,
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.width(14.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = stringResource(R.string.custom_solid_background_title),
                                     style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Medium,
+                                    fontWeight = FontWeight.SemiBold,
                                     color = OrbitTheme.colors.textPrimary
                                 )
                                 Text(
@@ -267,28 +342,24 @@ fun SettingsScreen(
                             }
                         }
 
-                        // 精选经典预设色块排布 (多层次色谱：纯黑、高级深色、莫兰迪中明度、轻盈浅色)
+                        // 精选经典预设色块排布
                         val isEnLocale = remember {
                             context.resources.configuration.locales[0].language.lowercase().startsWith("en")
                         }
                         val solidColorPresets = remember(isEnLocale) {
                             listOf(
-                                // 极致暗黑
                                 0xFF000000L to if (isEnLocale) "AMOLED Black" else "AMOLED 纯黑",
-                                // 沉浸深色 (具备明确雅致色相)
                                 0xFF131D2EL to if (isEnLocale) "Deep Navy" else "深邃深蓝",
                                 0xFF1A1B26L to if (isEnLocale) "Tokyo Night" else "东京暗夜",
                                 0xFF1E1E2EL to if (isEnLocale) "Dark Mocha" else "摩卡深紫",
                                 0xFF15221BL to if (isEnLocale) "Dark Forest" else "暗夜苍绿",
                                 0xFF261924L to if (isEnLocale) "Plum Wine" else "暗梅深绛",
-                                // 莫兰迪与中明度雅致调 (视觉柔和不沉闷)
                                 0xFF2E3440L to if (isEnLocale) "Nord Frost" else "极地灰蓝",
                                 0xFF384959L to if (isEnLocale) "Slate Blue" else "雾霾石蓝",
                                 0xFF3B4D3EL to if (isEnLocale) "Sage Green" else "松石灰绿",
                                 0xFF4E3D35L to if (isEnLocale) "Dark Walnut" else "复古胡桃",
                                 0xFF4A3C52L to if (isEnLocale) "Smoky Lilac" else "烟熏丁香",
                                 0xFF5C3B3CL to if (isEnLocale) "Muted Rouge" else "干枯玫瑰",
-                                // 轻盈柔和浅色系
                                 0xFFF5F5F7L to if (isEnLocale) "Pure Ivory" else "极简象牙",
                                 0xFFE8ECEFL to if (isEnLocale) "Glacier Mist" else "冰川晨雾",
                                 0xFFF4EDE4L to if (isEnLocale) "Warm Cream" else "暖阳米杏",
@@ -296,22 +367,20 @@ fun SettingsScreen(
                             )
                         }
 
-                        // 预设色块横向滑动列表 (带清晰标签与高亮选中框)
-                        // 预设与自选色块横向滑动列表 (调色盘添加 + 用户自选 + 经典色块)
+                        // 预设与自选色块横向滑动列表
                         LazyRow(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            contentPadding = PaddingValues(vertical = 4.dp)
+                            contentPadding = PaddingValues(vertical = 2.dp)
                         ) {
                             // 1. 调色盘快速添加入口卡片
                             item {
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier
-                                        .clickable { showSolidColorPickerDialog = true }
+                                    modifier = Modifier.clickable { showSolidColorPickerDialog = true }
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .size(46.dp)
+                                            .size(44.dp)
                                             .clip(RoundedCornerShape(12.dp))
                                             .background(
                                                 Brush.linearGradient(
@@ -339,7 +408,7 @@ fun SettingsScreen(
                                             imageVector = Icons.Default.Palette,
                                             contentDescription = stringResource(R.string.custom_solid_color_picker),
                                             tint = OrbitTheme.colors.primary,
-                                            modifier = Modifier.size(22.dp)
+                                            modifier = Modifier.size(20.dp)
                                         )
                                     }
                                     Spacer(modifier = Modifier.height(4.dp))
@@ -352,7 +421,7 @@ fun SettingsScreen(
                                 }
                             }
 
-                            // 2. 用户通过调色盘添加的自选颜色 (支持点击应用、长按删除)
+                            // 2. 用户自选颜色
                             items(uiState.customUserSolidColors) { userColor ->
                                 val isSelected = uiState.customSolidBackgroundColor == userColor
                                 val isDarkPreset = remember(userColor) {
@@ -367,21 +436,20 @@ fun SettingsScreen(
 
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier
-                                        .combinedClickable(
-                                            onClick = {
-                                                viewModel.setCustomSolidBackgroundColor(userColor)
-                                                customSolidHexInput = hexLabel
-                                                Toast.makeText(context, context.getString(R.string.custom_solid_bg_success), Toast.LENGTH_SHORT).show()
-                                            },
-                                            onLongClick = {
-                                                solidColorToDelete = userColor
-                                            }
-                                        )
+                                    modifier = Modifier.combinedClickable(
+                                        onClick = {
+                                            viewModel.setCustomSolidBackgroundColor(userColor)
+                                            customSolidHexInput = hexLabel
+                                            Toast.makeText(context, context.getString(R.string.custom_solid_bg_success), Toast.LENGTH_SHORT).show()
+                                        },
+                                        onLongClick = {
+                                            solidColorToDelete = userColor
+                                        }
+                                    )
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .size(46.dp)
+                                            .size(44.dp)
                                             .clip(RoundedCornerShape(12.dp))
                                             .background(Color(userColor))
                                             .border(
@@ -396,7 +464,7 @@ fun SettingsScreen(
                                                 imageVector = Icons.Default.Check,
                                                 contentDescription = "Selected",
                                                 tint = if (isDarkPreset) Color.White else Color.Black,
-                                                modifier = Modifier.size(20.dp)
+                                                modifier = Modifier.size(18.dp)
                                             )
                                         }
                                     }
@@ -422,15 +490,14 @@ fun SettingsScreen(
 
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier
-                                        .clickable {
-                                            viewModel.setCustomSolidBackgroundColor(presetColor)
-                                            Toast.makeText(context, context.getString(R.string.custom_solid_bg_success), Toast.LENGTH_SHORT).show()
-                                        }
+                                    modifier = Modifier.clickable {
+                                        viewModel.setCustomSolidBackgroundColor(presetColor)
+                                        Toast.makeText(context, context.getString(R.string.custom_solid_bg_success), Toast.LENGTH_SHORT).show()
+                                    }
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .size(46.dp)
+                                            .size(44.dp)
                                             .clip(RoundedCornerShape(12.dp))
                                             .background(Color(presetColor))
                                             .border(
@@ -445,7 +512,7 @@ fun SettingsScreen(
                                                 imageVector = Icons.Default.Check,
                                                 contentDescription = "Selected",
                                                 tint = if (isDarkPreset) Color.White else Color.Black,
-                                                modifier = Modifier.size(20.dp)
+                                                modifier = Modifier.size(18.dp)
                                             )
                                         }
                                     }
@@ -460,7 +527,7 @@ fun SettingsScreen(
                             }
                         }
 
-                        // 颜色代码自定义输入栏 (HEX 取色输入与调色盘快捷联动)
+                        // 颜色代码自定义输入栏 (HEX)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -521,9 +588,7 @@ fun SettingsScreen(
                                     focusedTextColor = OrbitTheme.colors.textPrimary,
                                     unfocusedTextColor = OrbitTheme.colors.textPrimary
                                 ),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp)
+                                modifier = Modifier.weight(1f).height(48.dp)
                             )
 
                             Button(
@@ -548,7 +613,6 @@ fun SettingsScreen(
                             }
                         }
 
-                        // 恢复默认底色按钮 (仅在已设置自定义纯色背景时显示)
                         if (uiState.customSolidBackgroundColor != null) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -578,28 +642,20 @@ fun SettingsScreen(
                                 }
                             }
                         }
-                    }
-                }
-            }
 
-            // 0.1.0.5 多颜色混合渐变背景 (Mesh Gradient Background)
-            item {
-                SettingsSectionHeader(stringResource(R.string.custom_gradient_background_title))
-                SettingsCard {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        // 1. 顶部标题与总开关
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                        )
+
+                        // 子分类 B: 多颜色混合渐变背景 (Mesh Gradient)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(40.dp)
+                                    .size(36.dp)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(OrbitTheme.colors.primary.copy(alpha = 0.12f)),
                                 contentAlignment = Alignment.Center
@@ -608,15 +664,15 @@ fun SettingsScreen(
                                     imageVector = Icons.Default.Gradient,
                                     contentDescription = null,
                                     tint = OrbitTheme.colors.primary,
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.width(14.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = stringResource(R.string.custom_gradient_background_title),
                                     style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Medium,
+                                    fontWeight = FontWeight.SemiBold,
                                     color = OrbitTheme.colors.textPrimary
                                 )
                                 Text(
@@ -631,7 +687,6 @@ fun SettingsScreen(
                                 onCheckedChange = { isEnabled ->
                                     viewModel.setCustomGradientEnabled(isEnabled)
                                     if (isEnabled) {
-                                        // 开启渐变背景时，自动清理可能产生冲突的纯色背景
                                         viewModel.clearCustomSolidBackgroundColor()
                                     }
                                 }
@@ -639,12 +694,6 @@ fun SettingsScreen(
                         }
 
                         if (uiState.isGradientEnabled) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(vertical = 4.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
-                            )
-
-                            // 2. 动态流光呼吸动效开关
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -670,13 +719,13 @@ fun SettingsScreen(
                                 )
                             }
 
-                            // 3. 极光流光实时微缩视窗预览
+                            // 渐变视窗预览
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(100.dp)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .border(1.2.dp, OrbitTheme.colors.primary.copy(alpha = 0.45f), RoundedCornerShape(16.dp))
+                                    .height(90.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .border(1.2.dp, OrbitTheme.colors.primary.copy(alpha = 0.45f), RoundedCornerShape(14.dp))
                             ) {
                                 MeshGradientBackground(
                                     colors = uiState.customGradientColors,
@@ -700,396 +749,260 @@ fun SettingsScreen(
                                 }
                             }
 
-                            // 4. 当前渐变颜色列表 (2~4 个颜色点编辑与添加)
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(
-                                    text = "${stringResource(R.string.custom_gradient_colors_title)} (${uiState.customGradientColors.size}/4)",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = OrbitTheme.colors.textPrimary
-                                )
-                                Text(
-                                    text = stringResource(R.string.custom_gradient_colors_hint),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = OrbitTheme.colors.textSecondary,
-                                    fontSize = 11.sp
-                                )
+                            // 渐变颜色列表
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                contentPadding = PaddingValues(vertical = 2.dp)
+                            ) {
+                                items(uiState.customGradientColors.size) { index ->
+                                    val colorVal = uiState.customGradientColors[index]
+                                    val hex = remember(colorVal) { String.format("#%06X", (colorVal and 0x00FFFFFFL)) }
 
-                                LazyRow(
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    contentPadding = PaddingValues(vertical = 4.dp)
-                                ) {
-                                    // 现有 2~4 个色块
-                                    items(uiState.customGradientColors.size) { index ->
-                                        val colorVal = uiState.customGradientColors[index]
-                                        val hex = remember(colorVal) { String.format("#%06X", (colorVal and 0x00FFFFFFL)) }
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.combinedClickable(
+                                            onClick = {
+                                                editingGradientColorIndex = index
+                                                isAddingNewGradientColor = false
+                                                showGradientColorPickerDialog = true
+                                            },
+                                            onLongClick = {
+                                                if (uiState.customGradientColors.size > 2) {
+                                                    viewModel.removeGradientColor(index)
+                                                    Toast.makeText(context, "已移除该颜色", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    Toast.makeText(context, "至少需保留 2 种颜色", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        )
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(colorVal))
+                                                .border(2.dp, OrbitTheme.colors.primary.copy(alpha = 0.6f), CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = "${index + 1}",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = hex,
+                                            fontSize = 9.5.sp,
+                                            color = OrbitTheme.colors.textSecondary
+                                        )
+                                    }
+                                }
 
+                                if (uiState.customGradientColors.size < 4) {
+                                    item {
                                         Column(
                                             horizontalAlignment = Alignment.CenterHorizontally,
-                                            modifier = Modifier.combinedClickable(
-                                                onClick = {
-                                                    editingGradientColorIndex = index
-                                                    isAddingNewGradientColor = false
-                                                    showGradientColorPickerDialog = true
-                                                },
-                                                onLongClick = {
-                                                    if (uiState.customGradientColors.size > 2) {
-                                                        viewModel.removeGradientColor(index)
-                                                        Toast.makeText(context, "已移除该颜色", Toast.LENGTH_SHORT).show()
-                                                    } else {
-                                                        Toast.makeText(context, "至少需保留 2 种颜色", Toast.LENGTH_SHORT).show()
-                                                    }
-                                                }
-                                            )
+                                            modifier = Modifier.clickable {
+                                                isAddingNewGradientColor = true
+                                                showGradientColorPickerDialog = true
+                                            }
                                         ) {
                                             Box(
                                                 modifier = Modifier
-                                                    .size(48.dp)
+                                                    .size(44.dp)
                                                     .clip(CircleShape)
-                                                    .background(Color(colorVal))
-                                                    .border(2.dp, OrbitTheme.colors.primary.copy(alpha = 0.6f), CircleShape),
+                                                    .background(OrbitTheme.colors.surface)
+                                                    .border(
+                                                        width = 1.5.dp,
+                                                        color = OrbitTheme.colors.primary.copy(alpha = 0.5f),
+                                                        shape = CircleShape
+                                                    ),
                                                 contentAlignment = Alignment.Center
                                             ) {
-                                                Text(
-                                                    text = "${index + 1}",
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = Color.White
+                                                Icon(
+                                                    imageVector = Icons.Default.Add,
+                                                    contentDescription = stringResource(R.string.custom_gradient_add_color),
+                                                    tint = OrbitTheme.colors.primary,
+                                                    modifier = Modifier.size(22.dp)
                                                 )
                                             }
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Text(
-                                                text = hex,
+                                                text = stringResource(R.string.custom_gradient_add_color),
                                                 fontSize = 9.5.sp,
-                                                color = OrbitTheme.colors.textSecondary
+                                                color = OrbitTheme.colors.primary,
+                                                fontWeight = FontWeight.Bold
                                             )
-                                        }
-                                    }
-
-                                    // 添加色块入口（未满 4 个时显示）
-                                    if (uiState.customGradientColors.size < 4) {
-                                        item {
-                                            Column(
-                                                horizontalAlignment = Alignment.CenterHorizontally,
-                                                modifier = Modifier.clickable {
-                                                    isAddingNewGradientColor = true
-                                                    showGradientColorPickerDialog = true
-                                                }
-                                            ) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(48.dp)
-                                                        .clip(CircleShape)
-                                                        .background(OrbitTheme.colors.surface)
-                                                        .border(
-                                                            width = 1.5.dp,
-                                                            color = OrbitTheme.colors.primary.copy(alpha = 0.5f),
-                                                            shape = CircleShape
-                                                        ),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Default.Add,
-                                                        contentDescription = stringResource(R.string.custom_gradient_add_color),
-                                                        tint = OrbitTheme.colors.primary,
-                                                        modifier = Modifier.size(24.dp)
-                                                    )
-                                                }
-                                                Spacer(modifier = Modifier.height(4.dp))
-                                                Text(
-                                                    text = stringResource(R.string.custom_gradient_add_color),
-                                                    fontSize = 9.5.sp,
-                                                    color = OrbitTheme.colors.primary,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
                                         }
                                     }
                                 }
                             }
+                        }
 
-                            // 5. 精选色板预设
-                            val gradientPresets = remember {
-                                listOf(
-                                    "深邃极光" to listOf(0xFF1E284AL, 0xFF423328L, 0xFF382D4AL),
-                                    "赛博霓虹" to listOf(0xFF0D253AL, 0xFF4A154BL, 0xFF003844L, 0xFF3D0814L),
-                                    "暮色森林" to listOf(0xFF15221BL, 0xFF2A3D2AL, 0xFF3B2F2FL),
-                                    "落日余晖" to listOf(0xFF421E22L, 0xFF3E2D18L, 0xFF2E1C38L),
-                                    "深海幽蓝" to listOf(0xFF0F1B29L, 0xFF142C44L, 0xFF1E3A5FL, 0xFF0B131FL)
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                        )
+
+                        // 子分类 C: 自定义壁纸与毛玻璃模糊
+                        val hasBg = uiState.customBackgroundPath != null && File(uiState.customBackgroundPath!!).exists()
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(OrbitTheme.colors.primary.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Wallpaper,
+                                    contentDescription = null,
+                                    tint = OrbitTheme.colors.primary,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
-
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = stringResource(R.string.custom_gradient_presets_title),
-                                    style = MaterialTheme.typography.bodyMedium,
+                                    text = stringResource(R.string.custom_background_title),
+                                    style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = FontWeight.SemiBold,
                                     color = OrbitTheme.colors.textPrimary
                                 )
-
-                                LazyRow(
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    contentPadding = PaddingValues(vertical = 2.dp)
-                                ) {
-                                    items(gradientPresets) { (name, presetColors) ->
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(OrbitTheme.colors.surface)
-                                                .border(1.dp, OrbitTheme.colors.surfaceBorder, RoundedCornerShape(12.dp))
-                                                .clickable {
-                                                    viewModel.setGradientColors(presetColors)
-                                                    Toast.makeText(context, "已应用「$name」配色", Toast.LENGTH_SHORT).show()
-                                                }
-                                                .padding(8.dp)
-                                        ) {
-                                            Row(
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                presetColors.forEach { c ->
-                                                    Box(
-                                                        modifier = Modifier
-                                                            .size(16.dp)
-                                                            .clip(CircleShape)
-                                                            .background(Color(c))
-                                                    )
-                                                }
-                                            }
-                                            Spacer(modifier = Modifier.height(6.dp))
-                                            Text(
-                                                text = name,
-                                                fontSize = 11.sp,
-                                                color = OrbitTheme.colors.textPrimary,
-                                                fontWeight = FontWeight.Medium
-                                            )
-                                        }
-                                    }
-                                }
+                                Text(
+                                    text = stringResource(R.string.custom_background_subtitle),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = OrbitTheme.colors.textSecondary
+                                )
                             }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = { backgroundPickerLauncher.launch("image/*") },
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(stringResource(R.string.btn_choose_background), fontSize = 12.sp)
+                            }
+                        }
 
-                            // 6. 恢复默认配色
+                        if (hasBg) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                TextButton(
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(context)
+                                            .data(File(uiState.customBackgroundPath!!))
+                                            .crossfade(true)
+                                            .build(),
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .border(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f), RoundedCornerShape(8.dp)),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                    )
+                                    Text(
+                                        text = if (uiState.backgroundBlurStyle == "frosted_glass") {
+                                            stringResource(R.string.background_blur_style_frosted)
+                                        } else {
+                                            stringResource(R.string.background_blur_style_gaussian)
+                                        },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = OrbitTheme.colors.primary
+                                    )
+                                }
+
+                                OutlinedButton(
                                     onClick = {
-                                        viewModel.resetGradientColors()
-                                        Toast.makeText(context, "已恢复默认渐变配色", Toast.LENGTH_SHORT).show()
+                                        viewModel.clearCustomBackground(context)
+                                        Toast.makeText(context, context.getString(R.string.background_reset_success), Toast.LENGTH_SHORT).show()
                                     },
                                     shape = RoundedCornerShape(8.dp),
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                                 ) {
                                     Icon(
-                                        Icons.Default.Refresh,
+                                        Icons.Default.DeleteOutline,
                                         contentDescription = null,
                                         modifier = Modifier.size(16.dp),
-                                        tint = OrbitTheme.colors.textSecondary
+                                        tint = OrbitTheme.colors.danger
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = stringResource(R.string.custom_gradient_reset),
-                                        fontSize = 12.sp,
-                                        color = OrbitTheme.colors.textSecondary
-                                    )
+                                    Text(stringResource(R.string.btn_reset_background), fontSize = 12.sp, color = OrbitTheme.colors.danger)
                                 }
                             }
+
+                            val blurStyleOptions = listOf(
+                                "frosted_glass" to stringResource(R.string.background_blur_style_frosted),
+                                "gaussian" to stringResource(R.string.background_blur_style_gaussian)
+                            )
+                            val currentBlurStyleLabel = blurStyleOptions.find { it.first == uiState.backgroundBlurStyle }?.second
+                                ?: stringResource(R.string.background_blur_style_frosted)
+
+                            SettingsDropdownItem(
+                                icon = Icons.Default.BlurOn,
+                                title = stringResource(R.string.background_blur_style_title),
+                                subtitle = stringResource(R.string.background_blur_style_subtitle),
+                                currentValue = currentBlurStyleLabel,
+                                options = blurStyleOptions.map { it.second },
+                                onOptionSelected = { selectedLabel ->
+                                    val target = blurStyleOptions.find { it.second == selectedLabel }?.first ?: "frosted_glass"
+                                    viewModel.setBackgroundBlurStyle(target)
+                                }
+                            )
+
+                            SettingsSliderItem(
+                                icon = Icons.Default.BlurCircular,
+                                title = stringResource(R.string.background_blur_radius_title),
+                                valueText = String.format(java.util.Locale.US, "%.0f dp", uiState.backgroundBlurRadius),
+                                value = uiState.backgroundBlurRadius,
+                                valueRange = 0f..50f,
+                                onValueChange = { viewModel.setBackgroundBlurRadius(it) }
+                            )
+
+                            SettingsSliderItem(
+                                icon = Icons.Default.BrightnessMedium,
+                                title = stringResource(R.string.background_dim_alpha_title),
+                                valueText = "${(uiState.backgroundDimAlpha * 100).toInt()}%",
+                                value = uiState.backgroundDimAlpha,
+                                valueRange = 0.0f..0.80f,
+                                onValueChange = { viewModel.setBackgroundDimAlpha(it) }
+                            )
                         }
                     }
                 }
             }
 
-            // 0.1.1 自定义程序壁纸与磨砂玻璃模糊 (沉浸透光背景)
+            // 4. 播放进度条拖尾样式设置与个性化调节
             item {
-                SettingsSectionHeader(stringResource(R.string.section_custom_background))
-                SettingsCard {
-                    val hasBg = uiState.customBackgroundPath != null && File(uiState.customBackgroundPath!!).exists()
+                val trailOptions = listOf(
+                    com.orbit.music.data.model.ProgressTrailStyle.NEON_PULSE.id to stringResource(R.string.trail_style_neon_pulse),
+                    com.orbit.music.data.model.ProgressTrailStyle.COMET_HELIX.id to stringResource(R.string.trail_style_comet_helix),
+                    com.orbit.music.data.model.ProgressTrailStyle.MINIMAL.id to stringResource(R.string.trail_style_minimal)
+                )
+                val currentTrailLabel = trailOptions.find { it.first == uiState.progressTrailStyle }?.second
+                    ?: stringResource(R.string.trail_style_neon_pulse)
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(OrbitTheme.colors.primary.copy(alpha = 0.12f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Wallpaper,
-                                contentDescription = null,
-                                tint = OrbitTheme.colors.primary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(16.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(R.string.custom_background_title),
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium,
-                                color = OrbitTheme.colors.textPrimary
-                            )
-                            Text(
-                                text = stringResource(R.string.custom_background_subtitle),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = OrbitTheme.colors.textSecondary
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Button(
-                            onClick = { backgroundPickerLauncher.launch("image/*") },
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = stringResource(R.string.btn_choose_background),
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-
-                    if (hasBg) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
-                        )
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(context)
-                                        .data(File(uiState.customBackgroundPath!!))
-                                        .crossfade(true)
-                                        .build(),
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .size(42.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .border(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.5f), RoundedCornerShape(8.dp)),
-                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                                )
-                                Text(
-                                    text = if (uiState.backgroundBlurStyle == "frosted_glass") {
-                                        stringResource(R.string.background_blur_style_frosted)
-                                    } else {
-                                        stringResource(R.string.background_blur_style_gaussian)
-                                    },
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = OrbitTheme.colors.primary
-                                )
-                            }
-
-                            OutlinedButton(
-                                onClick = {
-                                    viewModel.clearCustomBackground(context)
-                                    Toast.makeText(context, context.getString(R.string.background_reset_success), Toast.LENGTH_SHORT).show()
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.DeleteOutline,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                    tint = OrbitTheme.colors.danger
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    stringResource(R.string.btn_reset_background),
-                                    fontSize = 12.sp,
-                                    color = OrbitTheme.colors.danger
-                                )
-                            }
-                        }
-
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
-                        )
-
-                        val blurStyleOptions = listOf(
-                            "frosted_glass" to stringResource(R.string.background_blur_style_frosted),
-                            "gaussian" to stringResource(R.string.background_blur_style_gaussian)
-                        )
-                        val currentBlurStyleLabel = blurStyleOptions.find { it.first == uiState.backgroundBlurStyle }?.second
-                            ?: stringResource(R.string.background_blur_style_frosted)
-
-                        SettingsDropdownItem(
-                            icon = Icons.Default.BlurOn,
-                            title = stringResource(R.string.background_blur_style_title),
-                            subtitle = stringResource(R.string.background_blur_style_subtitle),
-                            currentValue = currentBlurStyleLabel,
-                            options = blurStyleOptions.map { it.second },
-                            onOptionSelected = { selectedLabel ->
-                                val target = blurStyleOptions.find { it.second == selectedLabel }?.first ?: "frosted_glass"
-                                viewModel.setBackgroundBlurStyle(target)
-                            }
-                        )
-
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
-                        )
-
-                        SettingsSliderItem(
-                            icon = Icons.Default.BlurCircular,
-                            title = stringResource(R.string.background_blur_radius_title),
-                            valueText = String.format(java.util.Locale.US, "%.0f dp", uiState.backgroundBlurRadius),
-                            value = uiState.backgroundBlurRadius,
-                            valueRange = 0f..50f,
-                            onValueChange = { viewModel.setBackgroundBlurRadius(it) }
-                        )
-
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
-                        )
-
-                        SettingsSliderItem(
-                            icon = Icons.Default.BrightnessMedium,
-                            title = stringResource(R.string.background_dim_alpha_title),
-                            valueText = "${(uiState.backgroundDimAlpha * 100).toInt()}%",
-                            value = uiState.backgroundDimAlpha,
-                            valueRange = 0.0f..0.80f,
-                            onValueChange = { viewModel.setBackgroundDimAlpha(it) }
-                        )
-                    }
-                }
-            }
-
-            // 0.1.1 播放进度条拖尾样式设置与个性化调节
-            item {
-                SettingsSectionHeader(stringResource(R.string.progress_trail_style_title))
-                SettingsCard {
-                    val trailOptions = listOf(
-                        com.orbit.music.data.model.ProgressTrailStyle.NEON_PULSE.id to stringResource(R.string.trail_style_neon_pulse),
-                        com.orbit.music.data.model.ProgressTrailStyle.COMET_HELIX.id to stringResource(R.string.trail_style_comet_helix),
-                        com.orbit.music.data.model.ProgressTrailStyle.MINIMAL.id to stringResource(R.string.trail_style_minimal)
-                    )
-                    val currentTrailLabel = trailOptions.find { it.first == uiState.progressTrailStyle }?.second
-                        ?: stringResource(R.string.trail_style_neon_pulse)
-
+                CollapsibleSettingsCard(
+                    icon = Icons.Default.Timeline,
+                    title = stringResource(R.string.progress_trail_style_title),
+                    subtitle = "当前样式: $currentTrailLabel · 个性化双色调色与粗细调节",
+                    badgeText = if (uiState.progressTrailStyle != com.orbit.music.data.model.ProgressTrailStyle.MINIMAL.id) "动态光效" else null,
+                    isExpanded = isTrailExpanded,
+                    onToggleExpand = { isTrailExpanded = !isTrailExpanded }
+                ) {
                     SettingsDropdownItem(
                         icon = Icons.Default.Timeline,
                         title = stringResource(R.string.progress_trail_style_title),
@@ -1201,10 +1114,30 @@ fun SettingsScreen(
                 }
             }
 
-            // 0.1.2 频谱可视化 (Poweramp 风格) 设置
+            // 5. 频谱律动可视化 (Poweramp 风格) 设置
             item {
-                SettingsSectionHeader(stringResource(R.string.section_spectrum_visualizer))
-                SettingsCard {
+                val styleOptions = remember {
+                    com.orbit.music.data.model.VisualizerStyle.values().map { style ->
+                        style to style.titleRes
+                    }
+                }
+                val currentStyleName = styleOptions.find { it.first == uiState.visualizerStyle }?.second?.let { stringResource(it) }
+                    ?: stringResource(R.string.visualizer_style_bars_with_peaks)
+
+                val visualizerSummary = if (uiState.visualizerEnabled) {
+                    "已开启 · 形态: $currentStyleName · ${if (uiState.visualizerSingleColor) "单色模式" else "双色渐变"}"
+                } else {
+                    "已关闭 (开启后在播放界面实时展示频谱律动)"
+                }
+
+                CollapsibleSettingsCard(
+                    icon = Icons.Default.GraphicEq,
+                    title = stringResource(R.string.section_spectrum_visualizer),
+                    subtitle = visualizerSummary,
+                    badgeText = if (uiState.visualizerEnabled) "开启中" else null,
+                    isExpanded = isVisualizerExpanded,
+                    onToggleExpand = { isVisualizerExpanded = !isVisualizerExpanded }
+                ) {
                     // 1. 启用开关
                     SettingsSwitchItem(
                         icon = Icons.Default.GraphicEq,
@@ -1221,20 +1154,17 @@ fun SettingsScreen(
                         )
 
                         // 2. 频谱形态选择
-                        val styleOptions = com.orbit.music.data.model.VisualizerStyle.values().map { style ->
-                            style to stringResource(style.titleRes)
-                        }
-                        val currentStyleLabel = styleOptions.find { it.first == uiState.visualizerStyle }?.second
+                        val currentStyleDropdownLabel = styleOptions.find { it.first == uiState.visualizerStyle }?.second?.let { stringResource(it) }
                             ?: stringResource(R.string.visualizer_style_bars_with_peaks)
 
                         SettingsDropdownItem(
                             icon = Icons.Default.AutoGraph,
                             title = stringResource(R.string.visualizer_style_title),
                             subtitle = stringResource(R.string.visualizer_style_subtitle),
-                            currentValue = currentStyleLabel,
-                            options = styleOptions.map { it.second },
+                            currentValue = currentStyleDropdownLabel,
+                            options = styleOptions.map { stringResource(it.second) },
                             onOptionSelected = { selectedLabel ->
-                                val target = styleOptions.find { it.second == selectedLabel }?.first
+                                val target = styleOptions.find { context.getString(it.second) == selectedLabel }?.first
                                     ?: com.orbit.music.data.model.VisualizerStyle.BARS_WITH_PEAKS
                                 viewModel.setVisualizerStyle(target)
                             }
@@ -1667,18 +1597,25 @@ fun SettingsScreen(
                 }
             }
 
-            // 0.2 Language 语言设置
+            // 6. 语言与启动偏好
             item {
-                SettingsSectionHeader(stringResource(R.string.language_title))
-                SettingsCard {
-                    val langOptions = listOf(
-                        "system" to stringResource(R.string.language_system),
-                        "zh" to stringResource(R.string.language_chinese),
-                        "en" to stringResource(R.string.language_english)
-                    )
-                    val currentLangLabel = langOptions.find { it.first == uiState.selectedLanguage }?.second
-                        ?: stringResource(R.string.language_system)
+                val langOptions = listOf(
+                    "system" to stringResource(R.string.language_system),
+                    "zh" to stringResource(R.string.language_chinese),
+                    "en" to stringResource(R.string.language_english)
+                )
+                val currentLangLabel = langOptions.find { it.first == uiState.selectedLanguage }?.second
+                    ?: stringResource(R.string.language_system)
 
+                val langStartupSummary = "语言: $currentLangLabel · ${if (uiState.launchAsEqualizerOnly) "仅EQ启动" else "完整播放器"} · ${if (uiState.persistentMiniPlayer) "迷你条常驻" else "自动折叠"}"
+
+                CollapsibleSettingsCard(
+                    icon = Icons.Default.Language,
+                    title = "语言与启动偏好",
+                    subtitle = langStartupSummary,
+                    isExpanded = isLangStartupExpanded,
+                    onToggleExpand = { isLangStartupExpanded = !isLangStartupExpanded }
+                ) {
                     SettingsDropdownItem(
                         icon = Icons.Default.Language,
                         title = stringResource(R.string.language_title),
@@ -1690,13 +1627,12 @@ fun SettingsScreen(
                             viewModel.setLanguage(code)
                         }
                     )
-                }
-            }
 
-            // 0.3 启动偏好设置 (仅作为均衡器启动 & 播放条常驻)
-            item {
-                SettingsSectionHeader(stringResource(R.string.section_startup_mode))
-                SettingsCard {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                    )
+
                     SettingsSwitchItem(
                         icon = Icons.Default.Tune,
                         title = stringResource(R.string.launch_as_equalizer_only_title),
@@ -1704,10 +1640,12 @@ fun SettingsScreen(
                         checked = uiState.launchAsEqualizerOnly,
                         onCheckedChange = { viewModel.toggleLaunchAsEqualizerOnly(it) }
                     )
+
                     HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 16.dp),
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
                     )
+
                     SettingsSwitchItem(
                         icon = Icons.Default.SmartDisplay,
                         title = stringResource(R.string.persistent_mini_player_title),
@@ -1718,10 +1656,18 @@ fun SettingsScreen(
                 }
             }
 
-            // 1. Audio Engine 选项
+            // 7. 音频引擎与曲库管理
             item {
-                SettingsSectionHeader(stringResource(R.string.section_audio_engine))
-                SettingsCard {
+                val audioSummary = "采样率: ${uiState.sampleRate.toInt()} Hz · 包含文件夹: ${includedFolders.size} · 排除文件夹: ${excludedFolders.size}"
+
+                CollapsibleSettingsCard(
+                    icon = Icons.Default.LibraryMusic,
+                    title = "音频引擎与曲库管理",
+                    subtitle = audioSummary,
+                    badgeText = if (isScanning) "曲库同步中..." else null,
+                    isExpanded = isAudioLibExpanded,
+                    onToggleExpand = { isAudioLibExpanded = !isAudioLibExpanded }
+                ) {
                     // 采样率
                     SettingsDropdownItem(
                         icon = Icons.Default.GraphicEq,
@@ -1734,15 +1680,12 @@ fun SettingsScreen(
                             viewModel.setSampleRate(rate)
                         }
                     )
-                }
-            }
 
-            // 媒体库文件夹扫描过滤设置 (仅当接入 musicViewModel 时呈现)
-            if (musicViewModel != null) {
-                // 媒体库文件夹扫描过滤设置
-                item {
-                    SettingsSectionHeader(stringResource(R.string.scan_settings_title))
-                    SettingsCard {
+                    if (musicViewModel != null) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                        )
                         // 0. Cover Flow 封面滑动惯性设置
                         val libraryUiState by musicViewModel.libraryUiState.collectAsState()
                         Row(
@@ -2034,10 +1977,15 @@ fun SettingsScreen(
                 }
             }
 
-            // 2. 预设备份与导入导出
+            // 8. 数据备份与多端云同步
             item {
-                SettingsSectionHeader(stringResource(R.string.section_presets_backup))
-                SettingsCard {
+                CollapsibleSettingsCard(
+                    icon = Icons.Default.CloudSync,
+                    title = "数据备份与多端云同步",
+                    subtitle = "均衡器预设导入/导出 · 歌单多端云同步",
+                    isExpanded = isBackupExpanded,
+                    onToggleExpand = { isBackupExpanded = !isBackupExpanded }
+                ) {
                     SettingsActionItem(
                         icon = Icons.Default.FileDownload,
                         title = stringResource(R.string.import_preset_title),
@@ -2048,7 +1996,10 @@ fun SettingsScreen(
                         }
                     )
 
-                    HorizontalDivider(color = GridLineColor)
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                    )
 
                     SettingsActionItem(
                         icon = Icons.Default.FileUpload,
@@ -2059,32 +2010,22 @@ fun SettingsScreen(
                             showExportDialog = true
                         }
                     )
-                }
-            }
 
-            // 2.5 云端多端数据同步与备份
-            item {
-                SettingsSectionHeader("云端多端数据同步与备份")
-                SettingsCard {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                    )
+
                     SettingsActionItem(
                         icon = Icons.Default.CloudSync,
                         title = "歌单多端云同步 (选择性备份 / 恢复)",
                         subtitle = "支持手机与车机自由勾选自建歌单及在线收藏歌单进行上传和下载",
                         onClick = { showCloudPlaylistSyncDialog = true }
                     )
-
-                    HorizontalDivider(color = GridLineColor)
-
-                    SettingsActionItem(
-                        icon = Icons.Default.SyncAlt,
-                        title = "在线音源云同步与备份",
-                        subtitle = "一键同步所有已启用的音源脚本配置，手机车机免配置共享",
-                        onClick = { showAudioSourceManager = true }
-                    )
                 }
             }
 
-            // 3. 设备与显示规格识别
+            // 9. 设备规格与系统诊断
             item {
                 val deviceModel = remember {
                     val manufacturer = android.os.Build.MANUFACTURER.replaceFirstChar {
@@ -2096,6 +2037,15 @@ fun SettingsScreen(
 
                 val osVersion = remember {
                     "Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})"
+                }
+
+                val appVersionName = remember {
+                    try {
+                        val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+                        pInfo.versionName ?: "0.2.1"
+                    } catch (_: Exception) {
+                        "0.2.1"
+                    }
                 }
 
                 val effectiveDensity = androidx.compose.ui.platform.LocalDensity.current
@@ -2140,49 +2090,63 @@ fun SettingsScreen(
                     }
                 }
 
-                SettingsSectionHeader(stringResource(R.string.section_device_info))
-                SettingsCard {
+                CollapsibleSettingsCard(
+                    icon = Icons.Default.Devices,
+                    title = "设备规格与系统诊断",
+                    subtitle = "$deviceModel · $osVersion · v$appVersionName",
+                    isExpanded = isDeviceInfoExpanded,
+                    onToggleExpand = { isDeviceInfoExpanded = !isDeviceInfoExpanded }
+                ) {
                     SettingsInfoItem(
                         icon = Icons.Default.Devices,
                         title = stringResource(R.string.device_model_title),
                         value = deviceModel,
                         onClick = copyDeviceInfo
                     )
-                    HorizontalDivider(color = OrbitTheme.colors.gridLine)
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                    )
                     SettingsInfoItem(
                         icon = Icons.Default.Android,
                         title = stringResource(R.string.system_version_title),
                         value = osVersion,
                         onClick = copyDeviceInfo
                     )
-                    HorizontalDivider(color = OrbitTheme.colors.gridLine)
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                    )
                     SettingsInfoItem(
                         icon = Icons.Default.AspectRatio,
                         title = stringResource(R.string.screen_resolution_title),
                         value = resolutionText,
                         onClick = copyDeviceInfo
                     )
-                    HorizontalDivider(color = OrbitTheme.colors.gridLine)
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                    )
                     SettingsInfoItem(
                         icon = Icons.Default.FitScreen,
                         title = stringResource(R.string.screen_density_title),
                         value = densityText,
                         onClick = copyDeviceInfo
                     )
-                    HorizontalDivider(color = OrbitTheme.colors.gridLine)
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                    )
                     SettingsInfoItem(
                         icon = Icons.Default.DeveloperBoard,
                         title = stringResource(R.string.cpu_architecture_title),
                         value = cpuAbi,
                         onClick = copyDeviceInfo
                     )
-                }
-            }
-
-            // 4. 关于与引擎状态
-            item {
-                SettingsSectionHeader(stringResource(R.string.section_system_diagnostics))
-                SettingsCard {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                    )
                     SettingsActionItem(
                         icon = Icons.Default.BatteryChargingFull,
                         title = stringResource(R.string.battery_optimization_title),
@@ -2199,21 +2163,23 @@ fun SettingsScreen(
                             }
                         }
                     )
-                    HorizontalDivider(color = OrbitTheme.colors.gridLine)
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                    )
                     SettingsInfoItem(icon = Icons.Default.Memory, title = stringResource(R.string.dsp_engine_title), value = stringResource(R.string.dsp_engine_value))
-                    HorizontalDivider(color = OrbitTheme.colors.gridLine)
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                    )
                     SettingsInfoItem(icon = Icons.Default.Speed, title = stringResource(R.string.dsp_latency_title), value = stringResource(R.string.dsp_latency_value))
-                    HorizontalDivider(color = OrbitTheme.colors.gridLine)
-                    val appVersionName = remember {
-                        try {
-                            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-                            pInfo.versionName ?: "0.2.1"
-                        } catch (_: Exception) {
-                            "0.2.1"
-                        }
-                    }
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                    )
                     SettingsInfoItem(icon = Icons.Default.Info, title = stringResource(R.string.version_title), value = appVersionName)
                 }
+
                 Spacer(modifier = Modifier.height(96.dp))
             }
         }
@@ -2591,6 +2557,141 @@ fun SettingsScreen(
                 musicViewModel.refreshPlaylists()
             }
         )
+    }
+}
+
+@Composable
+private fun CollapsibleSettingsCard(
+    icon: ImageVector,
+    title: String,
+    subtitle: String? = null,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
+    modifier: Modifier = Modifier,
+    badgeText: String? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val rotation by animateFloatAsState(
+        targetValue = if (isExpanded) 180f else 0f,
+        animationSpec = tween(durationMillis = 250),
+        label = "arrow_rotation"
+    )
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(OrbitTheme.colors.surfaceCard)
+            .border(
+                width = 1.dp,
+                color = if (isExpanded) OrbitTheme.colors.primary.copy(alpha = 0.25f) else OrbitTheme.colors.surfaceBorder.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(18.dp)
+            )
+    ) {
+        // 卡片头部（点击可折叠/展开）
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggleExpand)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        if (isExpanded) OrbitTheme.colors.primary.copy(alpha = 0.16f) else OrbitTheme.colors.surface
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = if (isExpanded) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(14.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = title,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = OrbitTheme.colors.textPrimary
+                    )
+                    if (!badgeText.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(OrbitTheme.colors.primary.copy(alpha = 0.12f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = badgeText,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = OrbitTheme.colors.primary
+                            )
+                        }
+                    }
+                }
+                if (!subtitle.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = subtitle,
+                        fontSize = 12.sp,
+                        color = OrbitTheme.colors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // 折叠箭头指示器
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(OrbitTheme.colors.surface.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (isExpanded) "折叠" else "展开",
+                    tint = if (isExpanded) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                    modifier = Modifier
+                        .size(18.dp)
+                        .graphicsLayer(rotationZ = rotation)
+                )
+            }
+        }
+
+        // 折叠展开内容区 (带平滑高度与淡入淡出动画)
+        AnimatedVisibility(
+            visible = isExpanded,
+            enter = expandVertically(animationSpec = tween(250)) + fadeIn(animationSpec = tween(250)),
+            exit = shrinkVertically(animationSpec = tween(200)) + fadeOut(animationSpec = tween(200))
+        ) {
+            Column {
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f)
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp),
+                    content = content
+                )
+            }
+        }
     }
 }
 

@@ -20,6 +20,9 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- 声明 USB Host 硬件特性支持 (用于 U 盘直接通信) -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+
     <!-- 声明支持所有屏幕尺寸与像素密度 (支持车载大屏与高分屏) -->
     <supports-screens
         android:anyDensity="true"
@@ -56,6 +59,14 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- 响应 USB 大容量存储设备 (U 盘) 插入事件 -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/device_filter" />
 
             <!-- 声明系统默认音乐播放器类别 (系统“默认应用 -> 音乐应用”扫描识别项) -->
             <intent-filter>

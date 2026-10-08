@@ -11,8 +11,8 @@ android {
         applicationId = "com.orbit.music"
         minSdk = 21
         targetSdk = 34
-        versionCode = 25
-        versionName = "0.3.5"
+        versionCode = 26
+        versionName = "0.3.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -132,9 +132,8 @@ dependencies {
     // Haze 专为 Jetpack Compose 打造的实时背景高斯模糊 (Backdrop Blur) 库
     implementation("dev.chrisbanes.haze:haze:0.7.3")
 
-
-
-
+    // libaums: USB Mass Storage (无需存储权限直接读取 U 盘 FAT32)
+    implementation("me.jahnen.libaums:core:0.9.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
