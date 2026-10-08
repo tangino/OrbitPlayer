@@ -3788,7 +3788,7 @@ private fun MaximizedVisualizerOverlay(
             uiMode == Configuration.UI_MODE_TYPE_CAR ||
                     context.packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE)
         }
-        val isCarOrLargeScreen = isCarUiMode || equalizerUiState.isTabletLandscapeModeEnabled || (isLandscape && screenWidth >= 680.dp && screenHeight >= 500.dp)
+        val isCarOrLargeScreen = (isCarUiMode || (isLandscape && screenWidth >= 680.dp)) && screenHeight >= 500.dp
 
         val rawNavBarBottom = maxOf(
             systemNavBarHeight,
