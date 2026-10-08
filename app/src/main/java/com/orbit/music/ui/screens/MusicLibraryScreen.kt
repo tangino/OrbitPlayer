@@ -3483,6 +3483,7 @@ fun MusicLibraryScreen(
                                 Spacer(modifier = Modifier.height(10.dp))
 
                                 // 如果整个筛选结果为空，显示空状态
+                                val hasPlayedCards = selectedPlaylistGroup == "ALL" && q.isBlank() && (currentPlayedPlaylist != null || previousPlayedPlaylist != null)
                                 val shouldShowEmptyState = when (selectedPlaylistGroup) {
                                     "LOCAL" -> localTotalCount == 0
                                     "NETEASE" -> neteaseFavorites.isEmpty()
@@ -3493,7 +3494,7 @@ fun MusicLibraryScreen(
                                     else -> totalPlaylistsCount == 0
                                 }
 
-                                if (shouldShowEmptyState) {
+                                if (shouldShowEmptyState && !hasPlayedCards) {
                                     val emptyTitle = if (q.isNotBlank()) {
                                         stringResource(R.string.search_no_results_title)
                                     } else when (selectedPlaylistGroup) {

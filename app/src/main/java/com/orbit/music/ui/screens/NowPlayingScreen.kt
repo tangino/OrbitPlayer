@@ -829,72 +829,69 @@ fun NowPlayingScreen(
             }
         }
 
-        // 3.5 歌曲技术规格参数栏 (来源平台/音源标签、比特率、时长、格式、采样率等)
+        // 3.5 歌曲技术规格与音源参数统一计算
+        val specs = songTechSpecs
+        val isOnline = song?.isOnlineSong == true
+        val rawExt = specs?.format?.uppercase() ?: (song?.mimeType?.takeIf { it.isNotBlank() }?.substringAfterLast('/')?.uppercase() ?: "")
+        val bitDepth = specs?.bitDepth ?: 0
+        val sampleRate = specs?.sampleRateHz ?: 0
+        val bitrate = specs?.bitrateKbps ?: 0
+        val sourceTagLower = song?.sourceTag?.lowercase() ?: ""
+        val pathLower = song?.path?.lowercase() ?: ""
+
+        // 计算音质档位标识：标准，HQ，SQ，Hi-Res
+        val (qualityBadgeText, qualityBadgeColor) = when {
+            bitDepth >= 24 || sampleRate >= 88200 || bitrate >= 1500 ||
+            sourceTagLower.contains("24bit") || sourceTagLower.contains("hires") || sourceTagLower.contains("hi-res") ||
+            pathLower.contains("flac24bit") || (isOnline && preferredQuality == "flac24bit" && (rawExt.contains("FLAC") || rawExt.isBlank())) -> {
+                "Hi-Res" to Color(0xFFFFD700)
+            }
+            rawExt in listOf("FLAC", "APE", "WAV", "ALAC", "AIFF", "DSD", "DSF", "DFF") || bitrate >= 500 ||
+            sourceTagLower.contains("flac") || sourceTagLower.contains("sq") ||
+            pathLower.contains("flac") || (isOnline && preferredQuality == "flac" && (rawExt.contains("FLAC") || rawExt.isBlank())) -> {
+                "SQ" to Color(0xFF00E5FF)
+            }
+            bitrate >= 240 || sourceTagLower.contains("320") || sourceTagLower.contains("hq") ||
+            pathLower.contains("320") || (isOnline && preferredQuality == "320k") -> {
+                "HQ" to Color(0xFFF59E0B)
+            }
+            else -> {
+                "标准" to OrbitTheme.colors.primary
+            }
+        }
+
+        val bitrateText = if ((specs?.bitrateKbps ?: 0) > 0) "${specs?.bitrateKbps} kbps" else ""
+        val sampleRateText = if ((specs?.sampleRateHz ?: 0) > 0) {
+            val sr = specs!!.sampleRateHz
+            if (sr % 1000 == 0) "${sr / 1000} kHz" else "%.1f kHz".format(sr / 1000f)
+        } else ""
+        val bitDepthText = if ((specs?.bitDepth ?: 0) > 0) "${specs?.bitDepth} bit" else ""
+        val durationText = specs?.durationFormatted?.ifBlank { song?.formattedDuration } ?: (song?.formattedDuration ?: "0:00")
+
+        val srcPlatform = song?.sourcePlatform
+        val origPlatform = song?.originalPlatform
+        val isFallbackSource = origPlatform != null && srcPlatform != null && origPlatform != srcPlatform
+
+        val platformColor = when (srcPlatform ?: origPlatform) {
+            com.orbit.music.data.online.model.OnlinePlatform.NETEASE -> Color(0xFFE53935)
+            com.orbit.music.data.online.model.OnlinePlatform.QQ -> Color(0xFF10B981)
+            com.orbit.music.data.online.model.OnlinePlatform.KUGOU -> Color(0xFF0084FF)
+            com.orbit.music.data.online.model.OnlinePlatform.KUWO -> Color(0xFFFFB300)
+            com.orbit.music.data.online.model.OnlinePlatform.MIGU -> Color(0xFFEC407A)
+            null -> OrbitTheme.colors.primary
+        }
+
+        val sourceDisplayText = when {
+            isFallbackSource -> "${origPlatform?.displayName ?: "原源"} ➔ ${srcPlatform?.displayName}"
+            srcPlatform != null -> srcPlatform.displayName
+            !song?.sourceTag.isNullOrBlank() -> song!!.sourceTag!!
+            origPlatform != null -> origPlatform.displayName
+            isOnline -> "在线音源"
+            else -> null
+        }
+
+        // 3.5 歌曲技术规格参数栏
         val techSpecsView: @Composable (Modifier) -> Unit = { mod ->
-            val specs = songTechSpecs
-            val currentSong = song
-            val isOnline = currentSong?.isOnlineSong == true
-            val rawExt = specs?.format?.uppercase() ?: (song?.mimeType?.takeIf { it.isNotBlank() }?.substringAfterLast('/')?.uppercase() ?: "")
-            val bitDepth = specs?.bitDepth ?: 0
-            val sampleRate = specs?.sampleRateHz ?: 0
-            val bitrate = specs?.bitrateKbps ?: 0
-            val sourceTagLower = song?.sourceTag?.lowercase() ?: ""
-            val pathLower = song?.path?.lowercase() ?: ""
-
-            // 计算音质档位标识：标准，HQ，SQ，Hi-Res
-            val (qualityBadgeText, qualityBadgeColor) = when {
-                // 1. Hi-Res (24bit 或 >=88.2kHz/96kHz，或码率 >= 1500k，或在线音质标签包含 24bit/hires)
-                bitDepth >= 24 || sampleRate >= 88200 || bitrate >= 1500 ||
-                sourceTagLower.contains("24bit") || sourceTagLower.contains("hires") || sourceTagLower.contains("hi-res") ||
-                pathLower.contains("flac24bit") || (isOnline && preferredQuality == "flac24bit" && (rawExt.contains("FLAC") || rawExt.isBlank())) -> {
-                    "Hi-Res" to Color(0xFFFFD700)
-                }
-                // 2. SQ (FLAC/APE/WAV/ALAC/DSD 等无损格式，或码率 >= 500k，或在线偏好/标签为 flac/sq)
-                rawExt in listOf("FLAC", "APE", "WAV", "ALAC", "AIFF", "DSD", "DSF", "DFF") || bitrate >= 500 ||
-                sourceTagLower.contains("flac") || sourceTagLower.contains("sq") ||
-                pathLower.contains("flac") || (isOnline && preferredQuality == "flac" && (rawExt.contains("FLAC") || rawExt.isBlank())) -> {
-                    "SQ" to Color(0xFF00E5FF)
-                }
-                // 3. HQ (码率 >= 240k 如 320k MP3，或在线偏好/标签为 320k/hq)
-                bitrate >= 240 || sourceTagLower.contains("320") || sourceTagLower.contains("hq") ||
-                pathLower.contains("320") || (isOnline && preferredQuality == "320k") -> {
-                    "HQ" to Color(0xFFF59E0B)
-                }
-                // 4. 标准 (128k MP3 或基础有损格式)
-                else -> {
-                    "标准" to OrbitTheme.colors.primary
-                }
-            }
-
-            val bitrateText = if ((specs?.bitrateKbps ?: 0) > 0) "${specs?.bitrateKbps} kbps" else ""
-            val sampleRateText = if ((specs?.sampleRateHz ?: 0) > 0) {
-                val sr = specs!!.sampleRateHz
-                if (sr % 1000 == 0) "${sr / 1000} kHz" else "%.1f kHz".format(sr / 1000f)
-            } else ""
-            val bitDepthText = if ((specs?.bitDepth ?: 0) > 0) "${specs?.bitDepth} bit" else ""
-            val durationText = specs?.durationFormatted?.ifBlank { song?.formattedDuration } ?: (song?.formattedDuration ?: "0:00")
-
-            val srcPlatform = currentSong?.sourcePlatform
-            val origPlatform = currentSong?.originalPlatform
-            val isFallbackSource = origPlatform != null && srcPlatform != null && origPlatform != srcPlatform
-
-            val platformColor = when (srcPlatform ?: origPlatform) {
-                com.orbit.music.data.online.model.OnlinePlatform.NETEASE -> Color(0xFFE53935)
-                com.orbit.music.data.online.model.OnlinePlatform.QQ -> Color(0xFF10B981)
-                com.orbit.music.data.online.model.OnlinePlatform.KUGOU -> Color(0xFF0084FF)
-                com.orbit.music.data.online.model.OnlinePlatform.KUWO -> Color(0xFFFFB300)
-                com.orbit.music.data.online.model.OnlinePlatform.MIGU -> Color(0xFFEC407A)
-                null -> OrbitTheme.colors.primary
-            }
-
-            val sourceDisplayText = when {
-                isFallbackSource -> "${origPlatform?.displayName ?: "原源"} ➔ ${srcPlatform?.displayName}"
-                srcPlatform != null -> srcPlatform.displayName
-                !currentSong?.sourceTag.isNullOrBlank() -> currentSong!!.sourceTag!!
-                origPlatform != null -> origPlatform.displayName
-                isOnline -> "在线音源"
-                else -> null
-            }
 
             Row(
                 modifier = mod,
@@ -1545,10 +1542,10 @@ fun NowPlayingScreen(
                     .fillMaxSize()
                     .padding(innerPadding)
                     .padding(
-                        start = 16.dp,
-                        end = 16.dp,
-                        top = 6.dp,
-                        bottom = 18.dp
+                        start = 14.dp,
+                        end = 14.dp,
+                        top = 4.dp,
+                        bottom = 12.dp
                     )
                     .swipeToChangeSong(
                         onSwipeNext = { viewModel.playNext() },
@@ -1557,12 +1554,14 @@ fun NowPlayingScreen(
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // ── 左侧：通透大画幅音频可视化舞台 + 纯净悬浮歌曲信息（专辑、歌手、歌曲名） + 轻量快捷操作 ──
-                Box(
+                // ── 左侧：整洁纯净封面舞台 + 顶部导航与视效切换 + 下方歌曲信息与快捷操作 ──
+                Column(
                     modifier = Modifier
-                        .weight(1.08f)
+                        .weight(1.10f)
                         .fillMaxHeight()
-                        .padding(vertical = 4.dp)
+                        .padding(vertical = 2.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceBetween
                 ) {
                     val currentStyle = if (equalizerUiState.visualizerStyle == VisualizerStyle.OFF) {
                         VisualizerStyle.BARS_WITH_PEAKS
@@ -1570,288 +1569,502 @@ fun NowPlayingScreen(
                         equalizerUiState.visualizerStyle
                     }
 
-                    // 1. 底层：大画幅动态可视化频谱 / 专辑封面切换舞台 (全屏通畅无阻碍)
-                    AnimatedContent(
-                        targetState = showCoverVisualizer,
-                        transitionSpec = {
-                            if (targetState) {
-                                (slideInVertically(animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)) { height -> height } + fadeIn(tween(250)))
-                                    .togetherWith(slideOutVertically(animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)) { height -> -height } + fadeOut(tween(200)))
-                            } else {
-                                (slideInVertically(animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)) { height -> -height } + fadeIn(tween(250)))
-                                    .togetherWith(slideOutVertically(animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)) { height -> height } + fadeOut(tween(200)))
-                            }
-                        },
-                        label = "LandscapeCoverVisualizerSwitchAnim",
-                        modifier = Modifier.fillMaxSize()
-                    ) { isVisualizerMode ->
-                        if (isVisualizerMode) {
-                            // 大画幅沉浸频谱 (全屏舒展自由律动)
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .swipeVerticalGesture(
-                                        onSwipeUp = {},
-                                        onSwipeDown = { onToggleCoverVisualizer(false) }
-                                    )
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null,
-                                        onClick = { onCycleVisualizerStyle?.invoke() }
-                                    ),
-                                contentAlignment = Alignment.Center
+                    // 1. 顶部操作栏：返回/收起 + 歌曲标题 (唯一标题展示) + 视效切换药丸与全屏按钮
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        // 收起按钮
+                        IconButton(
+                            onClick = onBack,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Collapse",
+                                tint = OrbitTheme.colors.textPrimary,
+                                modifier = Modifier.size(26.dp)
+                            )
+                        }
+
+                        // 歌曲标题 (唯一标题展示，单行省略，高亮显示)
+                        Text(
+                            text = song?.title?.takeIf { it.isNotBlank() } ?: "Orbit Player",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = OrbitTheme.colors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .padding(horizontal = 10.dp),
+                            textAlign = TextAlign.Center
+                        )
+
+                        // 视效切换药丸与全屏大频谱按键
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = OrbitTheme.colors.surfaceCard,
+                                border = BorderStroke(0.6.dp, OrbitTheme.colors.surfaceBorder.copy(alpha = 0.5f)),
+                                modifier = Modifier.clickable { onCycleVisualizerStyle?.invoke() }
                             ) {
-                                if (!equalizerUiState.isVisualizerMaximized) {
-                                    PowerampSpectrumVisualizer(
-                                        magnitudes = visualizerFrame.rawMagnitudes,
-                                        peaks = visualizerFrame.peakCaps,
-                                        style = currentStyle,
-                                        colorScheme = equalizerUiState.visualizerColorScheme,
-                                        peakDecayEnabled = equalizerUiState.visualizerPeakDecayEnabled,
-                                        isPlaying = playbackState.isPlaying,
-                                        barWidthDp = equalizerUiState.visualizerBarWidthDp,
-                                        barAlpha = equalizerUiState.visualizerBarAlpha,
-                                        borderWidthDp = equalizerUiState.visualizerBarBorderWidthDp,
-                                        borderColor = equalizerUiState.visualizerBarBorderColor,
-                                        borderAlpha = equalizerUiState.visualizerBarBorderAlpha,
-                                        borderOnly = equalizerUiState.visualizerBarBorderOnly,
-                                        customColor = equalizerUiState.visualizerCustomColor,
-                                        customColor2 = equalizerUiState.visualizerCustomColor2,
-                                        isSingleColor = equalizerUiState.visualizerSingleColor,
-                                        backgroundLightColor = equalizerUiState.backgroundExtractedLightColor,
-                                        backgroundDarkColor = equalizerUiState.backgroundExtractedDarkColor,
-                                        resetTrigger = "${song?.id}_${playbackState.currentIndex}",
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(horizontal = 2.dp, vertical = 2.dp),
-                                        onClick = { onCycleVisualizerStyle?.invoke() }
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    val styleText = when (currentStyle) {
+                                        VisualizerStyle.BARS_WITH_PEAKS -> stringResource(R.string.visualizer_style_bars_with_peaks)
+                                        VisualizerStyle.AURORA_MOUNTAIN -> stringResource(R.string.visualizer_style_aurora_mountain)
+                                        VisualizerStyle.MIRRORED_BARS -> stringResource(R.string.visualizer_style_mirrored_bars)
+                                        VisualizerStyle.TIME_TUNNEL -> stringResource(R.string.visualizer_style_time_tunnel)
+                                        VisualizerStyle.OCTGRAMS -> stringResource(R.string.visualizer_style_octgrams)
+                                        VisualizerStyle.SOUND_CITY -> stringResource(R.string.visualizer_style_sound_city)
+                                        VisualizerStyle.FRACTAL_GALAXY -> stringResource(R.string.visualizer_style_fractal_galaxy)
+                                        VisualizerStyle.QUANTUM_VORTEX -> stringResource(R.string.visualizer_style_quantum_vortex)
+                                        else -> stringResource(R.string.visualizer_style_bars_with_peaks)
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.GraphicEq,
+                                        contentDescription = null,
+                                        tint = OrbitTheme.colors.primary,
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                    Text(
+                                        text = styleText,
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = OrbitTheme.colors.primary
                                     )
                                 }
                             }
-                        } else {
-                            // 封面展示模式 (大小与可视化区域一样大，1:1沉浸舞台，上滑切入大画幅动态频谱)
-                            Box(
+
+                            Surface(
+                                shape = CircleShape,
+                                color = OrbitTheme.colors.surfaceCard,
+                                border = BorderStroke(0.6.dp, OrbitTheme.colors.surfaceBorder.copy(alpha = 0.5f)),
                                 modifier = Modifier
-                                    .fillMaxSize()
-                                    .swipeVerticalGesture(
-                                        onSwipeUp = {
-                                            if (equalizerUiState.visualizerStyle == VisualizerStyle.OFF) {
-                                                onCycleVisualizerStyle?.invoke()
-                                            }
-                                            onToggleCoverVisualizer(true)
-                                        },
-                                        onSwipeDown = {}
-                                    ),
-                                contentAlignment = Alignment.Center
+                                    .size(26.dp)
+                                    .clickable { onToggleVisualizerMaximized(true) }
                             ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Fullscreen,
+                                        contentDescription = stringResource(R.string.visualizer_maximize),
+                                        tint = OrbitTheme.colors.primary,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. 超大画幅 1:1 纯净等比封面 / 频谱舞台 (顶部内嵌磨砂歌曲信息，底部内嵌磨砂快捷操作图标)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(vertical = 2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AnimatedContent(
+                            targetState = showCoverVisualizer,
+                            transitionSpec = {
+                                if (targetState) {
+                                    (slideInVertically(animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)) { height -> height } + fadeIn(tween(250)))
+                                        .togetherWith(slideOutVertically(animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)) { height -> -height } + fadeOut(tween(200)))
+                                } else {
+                                    (slideInVertically(animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)) { height -> -height } + fadeIn(tween(250)))
+                                        .togetherWith(slideOutVertically(animationSpec = spring(dampingRatio = 0.82f, stiffness = 380f)) { height -> height } + fadeOut(tween(200)))
+                                }
+                            },
+                            label = "LandscapeCoverVisualizerSwitchAnim",
+                            modifier = Modifier.fillMaxSize()
+                        ) { isVisualizerMode ->
+                            if (isVisualizerMode) {
+                                // 大画幅沉浸频谱
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .padding(horizontal = 2.dp, vertical = 2.dp)
-                                        .scale(coverScale)
-                                        .shadow(
-                                            elevation = 16.dp,
-                                            shape = RoundedCornerShape(18.dp),
-                                            spotColor = OrbitTheme.colors.primary.copy(alpha = 0.35f)
+                                        .swipeVerticalGesture(
+                                            onSwipeUp = {},
+                                            onSwipeDown = { onToggleCoverVisualizer(false) }
                                         )
-                                        .clip(RoundedCornerShape(18.dp))
-                                        .background(OrbitTheme.colors.surfaceCard)
-                                        .clickable {
-                                            if (equalizerUiState.visualizerStyle == VisualizerStyle.OFF) {
-                                                onCycleVisualizerStyle?.invoke()
-                                            }
-                                            onToggleCoverVisualizer(true)
-                                        }
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                            onClick = { onCycleVisualizerStyle?.invoke() }
+                                        ),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    val artUri = song?.albumArtUri
-                                    if (artUri != null) {
-                                        AsyncImage(
-                                            model = coil.request.ImageRequest.Builder(LocalContext.current)
-                                                .data(artUri)
-                                                .memoryCacheKey("${artUri}_$coverVer")
-                                                .diskCacheKey("${artUri}_$coverVer")
-                                                .build(),
-                                            contentDescription = song?.title,
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier.fillMaxSize()
+                                    if (!equalizerUiState.isVisualizerMaximized) {
+                                        PowerampSpectrumVisualizer(
+                                            magnitudes = visualizerFrame.rawMagnitudes,
+                                            peaks = visualizerFrame.peakCaps,
+                                            style = currentStyle,
+                                            colorScheme = equalizerUiState.visualizerColorScheme,
+                                            peakDecayEnabled = equalizerUiState.visualizerPeakDecayEnabled,
+                                            isPlaying = playbackState.isPlaying,
+                                            barWidthDp = equalizerUiState.visualizerBarWidthDp,
+                                            barAlpha = equalizerUiState.visualizerBarAlpha,
+                                            borderWidthDp = equalizerUiState.visualizerBarBorderWidthDp,
+                                            borderColor = equalizerUiState.visualizerBarBorderColor,
+                                            borderAlpha = equalizerUiState.visualizerBarBorderAlpha,
+                                            borderOnly = equalizerUiState.visualizerBarBorderOnly,
+                                            customColor = equalizerUiState.visualizerCustomColor,
+                                            customColor2 = equalizerUiState.visualizerCustomColor2,
+                                            isSingleColor = equalizerUiState.visualizerSingleColor,
+                                            backgroundLightColor = equalizerUiState.backgroundExtractedLightColor,
+                                            backgroundDarkColor = equalizerUiState.backgroundExtractedDarkColor,
+                                            resetTrigger = "${song?.id}_${playbackState.currentIndex}",
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(horizontal = 2.dp, vertical = 2.dp),
+                                            onClick = { onCycleVisualizerStyle?.invoke() }
                                         )
+                                    }
+                                }
+                            } else {
+                                // 封面展示模式 (计算可用最大 1:1 正方形尺寸，铺满左侧高度，内嵌上下磨砂悬浮卡片)
+                                BoxWithConstraints(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .swipeVerticalGesture(
+                                            onSwipeUp = {
+                                                if (equalizerUiState.visualizerStyle == VisualizerStyle.OFF) {
+                                                    onCycleVisualizerStyle?.invoke()
+                                                }
+                                                onToggleCoverVisualizer(true)
+                                            },
+                                            onSwipeDown = {}
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    val availableW = maxWidth
+                                    val availableH = maxHeight
+                                    val dynamicSquareCoverSize = if (availableW > 0.dp && availableH > 0.dp) {
+                                        minOf(availableW - 4.dp, availableH - 4.dp)
                                     } else {
-                                        Box(
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.MusicNote,
-                                                contentDescription = null,
-                                                tint = OrbitTheme.colors.primary,
-                                                modifier = Modifier.size(56.dp)
+                                        300.dp
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .size(dynamicSquareCoverSize)
+                                            .scale(coverScale)
+                                            .shadow(
+                                                elevation = 18.dp,
+                                                shape = RoundedCornerShape(18.dp),
+                                                spotColor = OrbitTheme.colors.primary.copy(alpha = 0.35f)
                                             )
+                                            .clip(RoundedCornerShape(18.dp))
+                                            .background(OrbitTheme.colors.surfaceCard)
+                                            .clickable {
+                                                if (equalizerUiState.visualizerStyle == VisualizerStyle.OFF) {
+                                                    onCycleVisualizerStyle?.invoke()
+                                                }
+                                                onToggleCoverVisualizer(true)
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        // 底层 1:1 封面大图
+                                        val artUri = song?.albumArtUri
+                                        if (artUri != null) {
+                                            AsyncImage(
+                                                model = coil.request.ImageRequest.Builder(LocalContext.current)
+                                                    .data(artUri)
+                                                    .memoryCacheKey("${artUri}_$coverVer")
+                                                    .diskCacheKey("${artUri}_$coverVer")
+                                                    .crossfade(true)
+                                                    .build(),
+                                                contentDescription = song?.title,
+                                                contentScale = ContentScale.Fit,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.MusicNote,
+                                                    contentDescription = null,
+                                                    tint = OrbitTheme.colors.primary,
+                                                    modifier = Modifier.size(64.dp)
+                                                )
+                                            }
+                                        }
+
+                                        // ── 封面内上方：磨砂半透明歌曲信息 (歌手名 + 音源平台 + 音质档位 + 参数规格) ──
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = Color.Black.copy(alpha = 0.52f),
+                                            border = BorderStroke(0.6.dp, Color.White.copy(alpha = 0.18f)),
+                                            modifier = Modifier
+                                                .align(Alignment.TopCenter)
+                                                .padding(top = 8.dp, start = 8.dp, end = 8.dp)
+                                                .clickable { showAudioQualityDialog = true }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.5.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(5.5.dp)
+                                            ) {
+                                                // 歌手名
+                                                Text(
+                                                    text = song?.artist?.takeIf { it.isNotBlank() } ?: "未知歌手",
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = Color.White,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f, fill = false)
+                                                )
+
+                                                if (sourceDisplayText != null) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        color = platformColor.copy(alpha = 0.28f),
+                                                        border = BorderStroke(0.5.dp, platformColor.copy(alpha = 0.65f))
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(2.5.dp)
+                                                        ) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(4.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(platformColor)
+                                                            )
+                                                            Text(
+                                                                text = sourceDisplayText,
+                                                                fontSize = 9.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = platformColor
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                // 音质档位徽章
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = qualityBadgeColor.copy(alpha = 0.28f),
+                                                    border = BorderStroke(0.5.dp, qualityBadgeColor.copy(alpha = 0.70f))
+                                                ) {
+                                                    Text(
+                                                        text = qualityBadgeText,
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = qualityBadgeColor,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                    )
+                                                }
+
+                                                // 规格参数 (采样率 / 格式 / 码率)
+                                                val shortSpec = when {
+                                                    sampleRateText.isNotBlank() && bitDepthText.isNotBlank() -> "$sampleRateText / $bitDepthText"
+                                                    bitrateText.isNotBlank() -> bitrateText
+                                                    sampleRateText.isNotBlank() -> sampleRateText
+                                                    else -> ""
+                                                }
+                                                if (shortSpec.isNotBlank()) {
+                                                    Text(
+                                                        text = shortSpec,
+                                                        fontSize = 9.5.sp,
+                                                        color = Color.White.copy(alpha = 0.85f),
+                                                        fontWeight = FontWeight.Medium
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        // ── 封面内下方：磨砂半透明快捷操作栏 (红心/态度 + 均衡器 + 频谱形态 + 歌词 + 更多) ──
+                                        Surface(
+                                            shape = RoundedCornerShape(14.dp),
+                                            color = Color.Black.copy(alpha = 0.52f),
+                                            border = BorderStroke(0.6.dp, Color.White.copy(alpha = 0.18f)),
+                                            modifier = Modifier
+                                                .align(Alignment.BottomCenter)
+                                                .padding(bottom = 8.dp, start = 8.dp, end = 8.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                // 1. 红心 / 态度
+                                                val currentAttitude = song?.attitude ?: SongAttitude.NONE
+                                                IconButton(
+                                                    onClick = {
+                                                        val target = song ?: rawSong
+                                                        if (target != null) {
+                                                            viewModel.cycleSongAttitude(target) { nextAttitude ->
+                                                                val msgRes = when (nextAttitude) {
+                                                                    SongAttitude.FAVORITE -> R.string.attitude_favorite
+                                                                    SongAttitude.DISLIKED -> R.string.attitude_disliked
+                                                                    SongAttitude.NONE -> R.string.attitude_none
+                                                                }
+                                                                FastToast.show(context, msgRes)
+                                                            }
+                                                        }
+                                                    },
+                                                    modifier = Modifier.size(32.dp)
+                                                ) {
+                                                    val favScale by animateFloatAsState(
+                                                        targetValue = if (currentAttitude == SongAttitude.FAVORITE) 1.25f else 1.0f,
+                                                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                                                        label = "FavoriteBounceAnimLandscapeCover"
+                                                    )
+                                                    when (currentAttitude) {
+                                                        SongAttitude.FAVORITE -> {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Favorite,
+                                                                contentDescription = "Favorite",
+                                                                tint = Color(0xFFFF3366),
+                                                                modifier = Modifier
+                                                                    .size(20.dp)
+                                                                    .scale(favScale)
+                                                            )
+                                                        }
+                                                        SongAttitude.DISLIKED -> {
+                                                            Icon(
+                                                                imageVector = Icons.Default.ThumbDown,
+                                                                contentDescription = "Disliked",
+                                                                tint = Color(0xFFE57373),
+                                                                modifier = Modifier.size(20.dp)
+                                                            )
+                                                        }
+                                                        SongAttitude.NONE -> {
+                                                            Icon(
+                                                                imageVector = Icons.Default.FavoriteBorder,
+                                                                contentDescription = "Neutral",
+                                                                tint = Color.White.copy(alpha = 0.9f),
+                                                                modifier = Modifier.size(20.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                // 2. 均衡器
+                                                IconButton(
+                                                    onClick = onOpenEqualizer,
+                                                    modifier = Modifier.size(32.dp)
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Equalizer,
+                                                            contentDescription = "Equalizer",
+                                                            tint = if (equalizerUiState.isEnabled) OrbitTheme.colors.primary else Color.White.copy(alpha = 0.9f),
+                                                            modifier = Modifier.size(20.dp)
+                                                        )
+                                                        if (equalizerUiState.isEnabled) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .align(Alignment.TopEnd)
+                                                                    .size(5.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(OrbitTheme.colors.primary)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                // 3. 频谱形态切换
+                                                val vizActive = showCoverVisualizer && equalizerUiState.visualizerEnabled && equalizerUiState.visualizerStyle != VisualizerStyle.OFF
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(32.dp)
+                                                        .clip(CircleShape)
+                                                        .combinedClickable(
+                                                            onClick = {
+                                                                if (vizActive) {
+                                                                    onToggleCoverVisualizer(false)
+                                                                } else {
+                                                                    if (equalizerUiState.visualizerStyle == VisualizerStyle.OFF) {
+                                                                        onCycleVisualizerStyle?.invoke()
+                                                                    }
+                                                                    onToggleCoverVisualizer(true)
+                                                                }
+                                                            },
+                                                            onLongClick = {
+                                                                onCycleVisualizerStyle?.invoke()
+                                                                if (!showCoverVisualizer) {
+                                                                    onToggleCoverVisualizer(true)
+                                                                }
+                                                            }
+                                                        ),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.GraphicEq,
+                                                        contentDescription = stringResource(R.string.switch_visualizer_style),
+                                                        tint = if (vizActive) OrbitTheme.colors.primary else Color.White.copy(alpha = 0.9f),
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                    if (vizActive) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .align(Alignment.TopEnd)
+                                                                .size(5.dp)
+                                                                .clip(CircleShape)
+                                                                .background(OrbitTheme.colors.tertiary)
+                                                        )
+                                                    }
+                                                }
+
+                                                // 4. 歌词显/隐切换
+                                                val lyricsActive = equalizerUiState.showNowPlayingLyrics
+                                                IconButton(
+                                                    onClick = { onToggleShowLyrics(!lyricsActive) },
+                                                    modifier = Modifier.size(32.dp)
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Lyrics,
+                                                            contentDescription = "Lyrics",
+                                                            tint = if (lyricsActive) OrbitTheme.colors.primary else Color.White.copy(alpha = 0.9f),
+                                                            modifier = Modifier.size(20.dp)
+                                                        )
+                                                        if (lyricsActive) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .align(Alignment.TopEnd)
+                                                                    .size(5.dp)
+                                                                    .clip(CircleShape)
+                                                                    .background(OrbitTheme.colors.primary)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                // 5. 三点更多菜单
+                                                IconButton(
+                                                    onClick = { showMoreOptionsMenu = true },
+                                                    modifier = Modifier.size(32.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.MoreVert,
+                                                        contentDescription = stringResource(R.string.menu_more_options),
+                                                        tint = Color.White.copy(alpha = 0.9f),
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-
-                    // 2. 悬浮歌曲信息排版浮层 (无封闭黑底，纯净通透，带微光阴影，彻底打开呼吸感)
-                    Row(
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(start = 12.dp, top = 12.dp, end = 100.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // 优雅小巧的收起返回箭头
-                        Surface(
-                            shape = CircleShape,
-                            color = Color.Black.copy(alpha = 0.36f),
-                            modifier = Modifier.size(32.dp),
-                            onClick = onBack
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.KeyboardArrowDown,
-                                    contentDescription = "Collapse",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(10.dp))
-
-                        // 歌曲名、歌手与专辑名称
-                        Column(modifier = Modifier.weight(1f, fill = false)) {
-                            AnimatedContent(
-                                targetState = song?.title ?: "No Track Selected",
-                                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) },
-                                label = "LandscapeSongTitleAnim"
-                            ) { title ->
-                                Text(
-                                    text = title,
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    style = TextStyle(
-                                        shadow = Shadow(
-                                            color = Color.Black.copy(alpha = 0.85f),
-                                            offset = Offset(0f, 2f),
-                                            blurRadius = 6f
-                                        )
-                                    ),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(2.dp))
-                            val artistAndAlbum = buildString {
-                                append(song?.artist?.ifBlank { "Unknown Artist" } ?: "Unknown Artist")
-                                val albumName = song?.album?.trim()
-                                if (!albumName.isNullOrEmpty() && albumName != "Unknown Album") {
-                                    append("  •  ")
-                                    append(albumName)
-                                }
-                            }
-                            AnimatedContent(
-                                targetState = artistAndAlbum,
-                                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) },
-                                label = "LandscapeArtistAlbumAnim"
-                            ) { text ->
-                                Text(
-                                    text = text,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color.White.copy(alpha = 0.82f),
-                                    style = TextStyle(
-                                        shadow = Shadow(
-                                            color = Color.Black.copy(alpha = 0.85f),
-                                            offset = Offset(0f, 2f),
-                                            blurRadius = 4f
-                                        )
-                                    ),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(2.dp))
-                            techSpecsView(Modifier.padding(top = 1.dp))
-                        }
-                    }
-
-                    // 3. 右上角：样式切换药丸徽标 + 最大化全屏按钮 (半透明轻量微标)
-                    Row(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = 12.dp, end = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = Color.Black.copy(alpha = 0.36f),
-                            modifier = Modifier.clickable { onCycleVisualizerStyle?.invoke() }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
-                            ) {
-                                val styleText = when (currentStyle) {
-                                    VisualizerStyle.BARS_WITH_PEAKS -> stringResource(R.string.visualizer_style_bars_with_peaks)
-                                    VisualizerStyle.AURORA_MOUNTAIN -> stringResource(R.string.visualizer_style_aurora_mountain)
-                                    VisualizerStyle.MIRRORED_BARS -> stringResource(R.string.visualizer_style_mirrored_bars)
-                                    VisualizerStyle.TIME_TUNNEL -> stringResource(R.string.visualizer_style_time_tunnel)
-                                    VisualizerStyle.OCTGRAMS -> stringResource(R.string.visualizer_style_octgrams)
-                                    VisualizerStyle.SOUND_CITY -> stringResource(R.string.visualizer_style_sound_city)
-                                    VisualizerStyle.FRACTAL_GALAXY -> stringResource(R.string.visualizer_style_fractal_galaxy)
-                                    VisualizerStyle.QUANTUM_VORTEX -> stringResource(R.string.visualizer_style_quantum_vortex)
-                                    else -> stringResource(R.string.visualizer_style_bars_with_peaks)
-                                }
-                                Icon(
-                                    imageVector = Icons.Default.GraphicEq,
-                                    contentDescription = null,
-                                    tint = OrbitTheme.colors.primary,
-                                    modifier = Modifier.size(11.dp)
-                                )
-                                Text(
-                                    text = styleText,
-                                    fontSize = 9.5.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color.White
-                                )
-                            }
-                        }
-
-                        Surface(
-                            shape = CircleShape,
-                            color = Color.Black.copy(alpha = 0.36f),
-                            modifier = Modifier
-                                .size(26.dp)
-                                .clickable { onToggleVisualizerMaximized(true) }
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Fullscreen,
-                                    contentDescription = stringResource(R.string.visualizer_maximize),
-                                    tint = OrbitTheme.colors.primary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    // 4. 左侧底部轻量悬浮快捷操作栏（红心/态度、EQ均衡器、视效开关、更多菜单）
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = Color.Black.copy(alpha = 0.30f),
-                        border = BorderStroke(
-                            width = 0.8.dp,
-                            color = Color(0x20FFFFFF)
-                        ),
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 8.dp)
-                    ) {
-                        quickActionsView(Modifier.padding(horizontal = 12.dp, vertical = 2.dp))
                     }
                 }
 

@@ -22,6 +22,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -50,6 +51,7 @@ fun AudioSourceManagementScreen(
     val sourceManager = remember { SourceScriptManager.getInstance(context) }
 
     val scripts by sourceManager.scripts.collectAsState()
+    val enabledScripts by sourceManager.enabledScripts.collectAsState()
     val activeScript by sourceManager.activeScript.collectAsState()
     val preferredQuality by sourceManager.preferredQuality.collectAsState()
 
@@ -117,10 +119,13 @@ fun AudioSourceManagementScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
-            // 1. 活动音源状态卡片
+            // 1. 多音源协同解析引擎状态卡片
             item {
                 ActiveSourceStatusCard(
                     activeScript = activeScript,
+                    enabledCount = enabledScripts.size,
+                    totalCount = scripts.size,
+                    onEnableAll = { sourceManager.enableAllScripts() },
                     onDisableAll = { sourceManager.disableAllScripts() }
                 )
             }
@@ -177,7 +182,7 @@ fun AudioSourceManagementScreen(
                 }
             }
 
-            // 4. 音源列表标题
+            // 4. 音源列表标题 (支持多选并发启用与主备协同)
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -191,9 +196,9 @@ fun AudioSourceManagementScreen(
                         color = OrbitTheme.colors.textPrimary
                     )
                     Text(
-                        text = "点击即可切换激活",
-                        fontSize = 11.5.sp,
-                        color = OrbitTheme.colors.textSecondary
+                        text = "支持同时开启多个，主源失效自动切备用源",
+                        fontSize = 11.sp,
+                        color = OrbitTheme.colors.primary
                     )
                 }
             }
@@ -239,12 +244,13 @@ fun AudioSourceManagementScreen(
                 }
             }
 
-            // 6. 脚本列表项
+            // 6. 脚本列表项 (支持多选开启与设为主源)
             items(scripts, key = { it.id }) { item ->
                 SourceScriptCard(
                     script = item,
                     isUpdating = isUpdatingId == item.id,
-                    onEnable = { sourceManager.enableScript(item.id) },
+                    onToggleEnabled = { isEnabled -> sourceManager.toggleScriptEnabled(item.id, isEnabled) },
+                    onSetPrimary = { sourceManager.setPrimaryScript(item.id) },
                     onDelete = { sourceManager.deleteScript(item.id) },
                     onUpdate = {
                         scope.launch {
@@ -299,17 +305,20 @@ fun AudioSourceManagementScreen(
 }
 
 /**
- * 当前活动音源状态卡片
+ * 当前活动音源状态卡片 (多源协同与主备状态呈现)
  */
 @Composable
 private fun ActiveSourceStatusCard(
     activeScript: SourceScriptItem?,
+    enabledCount: Int,
+    totalCount: Int,
+    onEnableAll: () -> Unit,
     onDisableAll: () -> Unit
 ) {
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = OrbitTheme.colors.surfaceCard,
-        border = BorderStroke(1.dp, if (activeScript != null) OrbitTheme.colors.primary.copy(alpha = 0.4f) else OrbitTheme.colors.surfaceBorder),
+        border = BorderStroke(1.dp, if (enabledCount > 0) OrbitTheme.colors.primary.copy(alpha = 0.4f) else OrbitTheme.colors.surfaceBorder),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -323,23 +332,33 @@ private fun ActiveSourceStatusCard(
                         modifier = Modifier
                             .size(10.dp)
                             .clip(CircleShape)
-                            .background(if (activeScript != null) Color(0xFF10B981) else OrbitTheme.colors.primary)
+                            .background(if (enabledCount > 0) Color(0xFF10B981) else OrbitTheme.colors.primary)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (activeScript != null) "活动解析引擎: 已就绪" else "活动解析引擎: 官方直链兜底",
+                        text = if (enabledCount > 0) "多音源协同寻源: 已开启 ($enabledCount 个音源在线)" else "活动解析引擎: 官方直链兜底",
                         fontSize = 13.5.sp,
                         fontWeight = FontWeight.Bold,
                         color = OrbitTheme.colors.textPrimary
                     )
                 }
 
-                if (activeScript != null) {
-                    TextButton(
-                        onClick = onDisableAll,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text("禁用脚本", fontSize = 11.5.sp, color = Color(0xFFF43F5E))
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (totalCount > 1 && enabledCount < totalCount) {
+                        TextButton(
+                            onClick = onEnableAll,
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text("全部开启", fontSize = 11.5.sp, color = OrbitTheme.colors.primary)
+                        }
+                    }
+                    if (enabledCount > 0) {
+                        TextButton(
+                            onClick = onDisableAll,
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text("全部禁用", fontSize = 11.5.sp, color = Color(0xFFF43F5E))
+                        }
                     }
                 }
             }
@@ -347,20 +366,35 @@ private fun ActiveSourceStatusCard(
             Spacer(modifier = Modifier.height(8.dp))
 
             if (activeScript != null) {
-                Text(
-                    text = "${activeScript.name} (v${activeScript.version})",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = OrbitTheme.colors.primary
-                )
-                if (activeScript.description.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(3.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFFFFD700).copy(alpha = 0.16f),
+                        border = BorderStroke(0.6.dp, Color(0xFFFFD700).copy(alpha = 0.5f))
+                    ) {
+                        Text(
+                            text = "主音源",
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFFD700),
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = activeScript.description,
-                        fontSize = 11.5.sp,
-                        color = OrbitTheme.colors.textSecondary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                        text = "${activeScript.name} (v${activeScript.version})",
+                        fontSize = 14.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = OrbitTheme.colors.primary
+                    )
+                }
+
+                if (enabledCount > 1) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "🚀 当主音源无法解析某首歌曲时，其余 ${enabledCount - 1} 个备用音源将自动并发搜救",
+                        fontSize = 11.sp,
+                        color = OrbitTheme.colors.textSecondary
                     )
                 }
 
@@ -370,7 +404,7 @@ private fun ActiveSourceStatusCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("支持平台:", fontSize = 11.sp, color = OrbitTheme.colors.textSecondary)
+                    Text("主源平台:", fontSize = 11.sp, color = OrbitTheme.colors.textSecondary)
                     listOf("wy" to "网易云", "tx" to "QQ音乐", "kg" to "酷狗", "kw" to "酷我", "mg" to "咪咕").forEach { (key, label) ->
                         val isSupported = activeScript.supportPlatforms.contains(key) || activeScript.supportPlatforms.isEmpty()
                         Box(
@@ -470,13 +504,14 @@ private fun QualityPreferenceCard(
 }
 
 /**
- * 单个音源卡片项
+ * 单个音源卡片项 (支持 Switch 开关、设为主音源、更新与删除)
  */
 @Composable
 private fun SourceScriptCard(
     script: SourceScriptItem,
     isUpdating: Boolean,
-    onEnable: () -> Unit,
+    onToggleEnabled: (Boolean) -> Unit,
+    onSetPrimary: () -> Unit,
     onDelete: () -> Unit,
     onUpdate: () -> Unit
 ) {
@@ -485,32 +520,67 @@ private fun SourceScriptCard(
         color = if (script.isEnabled) OrbitTheme.colors.surfaceCard else OrbitTheme.colors.surfaceCard.copy(alpha = 0.6f),
         border = BorderStroke(
             1.dp,
-            if (script.isEnabled) OrbitTheme.colors.primary.copy(alpha = 0.5f) else OrbitTheme.colors.surfaceBorder
+            if (script.isPrimary) Color(0xFFFFD700).copy(alpha = 0.6f) else if (script.isEnabled) OrbitTheme.colors.primary.copy(alpha = 0.5f) else OrbitTheme.colors.surfaceBorder
         ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { if (!script.isEnabled) onEnable() }
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                RadioButton(
-                    selected = script.isEnabled,
-                    onClick = onEnable,
-                    colors = RadioButtonDefaults.colors(selectedColor = OrbitTheme.colors.primary)
+                // 开启/停用 Switch 开关
+                Switch(
+                    checked = script.isEnabled,
+                    onCheckedChange = onToggleEnabled,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = Color.White,
+                        checkedTrackColor = OrbitTheme.colors.primary
+                    ),
+                    modifier = Modifier.scale(0.85f)
                 )
 
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(6.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (script.isPrimary) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color(0xFFFFD700).copy(alpha = 0.20f),
+                                border = BorderStroke(0.6.dp, Color(0xFFFFD700).copy(alpha = 0.7f))
+                            ) {
+                                Text(
+                                    text = "主音源",
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFFD700),
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(5.dp))
+                        } else if (script.isEnabled) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = OrbitTheme.colors.primary.copy(alpha = 0.15f),
+                                border = BorderStroke(0.6.dp, OrbitTheme.colors.primary.copy(alpha = 0.4f))
+                            ) {
+                                Text(
+                                    text = "备用协同源",
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = OrbitTheme.colors.primary,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(5.dp))
+                        }
+
                         Text(
                             text = script.name,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
-                            color = if (script.isEnabled) OrbitTheme.colors.primary else OrbitTheme.colors.textPrimary
+                            color = if (script.isEnabled) OrbitTheme.colors.textPrimary else OrbitTheme.colors.textSecondary
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Box(
@@ -535,35 +605,46 @@ private fun SourceScriptCard(
                 }
 
                 // 操作按钮组
-                if (!script.sourceUrl.isNullOrBlank()) {
-                    IconButton(
-                        onClick = onUpdate,
-                        enabled = !isUpdating,
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        if (isUpdating) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = OrbitTheme.colors.primary)
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "在线检查更新",
-                                tint = OrbitTheme.colors.primary,
-                                modifier = Modifier.size(18.dp)
-                            )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (script.isEnabled && !script.isPrimary) {
+                        TextButton(
+                            onClick = onSetPrimary,
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text("设为主源", fontSize = 11.5.sp, color = OrbitTheme.colors.primary)
                         }
                     }
-                }
 
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.DeleteOutline,
-                        contentDescription = "删除音源",
-                        tint = Color(0xFFF43F5E).copy(alpha = 0.8f),
-                        modifier = Modifier.size(18.dp)
-                    )
+                    if (!script.sourceUrl.isNullOrBlank()) {
+                        IconButton(
+                            onClick = onUpdate,
+                            enabled = !isUpdating,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            if (isUpdating) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = OrbitTheme.colors.primary)
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "在线检查更新",
+                                    tint = OrbitTheme.colors.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteOutline,
+                            contentDescription = "删除音源",
+                            tint = Color(0xFFF43F5E).copy(alpha = 0.8f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
 

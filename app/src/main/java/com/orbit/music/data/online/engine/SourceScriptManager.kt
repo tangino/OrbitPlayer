@@ -34,6 +34,9 @@ class SourceScriptManager private constructor(private val context: Context) {
     private val _scripts = MutableStateFlow<List<SourceScriptItem>>(emptyList())
     val scripts: StateFlow<List<SourceScriptItem>> = _scripts.asStateFlow()
 
+    private val _enabledScripts = MutableStateFlow<List<SourceScriptItem>>(emptyList())
+    val enabledScripts: StateFlow<List<SourceScriptItem>> = _enabledScripts.asStateFlow()
+
     private val _activeScript = MutableStateFlow<SourceScriptItem?>(null)
     val activeScript: StateFlow<SourceScriptItem?> = _activeScript.asStateFlow()
 
@@ -64,8 +67,15 @@ class SourceScriptManager private constructor(private val context: Context) {
         }
 
         _scripts.value = loadedList
-        val active = loadedList.firstOrNull { it.isEnabled }
-        _activeScript.value = active
+        updateActiveAndEnabledFlows(loadedList)
+    }
+
+    private fun updateActiveAndEnabledFlows(list: List<SourceScriptItem>) {
+        val enabledList = list.filter { it.isEnabled }
+        _enabledScripts.value = enabledList
+        // 主音源优先级：明确标记 isPrimary 的，若没有则取 enabledList 第一个
+        val primary = enabledList.firstOrNull { it.isPrimary } ?: enabledList.firstOrNull()
+        _activeScript.value = primary
     }
 
     private fun saveConfig() {
@@ -77,6 +87,7 @@ class SourceScriptManager private constructor(private val context: Context) {
             .putString("scripts_list_json", array.toString())
             .putString("preferred_quality", _preferredQuality.value)
             .apply()
+        updateActiveAndEnabledFlows(_scripts.value)
     }
 
     fun setPreferredQuality(quality: String) {
@@ -135,54 +146,83 @@ class SourceScriptManager private constructor(private val context: Context) {
             description = meta.description,
             scriptContent = scriptContent,
             sourceUrl = sourceUrl,
-            isEnabled = true, // 默认导入后即刻激活该新源
+            isEnabled = true, // 默认导入后即刻启用
+            isPrimary = true, // 默认导入后设为主音源
             supportPlatforms = meta.platforms.ifEmpty { listOf("wy", "tx", "kg", "kw", "mg") },
             importedAt = System.currentTimeMillis()
         )
 
-        // 激活当前新导入的脚本，并禁用其它
-        val currentList = _scripts.value.map { it.copy(isEnabled = false) }.toMutableList()
+        // 将其他音源的 isPrimary 置为 false，但保留其 isEnabled 状态（多源协同池）
+        val currentList = _scripts.value.map { it.copy(isPrimary = false) }.toMutableList()
         currentList.add(0, newItem)
 
         _scripts.value = currentList
-        _activeScript.value = newItem
         saveConfig()
 
-        // 联动通知 OnlineAudioSourceManager 热加载
-        OnlineAudioSourceManager.getInstance(context).loadCustomScript(scriptContent)
+        // 联动通知 OnlineAudioSourceManager 重新装载多引擎池
+        OnlineAudioSourceManager.getInstance(context).reloadScriptEngines()
 
         return Result.success(newItem)
     }
 
     /**
-     * 启用指定音源（单选激活）
+     * 单独切换某个音源的启用/停用状态 (支持多源并发)
      */
-    fun enableScript(id: String) {
+    fun toggleScriptEnabled(id: String, enabled: Boolean) {
         val updated = _scripts.value.map { item ->
-            if (item.id == id) item.copy(isEnabled = true) else item.copy(isEnabled = false)
+            if (item.id == id) {
+                item.copy(isEnabled = enabled, isPrimary = if (!enabled) false else item.isPrimary)
+            } else {
+                item
+            }
         }
         _scripts.value = updated
-        val active = updated.firstOrNull { it.id == id }
-        _activeScript.value = active
         saveConfig()
-
-        if (active != null) {
-            OnlineAudioSourceManager.getInstance(context).loadCustomScript(active.scriptContent)
-        } else {
-            OnlineAudioSourceManager.getInstance(context).clearCustomScript()
-        }
+        OnlineAudioSourceManager.getInstance(context).reloadScriptEngines()
     }
 
     /**
-     * 禁用当前音源
+     * 设置为主选音源 (优先走该源，其余启用的音源自动成为备用源)
+     */
+    fun setPrimaryScript(id: String) {
+        val updated = _scripts.value.map { item ->
+            if (item.id == id) {
+                item.copy(isEnabled = true, isPrimary = true)
+            } else {
+                item.copy(isPrimary = false)
+            }
+        }
+        _scripts.value = updated
+        saveConfig()
+        OnlineAudioSourceManager.getInstance(context).reloadScriptEngines()
+    }
+
+    /**
+     * 一键启用所有音源（构建全量多源并发保障池）
+     */
+    fun enableAllScripts() {
+        var hasPrimary = _scripts.value.any { it.isPrimary && it.isEnabled }
+        val updated = _scripts.value.mapIndexed { idx, item ->
+            if (!hasPrimary && idx == 0) {
+                hasPrimary = true
+                item.copy(isEnabled = true, isPrimary = true)
+            } else {
+                item.copy(isEnabled = true)
+            }
+        }
+        _scripts.value = updated
+        saveConfig()
+        OnlineAudioSourceManager.getInstance(context).reloadScriptEngines()
+    }
+
+    /**
+     * 禁用全部音源
      */
     fun disableAllScripts() {
-        val updated = _scripts.value.map { it.copy(isEnabled = false) }
+        val updated = _scripts.value.map { it.copy(isEnabled = false, isPrimary = false) }
         _scripts.value = updated
-        _activeScript.value = null
         saveConfig()
-
-        OnlineAudioSourceManager.getInstance(context).clearCustomScript()
+        OnlineAudioSourceManager.getInstance(context).reloadScriptEngines()
     }
 
     /**
@@ -193,16 +233,15 @@ class SourceScriptManager private constructor(private val context: Context) {
         val updated = _scripts.value.filter { it.id != id }
         _scripts.value = updated
 
-        if (itemToDelete?.isEnabled == true) {
-            val nextActive = updated.firstOrNull()
+        if (itemToDelete?.isPrimary == true) {
+            val nextActive = updated.firstOrNull { it.isEnabled } ?: updated.firstOrNull()
             if (nextActive != null) {
-                enableScript(nextActive.id)
-            } else {
-                _activeScript.value = null
-                OnlineAudioSourceManager.getInstance(context).clearCustomScript()
+                setPrimaryScript(nextActive.id)
+                return
             }
         }
         saveConfig()
+        OnlineAudioSourceManager.getInstance(context).reloadScriptEngines()
     }
 
     /**

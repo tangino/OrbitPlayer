@@ -61,6 +61,15 @@ data class PlayedPlaylistEntry(
             is PlaybackOrigin.OnlinePlaylistOrigin -> {
                 category == PlaylistCategory.ONLINE && platform == origin.onlinePlaylist.platform && id == origin.onlinePlaylist.id
             }
+            is PlaybackOrigin.OnlineAlbumOrigin -> {
+                category == PlaylistCategory.ONLINE && platform == origin.onlineAlbum.platform && id == origin.onlineAlbum.id
+            }
+            is PlaybackOrigin.OnlineArtistOrigin -> {
+                category == PlaylistCategory.ONLINE && platform == origin.onlineArtist.platform && id == "artist_${origin.onlineArtist.id}"
+            }
+            is PlaybackOrigin.OnlineSquareOrigin -> {
+                category == PlaylistCategory.ONLINE && platform == origin.platform && id == "square_${origin.platform.name}_${origin.tabIndex}"
+            }
             else -> false
         }
     }
@@ -170,6 +179,51 @@ class PlayedPlaylistManager private constructor(context: Context) {
                     coverUrl = op.coverUrl,
                     songCount = if (playlistSongs.isNotEmpty()) playlistSongs.size else op.trackCount,
                     creatorName = op.creatorName,
+                    lastPlayedSongTitle = currentSong?.title,
+                    lastPlayedSongArtist = currentSong?.artist,
+                    playedTimestamp = System.currentTimeMillis()
+                )
+            }
+            is PlaybackOrigin.OnlineAlbumOrigin -> {
+                val album = origin.onlineAlbum
+                PlayedPlaylistEntry(
+                    id = album.id,
+                    title = album.title,
+                    category = PlaylistCategory.ONLINE,
+                    platform = album.platform,
+                    coverUrl = album.coverUrl,
+                    songCount = if (playlistSongs.isNotEmpty()) playlistSongs.size else album.songCount,
+                    creatorName = album.artist,
+                    lastPlayedSongTitle = currentSong?.title,
+                    lastPlayedSongArtist = currentSong?.artist,
+                    playedTimestamp = System.currentTimeMillis()
+                )
+            }
+            is PlaybackOrigin.OnlineArtistOrigin -> {
+                val artist = origin.onlineArtist
+                PlayedPlaylistEntry(
+                    id = "artist_${artist.id}",
+                    title = "${artist.name} 的精选歌曲",
+                    category = PlaylistCategory.ONLINE,
+                    platform = artist.platform,
+                    coverUrl = artist.avatarUrl,
+                    songCount = playlistSongs.size,
+                    creatorName = artist.name,
+                    lastPlayedSongTitle = currentSong?.title,
+                    lastPlayedSongArtist = currentSong?.artist,
+                    playedTimestamp = System.currentTimeMillis()
+                )
+            }
+            is PlaybackOrigin.OnlineSquareOrigin -> {
+                val p = origin.platform
+                PlayedPlaylistEntry(
+                    id = "square_${p.name}_${origin.tabIndex}",
+                    title = "${p.displayName} 在线精选",
+                    category = PlaylistCategory.ONLINE,
+                    platform = p,
+                    coverUrl = playlistSongs.firstOrNull { !it.albumArtUri.isNullOrBlank() }?.albumArtUri ?: currentSong?.albumArtUri,
+                    songCount = playlistSongs.size,
+                    creatorName = p.displayName,
                     lastPlayedSongTitle = currentSong?.title,
                     lastPlayedSongArtist = currentSong?.artist,
                     playedTimestamp = System.currentTimeMillis()

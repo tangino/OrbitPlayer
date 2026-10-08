@@ -14,6 +14,7 @@ data class SourceScriptItem(
     val scriptContent: String = "",
     val sourceUrl: String? = null,
     val isEnabled: Boolean = false,
+    val isPrimary: Boolean = false,
     val supportPlatforms: List<String> = emptyList(), // wy, tx, kg, kw, mg
     val importedAt: Long = System.currentTimeMillis()
 ) {
@@ -27,6 +28,7 @@ data class SourceScriptItem(
             put("scriptContent", scriptContent)
             put("sourceUrl", sourceUrl ?: "")
             put("isEnabled", isEnabled)
+            put("isPrimary", isPrimary)
             put("supportPlatforms", supportPlatforms.joinToString(","))
             put("importedAt", importedAt)
         }
@@ -50,6 +52,7 @@ data class SourceScriptItem(
                 scriptContent = json.optString("scriptContent", ""),
                 sourceUrl = json.optString("sourceUrl", "").ifEmpty { null },
                 isEnabled = json.optBoolean("isEnabled", false),
+                isPrimary = json.optBoolean("isPrimary", false),
                 supportPlatforms = platforms,
                 importedAt = json.optLong("importedAt", System.currentTimeMillis())
             )

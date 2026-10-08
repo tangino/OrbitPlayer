@@ -61,44 +61,70 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
     }
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    private var lxEngine: LxSourceEngine? = null
+
+    data class ScriptEngineHolder(
+        val id: String,
+        val name: String,
+        val isPrimary: Boolean,
+        val engine: LxSourceEngine
+    )
+    private val engineHolders = mutableListOf<ScriptEngineHolder>()
 
     // 内存 LRU 缓存：Key = "$platform:$songId", Value = CachedUrl(url, expireAtMs)
     private data class CachedUrl(val url: String, val expireAtMs: Long)
     private val memoryUrlCache = LruCache<String, CachedUrl>(200)
 
     init {
-        loadCustomScriptEngine()
+        reloadScriptEngines()
     }
 
     /**
-     * 加载已保存的用户自定义洛雪源脚本
+     * 重新装载所有已启用的音源引擎池 (主音源优先排在第一位，其余作为备用协同源)
      */
-    fun loadCustomScriptEngine() {
-        val activeItem = SourceScriptManager.getInstance(context).activeScript.value
-        if (activeItem != null && activeItem.scriptContent.isNotBlank()) {
-            lxEngine?.destroy()
-            lxEngine = LxSourceEngine(context, activeItem.scriptContent, activeItem.id, activeItem.name)
-            Log.i(TAG, "Loaded active source script from SourceScriptManager: ${activeItem.name}")
+    @Synchronized
+    fun reloadScriptEngines() {
+        // 销毁旧引擎
+        engineHolders.forEach { it.engine.destroy() }
+        engineHolders.clear()
+        memoryUrlCache.evictAll()
+
+        val sourceManager = SourceScriptManager.getInstance(context)
+        val enabledList = sourceManager.enabledScripts.value
+        val primaryItem = sourceManager.activeScript.value
+
+        if (enabledList.isNotEmpty()) {
+            val sorted = enabledList.sortedByDescending { it.id == primaryItem?.id || it.isPrimary }
+            for (item in sorted) {
+                if (item.scriptContent.isNotBlank()) {
+                    val isPrimary = (item.id == primaryItem?.id || item.isPrimary)
+                    val engine = LxSourceEngine(context, item.scriptContent, item.id, item.name)
+                    engineHolders.add(ScriptEngineHolder(item.id, item.name, isPrimary, engine))
+                    Log.i(TAG, "Loaded engine in pool: ${item.name} (isPrimary=$isPrimary)")
+                }
+            }
         } else {
             val script = prefs.getString(KEY_CUSTOM_SCRIPT, null)
             val scriptName = prefs.getString(KEY_CUSTOM_SCRIPT_NAME, "用户自定义源") ?: "用户自定义源"
             if (!script.isNullOrBlank()) {
-                lxEngine?.destroy()
-                lxEngine = LxSourceEngine(context, script, "user_script", scriptName)
-                Log.i(TAG, "Loaded custom LX source script: $scriptName")
+                val engine = LxSourceEngine(context, script, "user_script", scriptName)
+                engineHolders.add(ScriptEngineHolder("user_script", scriptName, true, engine))
+                Log.i(TAG, "Loaded legacy custom LX source script: $scriptName")
             }
         }
+    }
+
+    /**
+     * 加载已保存的用户自定义洛雪源脚本 (兼容旧调用)
+     */
+    fun loadCustomScriptEngine() {
+        reloadScriptEngines()
     }
 
     /**
      * 热加载指定脚本内容
      */
     fun loadCustomScript(scriptContent: String) {
-        lxEngine?.destroy()
-        lxEngine = LxSourceEngine(context, scriptContent, "active_script", "活动音源")
-        memoryUrlCache.evictAll()
-        Log.i(TAG, "Hot-reloaded custom LX source script")
+        reloadScriptEngines()
     }
 
     /**
@@ -109,7 +135,7 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
             .putString(KEY_CUSTOM_SCRIPT, scriptContent)
             .putString(KEY_CUSTOM_SCRIPT_NAME, name)
             .apply()
-        loadCustomScript(scriptContent)
+        reloadScriptEngines()
     }
 
     /**
@@ -117,20 +143,23 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
      */
     fun clearCustomScript() {
         prefs.edit().remove(KEY_CUSTOM_SCRIPT).remove(KEY_CUSTOM_SCRIPT_NAME).apply()
-        lxEngine?.destroy()
-        lxEngine = null
+        engineHolders.forEach { it.engine.destroy() }
+        engineHolders.clear()
         memoryUrlCache.evictAll()
-        Log.i(TAG, "Cleared custom LX source script")
+        Log.i(TAG, "Cleared custom LX source scripts")
     }
 
     fun hasCustomScript(): Boolean {
-        return lxEngine != null || SourceScriptManager.getInstance(context).activeScript.value != null
+        return engineHolders.isNotEmpty() || SourceScriptManager.getInstance(context).enabledScripts.value.isNotEmpty()
     }
 
     fun getCustomScriptName(): String? {
-        return SourceScriptManager.getInstance(context).activeScript.value?.name
+        val primary = engineHolders.firstOrNull { it.isPrimary } ?: engineHolders.firstOrNull()
+        return primary?.name ?: SourceScriptManager.getInstance(context).activeScript.value?.name
             ?: prefs.getString(KEY_CUSTOM_SCRIPT_NAME, null)
     }
+
+    fun getActiveEnginesCount(): Int = engineHolders.size
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
@@ -501,7 +530,8 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
             }
 
             for (q in qualityTryList) {
-                val url = engine.resolveMusicUrl(sourceKey, musicInfo, q, timeoutMs = 1800L)
+                val timeout = if (q == qualityTryList.first()) 1200L else 800L
+                val url = engine.resolveMusicUrl(sourceKey, musicInfo, q, timeoutMs = timeout)
                 if (!url.isNullOrBlank() && url.startsWith("http", ignoreCase = true)) {
                     val probePair = probeAndValidateAudioUrl(url, expectedDurationMs)
                     if (probePair != null) {
@@ -604,8 +634,13 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
             )
         }
 
-        val engine = lxEngine
-        val scriptName = getCustomScriptName() ?: "音源脚本"
+        // 2. 确定主音源与备用音源列表
+        val primaryHolder = engineHolders.firstOrNull { it.isPrimary } ?: engineHolders.firstOrNull()
+        val backupHolders = engineHolders.filter { it != primaryHolder }
+
+        val primaryEngine = primaryHolder?.engine
+        val primaryName = primaryHolder?.name ?: (getCustomScriptName() ?: "主音源")
+
         val prefQuality = explicitQuality ?: SourceScriptManager.getInstance(context).preferredQuality.value
         val qualityTryList = when (prefQuality) {
             "flac24bit" -> listOf("flac24bit", "flac", "320k", "128k")
@@ -614,7 +649,7 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
             else -> listOf("128k", "320k", "flac")
         }
 
-        // 2. 优先尝试当前所属广场平台 (原平台优先通道)
+        // 3. 第一阶段：主音源原平台优先通道
         var resolvedResult = resolveSinglePlatformSource(
             targetPlatform = platform,
             songId = songId,
@@ -623,12 +658,12 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
             album = album,
             expectedDurationMs = expectedDurationMs,
             isOriginal = true,
-            engine = engine,
-            scriptName = scriptName,
+            engine = primaryEngine,
+            scriptName = primaryName,
             qualityTryList = qualityTryList
         )
 
-        // 3. 🚀 跨平台并发竞速寻源 (若原平台无源，对其余 4 大平台发起并行搜索与解析，最快成功的立即返回)
+        // 4. 第二阶段：主音源跨平台并发竞速寻源 (原平台无源时，对其余平台发起并发)
         if (resolvedResult == null) {
             val fallbackPlatforms = OnlinePlatform.values().filter { it != platform }
             val channel = Channel<ResolvedAudioSource?>(fallbackPlatforms.size)
@@ -644,8 +679,8 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
                             album = album,
                             expectedDurationMs = expectedDurationMs,
                             isOriginal = false,
-                            engine = engine,
-                            scriptName = scriptName,
+                            engine = primaryEngine,
+                            scriptName = primaryName,
                             qualityTryList = qualityTryList
                         )
                         channel.send(result)
@@ -665,12 +700,60 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
             }
         }
 
+        // 5. 🚀 第三阶段：备用多音源并发竞速寻源 (若主音源全平台均未命中，唤醒全部备用音源池并发搜救)
+        if (resolvedResult == null && backupHolders.isNotEmpty()) {
+            val allPlatforms = OnlinePlatform.values().toList()
+            val totalRequests = backupHolders.size * allPlatforms.size
+            val backupChannel = Channel<ResolvedAudioSource?>(totalRequests)
+
+            coroutineScope {
+                val backupJobs = backupHolders.flatMap { holder ->
+                    allPlatforms.map { targetPlatform ->
+                        launch(Dispatchers.IO) {
+                            val isOrig = (targetPlatform == platform)
+                            val res = resolveSinglePlatformSource(
+                                targetPlatform = targetPlatform,
+                                songId = songId,
+                                title = title,
+                                artist = artist,
+                                album = album,
+                                expectedDurationMs = expectedDurationMs,
+                                isOriginal = isOrig,
+                                engine = holder.engine,
+                                scriptName = holder.name,
+                                qualityTryList = qualityTryList
+                            )?.let { successSource ->
+                                successSource.copy(
+                                    sourceName = "${successSource.platform.displayName} (${holder.name})",
+                                    isFallback = true,
+                                    fallbackReason = "主音源全平台无有效音源，由备用源「${holder.name}」成功解析"
+                                )
+                            }
+                            backupChannel.send(res)
+                        }
+                    }
+                }
+
+                var finishedCount = 0
+                while (finishedCount < totalRequests) {
+                    val candidate = backupChannel.receive()
+                    finishedCount++
+                    if (candidate != null) {
+                        resolvedResult = candidate
+                        backupJobs.forEach { job -> job.cancel() }
+                        Log.i(TAG, "Multi-source rescue success for $title via backup script: ${candidate.sourceName}")
+                        break
+                    }
+                }
+            }
+        }
+
         val finalResult = resolvedResult
         if (finalResult == null) {
-            if (engine == null) {
-                Log.w(TAG, "No active third-party source script loaded for resolving $title across all platforms")
+            if (engineHolders.isEmpty()) {
+                Log.w(TAG, "No active third-party source scripts loaded for resolving $title across all platforms")
             } else {
-                Log.w(TAG, "All online source platforms failed to resolve valid complete audio for $title")
+                Log.w(TAG, "All active ${engineHolders.size} source engines failed to resolve valid complete audio for $title across all platforms")
             }
         } else {
             // 写入缓存 (有效期 1 小时)
