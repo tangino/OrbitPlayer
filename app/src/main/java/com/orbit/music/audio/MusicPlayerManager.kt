@@ -597,13 +597,6 @@ class MusicPlayerManager private constructor(private val context: Context) {
                             errorMessage = errMsg
                         )
                     }
-                    com.orbit.music.utils.FastToast.show(context, errMsg, 2500L)
-                }
-
-                // 异步预热解析下一首歌曲
-                if (safeIndex + 1 < resolvedPlaylist.size) {
-                    val next = resolvedPlaylist[safeIndex + 1]
-                    launch(Dispatchers.IO) { runCatching { resolveOnlineSongDirectUrl(next) } }
                 }
             }
         } else {
@@ -639,6 +632,18 @@ class MusicPlayerManager private constructor(private val context: Context) {
                     }
                     saveLastPlayedSong(updatedSong, startPositionMs, syncImmediately = true)
                 } catch (_: Exception) {}
+            }
+        }
+
+        // 🚀 全局静默预热解析下一首网络歌曲 (连播与切歌 0ms 秒开)
+        val currentList = _playbackState.value.currentPlaylist
+        if (safeIndex + 1 < currentList.size) {
+            val nextSong = currentList[safeIndex + 1]
+            if (nextSong.path.startsWith("online://")) {
+                scope.launch(Dispatchers.IO) {
+                    kotlinx.coroutines.delay(600L) // 避开当前首歌曲刚开始播放的瞬间网络与 IO 争夺
+                    runCatching { resolveOnlineSongSource(nextSong) }
+                }
             }
         }
     }
