@@ -1,4 +1,4 @@
-# ==============================================================================
+﻿# ==============================================================================
 # Orbit Player - 版本号修改/升级脚本 (PowerShell)
 # ==============================================================================
 
@@ -20,7 +20,7 @@ if (-not (Test-Path $GradleFile)) {
 $content = [System.IO.File]::ReadAllText((Resolve-Path $GradleFile).Path, [System.Text.Encoding]::UTF8)
 
 $codePattern = 'versionCode\s*=\s*([0-9]+)'
-$namePattern = 'versionName\s*=\s*\"([^\"]+)\"'
+$namePattern = 'versionName\s*=\s*"([^"]+)"'
 
 $codeMatch = [System.Text.RegularExpressions.Regex]::Match($content, $codePattern)
 $nameMatch = [System.Text.RegularExpressions.Regex]::Match($content, $namePattern)
@@ -119,7 +119,7 @@ Write-Host "------------------------------------------------------" -ForegroundC
 
 # 执行文本替换
 $newContent = [System.Text.RegularExpressions.Regex]::Replace($content, 'versionCode\s*=\s*[0-9]+', "versionCode = $NewCode")
-$newContent = [System.Text.RegularExpressions.Regex]::Replace($newContent, 'versionName\s*=\s*\"[^\"]+\"', "versionName = `"$NewName`"")
+$newContent = [System.Text.RegularExpressions.Regex]::Replace($newContent, 'versionName\s*=\s*"[^"]+"', "versionName = `"$NewName`"")
 
 [System.IO.File]::WriteAllText((Resolve-Path $GradleFile).Path, $newContent, [System.Text.Encoding]::UTF8)
 
