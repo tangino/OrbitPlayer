@@ -11,8 +11,8 @@ android {
         applicationId = "com.orbit.music"
         minSdk = 21
         targetSdk = 34
-        versionCode = 24
-        versionName = "0.3.4"
+        versionCode = 25
+        versionName = "0.3.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

@@ -118,6 +118,9 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val repository = MusicRepository.getInstance(application)
     private val playerManager = MusicPlayerManager.getInstance(application)
     private val playedPlaylistManager = PlayedPlaylistManager.getInstance(application)
+    private val playlistGroupManager = com.orbit.music.data.playlist.PlaylistGroupManager.getInstance(application)
+
+    val playlistGroups: StateFlow<List<String>> = playlistGroupManager.groups
     private val prefs: SharedPreferences = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val _libraryUiState = MutableStateFlow(LibraryUiState())
@@ -708,9 +711,41 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun toggleShuffle(): Int = playerManager.toggleShuffle()
     fun toggleRepeatMode() = playerManager.toggleRepeatMode()
 
-    fun createPlaylist(name: String) {
+    fun createPlaylist(name: String, groupName: String = "默认") {
         viewModelScope.launch {
-            repository.createPlaylist(name)
+            repository.createPlaylist(name, groupName)
+        }
+    }
+
+    fun updatePlaylistGroup(playlistId: Long, groupName: String) {
+        viewModelScope.launch {
+            repository.updatePlaylistGroup(playlistId, groupName)
+        }
+    }
+
+    fun updateOnlinePlaylistGroup(playlist: com.orbit.music.data.online.model.OnlinePlaylist, groupName: String) {
+        com.orbit.music.data.online.repository.OnlinePlaylistFavoriteManager.getInstance(getApplication()).updateCustomGroup(playlist, groupName)
+    }
+
+    fun addPlaylistGroup(name: String) {
+        playlistGroupManager.addGroup(name)
+    }
+
+    fun renamePlaylistGroup(oldName: String, newName: String) {
+        viewModelScope.launch {
+            repository.renamePlaylistGroup(oldName, newName)
+        }
+    }
+
+    fun deletePlaylistGroup(name: String) {
+        viewModelScope.launch {
+            repository.deletePlaylistGroup(name)
+        }
+    }
+
+    fun refreshPlaylists() {
+        viewModelScope.launch {
+            repository.refreshPlaylists()
         }
     }
 

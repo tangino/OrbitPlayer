@@ -32,7 +32,8 @@ data class OnlinePlaylist(
     val trackCount: Int = 0,
     val creatorName: String? = null,
     val creatorAvatarUrl: String? = null,
-    val description: String? = null
+    val description: String? = null,
+    val customGroup: String = "默认"
 )
 
 /**

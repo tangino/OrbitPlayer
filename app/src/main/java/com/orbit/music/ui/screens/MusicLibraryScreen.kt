@@ -33,6 +33,7 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.*
+import com.orbit.music.data.playlist.PlaylistGroupManager
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
@@ -64,6 +65,7 @@ import com.orbit.music.ui.components.SelectAlbumCoverDialog
 import com.orbit.music.ui.components.SongItem
 import com.orbit.music.ui.components.ExportPlaylistDialog
 import com.orbit.music.ui.components.ImportPlaylistDialog
+import com.orbit.music.ui.components.CloudPlaylistSyncDialog
 import com.orbit.music.utils.FastToast
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.BorderStroke
@@ -164,6 +166,12 @@ fun MusicLibraryScreen(
     val playlists by viewModel.filteredPlaylists.collectAsState()
 
     var showNewPlaylistDialog by remember { mutableStateOf(false) }
+    var newPlaylistSelectedGroup by remember { mutableStateOf("默认") }
+    var showManageGroupsDialog by remember { mutableStateOf(false) }
+    var showCreateGroupDialog by remember { mutableStateOf(false) }
+    var newGroupNameInput by remember { mutableStateOf("") }
+    var movingPlaylistToGroup by remember { mutableStateOf<Playlist?>(null) }
+    var movingOnlinePlaylistToGroup by remember { mutableStateOf<OnlinePlaylist?>(null) }
     var newPlaylistName by remember { mutableStateOf("") }
 
     // 播放列表管理状态 (重命名 / 删除 / 导入 / 导出)
@@ -176,6 +184,7 @@ fun MusicLibraryScreen(
     var exportOnlinePlaylist by remember { mutableStateOf<com.orbit.music.data.online.model.OnlinePlaylist?>(null) }
     var exportOnlineSongs by remember { mutableStateOf<List<com.orbit.music.data.online.model.OnlineSongItem>>(emptyList()) }
     var showImportPlaylistDialog by remember { mutableStateOf(false) }
+    var showCloudPlaylistSyncDialog by remember { mutableStateOf(false) }
 
     // 播放列表下钻状态：直接由 ViewModel 的 libraryState 驱动，跨页面切换时状态完全保持
     val openedPlaylist = libraryState.selectedPlaylist
@@ -1127,6 +1136,21 @@ fun MusicLibraryScreen(
                                     imageVector = Icons.Default.Sync,
                                     contentDescription = "Scan",
                                     tint = if (isScanning) OrbitTheme.colors.tertiary else OrbitTheme.colors.textSecondary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
+                        // 4.5 歌单云同步快捷入口
+                        if (libraryState.currentTab == LibraryTab.PLAYLISTS && !isDrillDown) {
+                            IconButton(
+                                onClick = { showCloudPlaylistSyncDialog = true },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CloudSync,
+                                    contentDescription = "歌单云同步",
+                                    tint = OrbitTheme.colors.primary,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -3308,6 +3332,7 @@ fun MusicLibraryScreen(
                             // 歌单主列表（本地歌单 + 各在线平台收藏歌单统一分组展示）
                             val onlineFavoriteManager = remember { OnlinePlaylistFavoriteManager.getInstance(context) }
                             val onlineFavorites by onlineFavoriteManager.favorites.collectAsState()
+                            val customGroups by viewModel.playlistGroups.collectAsState()
                             val currentPlayedPlaylist by viewModel.currentPlayedPlaylist.collectAsState()
                             val previousPlayedPlaylist by viewModel.previousPlayedPlaylist.collectAsState()
                             val currentPlaybackOrigin by viewModel.playbackOrigin.collectAsState()
@@ -3324,6 +3349,8 @@ fun MusicLibraryScreen(
                             val dislikedMatches = dislikedSongs.isNotEmpty() && (q.isBlank() || dislikedTitle.contains(q, ignoreCase = true) || dislikedSongs.any {
                                 it.title.contains(q, ignoreCase = true) || it.artist.contains(q, ignoreCase = true)
                             })
+                            val favFirstCover = remember(favoriteSongs) { favoriteSongs.firstOrNull { !it.albumArtUri.isNullOrBlank() }?.albumArtUri }
+                            val disFirstCover = remember(dislikedSongs) { dislikedSongs.firstOrNull { !it.albumArtUri.isNullOrBlank() }?.albumArtUri }
                             val filteredLocalPlaylists = remember(playlists, q) {
                                 if (q.isBlank()) playlists else playlists.filter { it.name.contains(q, ignoreCase = true) }
                             }
@@ -3408,16 +3435,31 @@ fun MusicLibraryScreen(
                                     .padding(start = 16.dp, end = 16.dp, top = 8.dp)
                                     .then(pinchGestureModifier)
                             ) {
-                                // 分类切换/过滤药丸（横向滑动）
-                                val filterCategories = listOf(
-                                    Triple("ALL", "全部", totalPlaylistsCount),
-                                    Triple("LOCAL", "本地歌单", localTotalCount),
-                                    Triple("NETEASE", "网易云", neteaseFavorites.size),
-                                    Triple("QQ", "QQ音乐", qqFavorites.size),
-                                    Triple("KUGOU", "酷狗", kugouFavorites.size),
-                                    Triple("KUWO", "酷我", kuwoFavorites.size),
-                                    Triple("MIGU", "咪咕", miguFavorites.size)
-                                )
+                                // 统计各自定义分组下的歌单数
+                                val groupCounts = remember(customGroups, filteredLocalPlaylists, onlineFavorites, favMatches, dislikedMatches) {
+                                    customGroups.associateWith { g ->
+                                        val locCount = filteredLocalPlaylists.count { it.groupName == g } + (if (g == "默认") (if (favMatches) 1 else 0) + (if (dislikedMatches) 1 else 0) else 0)
+                                        val onlCount = onlineFavorites.count { it.customGroup == g }
+                                        locCount + onlCount
+                                    }
+                                }
+
+                                val isCustomGroupSelected = selectedPlaylistGroup.startsWith("GRP:")
+                                val activeCustomGroupName = if (isCustomGroupSelected) selectedPlaylistGroup.removePrefix("GRP:") else null
+
+                                // 分类切换/过滤药丸（全部 -> 各自定义分组 -> 本地 -> 各在线平台）
+                                val filterCategories = buildList {
+                                    add(Triple("ALL", "全部", totalPlaylistsCount))
+                                    for (g in customGroups) {
+                                        add(Triple("GRP:$g", g, groupCounts[g] ?: 0))
+                                    }
+                                    add(Triple("LOCAL", "本地", localTotalCount))
+                                    add(Triple("NETEASE", "网易云", neteaseFavorites.size))
+                                    add(Triple("QQ", "QQ音乐", qqFavorites.size))
+                                    add(Triple("KUGOU", "酷狗", kugouFavorites.size))
+                                    add(Triple("KUWO", "酷我", kuwoFavorites.size))
+                                    add(Triple("MIGU", "咪咕", miguFavorites.size))
+                                }
 
                                 Row(
                                     modifier = Modifier
@@ -3478,38 +3520,169 @@ fun MusicLibraryScreen(
                                             }
                                         }
                                     }
+
+                                    // 快捷操作胶囊：新建分组 & 分组管理
+                                    Surface(
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = OrbitTheme.colors.surfaceCard,
+                                        border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.3f)),
+                                        modifier = Modifier.clickable {
+                                            newGroupNameInput = ""
+                                            showCreateGroupDialog = true
+                                        }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Add,
+                                                contentDescription = null,
+                                                tint = OrbitTheme.colors.primary,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Text(
+                                                text = "新建分组",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = OrbitTheme.colors.primary
+                                            )
+                                        }
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = OrbitTheme.colors.surfaceCard,
+                                        border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.3f)),
+                                        modifier = Modifier.clickable {
+                                            showManageGroupsDialog = true
+                                        }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Tune,
+                                                contentDescription = null,
+                                                tint = OrbitTheme.colors.primary,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Text(
+                                                text = "分组管理",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = OrbitTheme.colors.primary
+                                            )
+                                        }
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = OrbitTheme.colors.primary.copy(alpha = 0.12f),
+                                        border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.45f)),
+                                        modifier = Modifier.clickable {
+                                            showCloudPlaylistSyncDialog = true
+                                        }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.CloudSync,
+                                                contentDescription = null,
+                                                tint = OrbitTheme.colors.primary,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Text(
+                                                text = "歌单云同步",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = OrbitTheme.colors.primary
+                                            )
+                                        }
+                                    }
                                 }
 
                                 Spacer(modifier = Modifier.height(10.dp))
 
+                                // 计算当前筛选下的本地歌单与各平台歌单列表
+                                val targetCustomGroupName = if (selectedPlaylistGroup.startsWith("GRP:")) selectedPlaylistGroup.removePrefix("GRP:") else null
+                                val currentLocalList = remember(filteredLocalPlaylists, selectedPlaylistGroup, targetCustomGroupName) {
+                                    when {
+                                        targetCustomGroupName != null -> filteredLocalPlaylists.filter { it.groupName == targetCustomGroupName }
+                                        selectedPlaylistGroup in listOf("ALL", "LOCAL") -> filteredLocalPlaylists
+                                        else -> emptyList()
+                                    }
+                                }
+                                val showFavInCurrent = (selectedPlaylistGroup in listOf("ALL", "LOCAL") || targetCustomGroupName == "默认") && favMatches
+                                val showDislikedInCurrent = (selectedPlaylistGroup in listOf("ALL", "LOCAL") || targetCustomGroupName == "默认") && dislikedMatches
+                                val activeLocalTotalCount = currentLocalList.size + (if (showFavInCurrent) 1 else 0) + (if (showDislikedInCurrent) 1 else 0)
+
+                                val currentNeteaseList = remember(neteaseFavorites, selectedPlaylistGroup, targetCustomGroupName) {
+                                    when {
+                                        targetCustomGroupName != null -> neteaseFavorites.filter { it.customGroup == targetCustomGroupName }
+                                        selectedPlaylistGroup in listOf("ALL", "NETEASE") -> neteaseFavorites
+                                        else -> emptyList()
+                                    }
+                                }
+                                val currentQqList = remember(qqFavorites, selectedPlaylistGroup, targetCustomGroupName) {
+                                    when {
+                                        targetCustomGroupName != null -> qqFavorites.filter { it.customGroup == targetCustomGroupName }
+                                        selectedPlaylistGroup in listOf("ALL", "QQ") -> qqFavorites
+                                        else -> emptyList()
+                                    }
+                                }
+                                val currentKugouList = remember(kugouFavorites, selectedPlaylistGroup, targetCustomGroupName) {
+                                    when {
+                                        targetCustomGroupName != null -> kugouFavorites.filter { it.customGroup == targetCustomGroupName }
+                                        selectedPlaylistGroup in listOf("ALL", "KUGOU") -> kugouFavorites
+                                        else -> emptyList()
+                                    }
+                                }
+                                val currentKuwoList = remember(kuwoFavorites, selectedPlaylistGroup, targetCustomGroupName) {
+                                    when {
+                                        targetCustomGroupName != null -> kuwoFavorites.filter { it.customGroup == targetCustomGroupName }
+                                        selectedPlaylistGroup in listOf("ALL", "KUWO") -> kuwoFavorites
+                                        else -> emptyList()
+                                    }
+                                }
+                                val currentMiguList = remember(miguFavorites, selectedPlaylistGroup, targetCustomGroupName) {
+                                    when {
+                                        targetCustomGroupName != null -> miguFavorites.filter { it.customGroup == targetCustomGroupName }
+                                        selectedPlaylistGroup in listOf("ALL", "MIGU") -> miguFavorites
+                                        else -> emptyList()
+                                    }
+                                }
+
+                                val currentVisibleTotalCount = activeLocalTotalCount + currentNeteaseList.size + currentQqList.size + currentKugouList.size + currentKuwoList.size + currentMiguList.size
+
                                 // 如果整个筛选结果为空，显示空状态
                                 val hasPlayedCards = selectedPlaylistGroup == "ALL" && q.isBlank() && (currentPlayedPlaylist != null || previousPlayedPlaylist != null)
-                                val shouldShowEmptyState = when (selectedPlaylistGroup) {
-                                    "LOCAL" -> localTotalCount == 0
-                                    "NETEASE" -> neteaseFavorites.isEmpty()
-                                    "QQ" -> qqFavorites.isEmpty()
-                                    "KUGOU" -> kugouFavorites.isEmpty()
-                                    "KUWO" -> kuwoFavorites.isEmpty()
-                                    "MIGU" -> miguFavorites.isEmpty()
-                                    else -> totalPlaylistsCount == 0
-                                }
+                                val shouldShowEmptyState = currentVisibleTotalCount == 0
 
                                 if (shouldShowEmptyState && !hasPlayedCards) {
                                     val emptyTitle = if (q.isNotBlank()) {
                                         stringResource(R.string.search_no_results_title)
-                                    } else when (selectedPlaylistGroup) {
-                                        "LOCAL" -> "暂无本地自建歌单"
-                                        "NETEASE" -> "暂无收藏的网易云音乐歌单"
-                                        "QQ" -> "暂无收藏的QQ音乐歌单"
-                                        "KUGOU" -> "暂无收藏的酷狗音乐歌单"
-                                        "KUWO" -> "暂无收藏的酷我音乐歌单"
-                                        "MIGU" -> "暂无收藏的咪咕音乐歌单"
+                                    } else when {
+                                        targetCustomGroupName != null -> "分组「$targetCustomGroupName」暂无歌单"
+                                        selectedPlaylistGroup == "LOCAL" -> "暂无本地自建歌单"
+                                        selectedPlaylistGroup == "NETEASE" -> "暂无收藏的网易云音乐歌单"
+                                        selectedPlaylistGroup == "QQ" -> "暂无收藏的QQ音乐歌单"
+                                        selectedPlaylistGroup == "KUGOU" -> "暂无收藏的酷狗音乐歌单"
+                                        selectedPlaylistGroup == "KUWO" -> "暂无收藏的酷我音乐歌单"
+                                        selectedPlaylistGroup == "MIGU" -> "暂无收藏的咪咕音乐歌单"
                                         else -> "暂无任何歌单"
                                     }
                                     val emptySubtitle = if (q.isNotBlank()) {
                                         stringResource(R.string.search_no_results_desc)
-                                    } else when (selectedPlaylistGroup) {
-                                        "LOCAL" -> "点击下方按钮即可创建专属本地歌单"
+                                    } else when {
+                                        targetCustomGroupName != null -> "可点击歌单右侧「...」菜单选择「设置分组」，将其归入此分组"
+                                        selectedPlaylistGroup == "LOCAL" -> "点击下方按钮即可创建专属本地歌单"
                                         else -> "在对应平台的在线歌单广场点击收藏，即可汇聚在此处统一收听"
                                     }
 
@@ -3731,7 +3904,7 @@ fun MusicLibraryScreen(
                                         // ==========================================
                                         // 1. 本地歌单列表 (LOCAL PLAYLISTS)
                                         // ==========================================
-                                        if (selectedPlaylistGroup in listOf("ALL", "LOCAL") && localTotalCount > 0) {
+                                        if (activeLocalTotalCount > 0) {
                                             val isLocalCollapsed = collapsedPlaylistGroups.contains("LOCAL")
                                             item(key = "header_local_group") {
                                                 val rotationAngle by animateFloatAsState(
@@ -3775,7 +3948,7 @@ fun MusicLibraryScreen(
                                                             color = OrbitTheme.colors.primary.copy(alpha = 0.15f)
                                                         ) {
                                                             Text(
-                                                                text = "$localTotalCount",
+                                                                text = "$activeLocalTotalCount",
                                                                 fontSize = 11.sp,
                                                                 fontWeight = FontWeight.Bold,
                                                                 color = OrbitTheme.colors.primary,
@@ -3787,6 +3960,27 @@ fun MusicLibraryScreen(
                                                         verticalAlignment = Alignment.CenterVertically,
                                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                                                     ) {
+                                                        TextButton(
+                                                            onClick = {
+                                                                showCloudPlaylistSyncDialog = true
+                                                            },
+                                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                            modifier = Modifier.height(28.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.CloudSync,
+                                                                contentDescription = null,
+                                                                tint = OrbitTheme.colors.primary,
+                                                                modifier = Modifier.size(14.dp)
+                                                            )
+                                                            Spacer(modifier = Modifier.width(2.dp))
+                                                            Text(
+                                                                text = "云同步",
+                                                                fontSize = 11.5.sp,
+                                                                color = OrbitTheme.colors.primary,
+                                                                fontWeight = FontWeight.Medium
+                                                            )
+                                                        }
                                                         TextButton(
                                                             onClick = {
                                                                 showImportPlaylistDialog = true
@@ -3845,7 +4039,7 @@ fun MusicLibraryScreen(
                                             if (!isLocalCollapsed) {
                                                 if (useTabletLayout) {
                                                     // 平板模式：双列展示本地歌单
-                                                    if (favMatches && dislikedMatches) {
+                                                    if (showFavInCurrent && showDislikedInCurrent) {
                                                         item {
                                                             Row(
                                                                 modifier = Modifier.fillMaxWidth(),
@@ -3854,6 +4048,7 @@ fun MusicLibraryScreen(
                                                                 FavoritePlaylistItemCard(
                                                                     favTitle = favTitle,
                                                                     songCount = favoriteSongs.size,
+                                                                    coverArtUri = favFirstCover,
                                                                     onClick = {
                                                                         viewModel.selectPlaylist(
                                                                             Playlist(
@@ -3884,6 +4079,7 @@ fun MusicLibraryScreen(
                                                                 DislikedPlaylistItemCard(
                                                                     dislikedTitle = dislikedTitle,
                                                                     songCount = dislikedSongs.size,
+                                                                    coverArtUri = disFirstCover,
                                                                     onClick = {
                                                                         viewModel.selectPlaylist(
                                                                             Playlist(
@@ -3913,11 +4109,12 @@ fun MusicLibraryScreen(
                                                             }
                                                         }
                                                     } else {
-                                                        if (favMatches) {
+                                                        if (showFavInCurrent) {
                                                             item {
                                                                 FavoritePlaylistItemCard(
                                                                     favTitle = favTitle,
                                                                     songCount = favoriteSongs.size,
+                                                                    coverArtUri = favFirstCover,
                                                                     onClick = {
                                                                         viewModel.selectPlaylist(
                                                                             Playlist(
@@ -3946,11 +4143,12 @@ fun MusicLibraryScreen(
                                                                 )
                                                             }
                                                         }
-                                                        if (dislikedMatches) {
+                                                        if (showDislikedInCurrent) {
                                                             item {
                                                                 DislikedPlaylistItemCard(
                                                                     dislikedTitle = dislikedTitle,
                                                                     songCount = dislikedSongs.size,
+                                                                    coverArtUri = disFirstCover,
                                                                     onClick = {
                                                                         viewModel.selectPlaylist(
                                                                             Playlist(
@@ -3982,7 +4180,7 @@ fun MusicLibraryScreen(
                                                     }
 
                                                     // 自建歌单两两一组双列展示
-                                                    val localChunks = filteredLocalPlaylists.chunked(2)
+                                                    val localChunks = currentLocalList.chunked(2)
                                                     items(localChunks, key = { chunk -> "local_chunk_${chunk.map { it.id }.joinToString("_")}" }) { pair ->
                                                         Row(
                                                             modifier = Modifier.fillMaxWidth(),
@@ -3991,6 +4189,7 @@ fun MusicLibraryScreen(
                                                             val p1 = pair[0]
                                                             LocalPlaylistItemCard(
                                                                 playlist = p1,
+                                                                onSetGroup = { movingPlaylistToGroup = p1 },
                                                                 onClick = { viewModel.selectPlaylist(p1) },
                                                                 onPlay = {
                                                                     coroutineScope.launch {
@@ -4021,6 +4220,7 @@ fun MusicLibraryScreen(
                                                                 val p2 = pair[1]
                                                                 LocalPlaylistItemCard(
                                                                     playlist = p2,
+                                                                    onSetGroup = { movingPlaylistToGroup = p2 },
                                                                     onClick = { viewModel.selectPlaylist(p2) },
                                                                     onPlay = {
                                                                         coroutineScope.launch {
@@ -4054,11 +4254,12 @@ fun MusicLibraryScreen(
                                                     }
                                                 } else {
                                                     // 手机单列展示
-                                                    if (favMatches) {
+                                                    if (showFavInCurrent) {
                                                         item {
                                                             FavoritePlaylistItemCard(
                                                                 favTitle = favTitle,
                                                                 songCount = favoriteSongs.size,
+                                                                coverArtUri = favFirstCover,
                                                                 onClick = {
                                                                     viewModel.selectPlaylist(
                                                                         Playlist(
@@ -4088,11 +4289,12 @@ fun MusicLibraryScreen(
                                                         }
                                                     }
 
-                                                    if (dislikedMatches) {
+                                                    if (showDislikedInCurrent) {
                                                         item {
                                                             DislikedPlaylistItemCard(
                                                                 dislikedTitle = dislikedTitle,
                                                                 songCount = dislikedSongs.size,
+                                                                coverArtUri = disFirstCover,
                                                                 onClick = {
                                                                     viewModel.selectPlaylist(
                                                                         Playlist(
@@ -4122,7 +4324,7 @@ fun MusicLibraryScreen(
                                                         }
                                                     }
 
-                                                    items(filteredLocalPlaylists, key = { "local_${it.id}" }) { playlist ->
+                                                    items(currentLocalList, key = { "local_${it.id}" }) { playlist ->
                                                         LocalPlaylistItemCard(
                                                             playlist = playlist,
                                                             onClick = { viewModel.selectPlaylist(playlist) },
@@ -4149,6 +4351,9 @@ fun MusicLibraryScreen(
                                                                     showExportPlaylistDialog = true
                                                                 }
                                                             },
+                                                            onSetGroup = {
+                                                                movingPlaylistToGroup = playlist
+                                                            },
                                                             modifier = Modifier.fillMaxWidth()
                                                         )
                                                     }
@@ -4160,11 +4365,11 @@ fun MusicLibraryScreen(
                                         // 2. 各平台在线收藏歌单列表 (ONLINE PLATFORMS)
                                         // ==========================================
                                         val platformsWithFavorites = listOf(
-                                            Triple(OnlinePlatform.NETEASE, neteaseFavorites, Color(0xFFE60026)),
-                                            Triple(OnlinePlatform.QQ, qqFavorites, Color(0xFF1ECF96)),
-                                            Triple(OnlinePlatform.KUGOU, kugouFavorites, Color(0xFF0088FF)),
-                                            Triple(OnlinePlatform.KUWO, kuwoFavorites, Color(0xFFFF9500)),
-                                            Triple(OnlinePlatform.MIGU, miguFavorites, Color(0xFFE91E63))
+                                            Triple(OnlinePlatform.NETEASE, currentNeteaseList, Color(0xFFE60026)),
+                                            Triple(OnlinePlatform.QQ, currentQqList, Color(0xFF1ECF96)),
+                                            Triple(OnlinePlatform.KUGOU, currentKugouList, Color(0xFF0088FF)),
+                                            Triple(OnlinePlatform.KUWO, currentKuwoList, Color(0xFFFF9500)),
+                                            Triple(OnlinePlatform.MIGU, currentMiguList, Color(0xFFE91E63))
                                         )
 
                                         val playOnlineItem: (OnlinePlaylist) -> Unit = { onlinePlaylist ->
@@ -4189,7 +4394,8 @@ fun MusicLibraryScreen(
                                         platformsWithFavorites.forEach { (platform, favList, brandColor) ->
                                             val groupKey = platform.name.uppercase()
                                             val shouldRenderPlatform = (selectedPlaylistGroup == "ALL" && favList.isNotEmpty()) ||
-                                                    (selectedPlaylistGroup == groupKey)
+                                                    (selectedPlaylistGroup == groupKey) ||
+                                                    (selectedPlaylistGroup.startsWith("GRP:") && favList.isNotEmpty())
 
                                             if (shouldRenderPlatform && favList.isNotEmpty()) {
                                                 val isPlatformCollapsed = collapsedPlaylistGroups.contains(groupKey)
@@ -4344,6 +4550,7 @@ fun MusicLibraryScreen(
                                                                     },
                                                                     onExport = { handleExportOnline(op1) },
                                                                     onImportToLocal = { handleImportOnlineToLocal(op1) },
+                                                                    onSetGroup = { movingOnlinePlaylistToGroup = op1 },
                                                                     modifier = Modifier.weight(1f)
                                                                 )
                                                                 if (pair.size > 1) {
@@ -4361,6 +4568,7 @@ fun MusicLibraryScreen(
                                                                         },
                                                                         onExport = { handleExportOnline(op2) },
                                                                         onImportToLocal = { handleImportOnlineToLocal(op2) },
+                                                                        onSetGroup = { movingOnlinePlaylistToGroup = op2 },
                                                                         modifier = Modifier.weight(1f)
                                                                     )
                                                                 } else {
@@ -4384,6 +4592,7 @@ fun MusicLibraryScreen(
                                                                 },
                                                                 onExport = { handleExportOnline(onlinePlaylist) },
                                                                 onImportToLocal = { handleImportOnlineToLocal(onlinePlaylist) },
+                                                                onSetGroup = { movingOnlinePlaylistToGroup = onlinePlaylist },
                                                                 modifier = Modifier.fillMaxWidth()
                                                             )
                                                         }
@@ -4921,25 +5130,63 @@ fun MusicLibraryScreen(
         }
     }
 
-    // 1. 新建播放列表弹窗
+    val allGroupsList by viewModel.playlistGroups.collectAsState()
+
+    // 1. 新建播放列表弹窗（带分组选择）
     if (showNewPlaylistDialog) {
         AlertDialog(
             onDismissRequest = { showNewPlaylistDialog = false },
             title = { Text(stringResource(R.string.create_new_playlist), color = OrbitTheme.colors.textPrimary, fontWeight = FontWeight.Bold) },
             text = {
-                OutlinedTextField(
-                    value = newPlaylistName,
-                    onValueChange = { newPlaylistName = it },
-                    label = { Text(stringResource(R.string.playlist_name_hint), color = OrbitTheme.colors.textSecondary) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = newPlaylistName,
+                        onValueChange = { newPlaylistName = it },
+                        label = { Text(stringResource(R.string.playlist_name_hint), color = OrbitTheme.colors.textSecondary) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Text(
+                        text = "选择所属分组：",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = OrbitTheme.colors.textSecondary
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        allGroupsList.forEach { g ->
+                            val isSel = newPlaylistSelectedGroup == g
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSel) OrbitTheme.colors.primary else OrbitTheme.colors.surfaceCard,
+                                border = BorderStroke(1.dp, if (isSel) OrbitTheme.colors.primary else OrbitTheme.colors.primary.copy(alpha = 0.2f)),
+                                modifier = Modifier.clickable { newPlaylistSelectedGroup = g }
+                            ) {
+                                Text(
+                                    text = g,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSel) {
+                                        if (OrbitTheme.colors.isDark) DarkBackground else Color.White
+                                    } else OrbitTheme.colors.textPrimary,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                )
+                            }
+                        }
+                    }
+                }
             },
             confirmButton = {
                 Button(
                     onClick = {
                         if (newPlaylistName.isNotBlank()) {
-                            viewModel.createPlaylist(newPlaylistName.trim())
+                            viewModel.createPlaylist(newPlaylistName.trim(), newPlaylistSelectedGroup)
                             newPlaylistName = ""
                             showNewPlaylistDialog = false
                         }
@@ -4956,6 +5203,575 @@ fun MusicLibraryScreen(
             },
             containerColor = OrbitTheme.colors.surfaceDialog
         )
+    }
+
+    // 1.0.1 移动本地歌单分组弹窗
+    movingPlaylistToGroup?.let { targetPlaylist ->
+        var selectedGroupForMove by remember { mutableStateOf(targetPlaylist.groupName) }
+        var isCreatingNewGroupInMove by remember { mutableStateOf(false) }
+        var inlineNewGroupName by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { movingPlaylistToGroup = null },
+            title = {
+                Text(
+                    text = "设置歌单分组",
+                    fontWeight = FontWeight.Bold,
+                    color = OrbitTheme.colors.textPrimary,
+                    fontSize = 16.sp
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "歌单：${targetPlaylist.name}",
+                        fontSize = 13.sp,
+                        color = OrbitTheme.colors.textSecondary
+                    )
+
+                    Text(
+                        text = "选择移动到目标分组：",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = OrbitTheme.colors.textPrimary
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        allGroupsList.forEach { groupName ->
+                            val isSelected = selectedGroupForMove == groupName && !isCreatingNewGroupInMove
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) OrbitTheme.colors.primary.copy(alpha = 0.15f) else OrbitTheme.colors.surfaceCard,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.primary.copy(alpha = 0.1f)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        selectedGroupForMove = groupName
+                                        isCreatingNewGroupInMove = false
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = groupName,
+                                        fontSize = 13.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textPrimary
+                                    )
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = OrbitTheme.colors.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 新建自定义分组选项
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isCreatingNewGroupInMove) OrbitTheme.colors.primary.copy(alpha = 0.15f) else OrbitTheme.colors.surfaceCard,
+                            border = BorderStroke(
+                                1.dp,
+                                if (isCreatingNewGroupInMove) OrbitTheme.colors.primary else OrbitTheme.colors.primary.copy(alpha = 0.1f)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    isCreatingNewGroupInMove = true
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "➕ 新建分组...",
+                                    fontSize = 13.5.sp,
+                                    fontWeight = if (isCreatingNewGroupInMove) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isCreatingNewGroupInMove) OrbitTheme.colors.primary else OrbitTheme.colors.textPrimary
+                                )
+                            }
+                        }
+
+                        if (isCreatingNewGroupInMove) {
+                            OutlinedTextField(
+                                value = inlineNewGroupName,
+                                onValueChange = { inlineNewGroupName = it },
+                                label = { Text("新分组名称", color = OrbitTheme.colors.textSecondary) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val finalGroup = if (isCreatingNewGroupInMove) {
+                            val trimmed = inlineNewGroupName.trim()
+                            if (trimmed.isNotBlank()) {
+                                viewModel.addPlaylistGroup(trimmed)
+                                trimmed
+                            } else {
+                                selectedGroupForMove
+                            }
+                        } else {
+                            selectedGroupForMove
+                        }
+                        viewModel.updatePlaylistGroup(targetPlaylist.id, finalGroup)
+                        FastToast.show(context, "已将「${targetPlaylist.name}」移至「$finalGroup」")
+                        movingPlaylistToGroup = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary)
+                ) {
+                    Text("保存", color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { movingPlaylistToGroup = null }) {
+                    Text("取消", color = OrbitTheme.colors.textSecondary)
+                }
+            },
+            containerColor = OrbitTheme.colors.surfaceDialog
+        )
+    }
+
+    // 1.0.2 移动在线收藏歌单分组弹窗
+    movingOnlinePlaylistToGroup?.let { targetOnlinePlaylist ->
+        var selectedGroupForMove by remember { mutableStateOf(targetOnlinePlaylist.customGroup) }
+        var isCreatingNewGroupInMove by remember { mutableStateOf(false) }
+        var inlineNewGroupName by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { movingOnlinePlaylistToGroup = null },
+            title = {
+                Text(
+                    text = "设置网络歌单分组",
+                    fontWeight = FontWeight.Bold,
+                    color = OrbitTheme.colors.textPrimary,
+                    fontSize = 16.sp
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "歌单：${targetOnlinePlaylist.title}",
+                        fontSize = 13.sp,
+                        color = OrbitTheme.colors.textSecondary
+                    )
+
+                    Text(
+                        text = "选择移动到目标分组：",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = OrbitTheme.colors.textPrimary
+                    )
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        allGroupsList.forEach { groupName ->
+                            val isSelected = selectedGroupForMove == groupName && !isCreatingNewGroupInMove
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) OrbitTheme.colors.primary.copy(alpha = 0.15f) else OrbitTheme.colors.surfaceCard,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.primary.copy(alpha = 0.1f)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        selectedGroupForMove = groupName
+                                        isCreatingNewGroupInMove = false
+                                    }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = groupName,
+                                        fontSize = 13.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textPrimary
+                                    )
+                                    if (isSelected) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = OrbitTheme.colors.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 新建自定义分组选项
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = if (isCreatingNewGroupInMove) OrbitTheme.colors.primary.copy(alpha = 0.15f) else OrbitTheme.colors.surfaceCard,
+                            border = BorderStroke(
+                                1.dp,
+                                if (isCreatingNewGroupInMove) OrbitTheme.colors.primary else OrbitTheme.colors.primary.copy(alpha = 0.1f)
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    isCreatingNewGroupInMove = true
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "➕ 新建分组...",
+                                    fontSize = 13.5.sp,
+                                    fontWeight = if (isCreatingNewGroupInMove) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isCreatingNewGroupInMove) OrbitTheme.colors.primary else OrbitTheme.colors.textPrimary
+                                )
+                            }
+                        }
+
+                        if (isCreatingNewGroupInMove) {
+                            OutlinedTextField(
+                                value = inlineNewGroupName,
+                                onValueChange = { inlineNewGroupName = it },
+                                label = { Text("新分组名称", color = OrbitTheme.colors.textSecondary) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val finalGroup = if (isCreatingNewGroupInMove) {
+                            val trimmed = inlineNewGroupName.trim()
+                            if (trimmed.isNotBlank()) {
+                                viewModel.addPlaylistGroup(trimmed)
+                                trimmed
+                            } else {
+                                selectedGroupForMove
+                            }
+                        } else {
+                            selectedGroupForMove
+                        }
+                        viewModel.updateOnlinePlaylistGroup(targetOnlinePlaylist, finalGroup)
+                        FastToast.show(context, "已将「${targetOnlinePlaylist.title}」移至「$finalGroup」")
+                        movingOnlinePlaylistToGroup = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary)
+                ) {
+                    Text("保存", color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { movingOnlinePlaylistToGroup = null }) {
+                    Text("取消", color = OrbitTheme.colors.textSecondary)
+                }
+            },
+            containerColor = OrbitTheme.colors.surfaceDialog
+        )
+    }
+
+    // 1.0.3 新建自定义分组弹窗
+    if (showCreateGroupDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateGroupDialog = false },
+            title = {
+                Text(
+                    text = "新建歌单分组",
+                    fontWeight = FontWeight.Bold,
+                    color = OrbitTheme.colors.textPrimary,
+                    fontSize = 16.sp
+                )
+            },
+            text = {
+                OutlinedTextField(
+                    value = newGroupNameInput,
+                    onValueChange = { newGroupNameInput = it },
+                    label = { Text("分组名称（如 🚗 车载专用）", color = OrbitTheme.colors.textSecondary) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val trimmed = newGroupNameInput.trim()
+                        if (trimmed.isNotBlank()) {
+                            viewModel.addPlaylistGroup(trimmed)
+                            FastToast.show(context, "分组「$trimmed」创建成功")
+                            newGroupNameInput = ""
+                            showCreateGroupDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary)
+                ) {
+                    Text("创建", color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateGroupDialog = false }) {
+                    Text("取消", color = OrbitTheme.colors.textSecondary)
+                }
+            },
+            containerColor = OrbitTheme.colors.surfaceDialog
+        )
+    }
+
+    // 1.0.4 歌单分组管理对话框
+    if (showManageGroupsDialog) {
+        var renamingGroupTarget by remember { mutableStateOf<String?>(null) }
+        var renamingGroupNewName by remember { mutableStateOf("") }
+        var deletingGroupTarget by remember { mutableStateOf<String?>(null) }
+        var inlineCreateName by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { showManageGroupsDialog = false },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = null,
+                        tint = OrbitTheme.colors.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "歌单分组管理",
+                        fontWeight = FontWeight.Bold,
+                        color = OrbitTheme.colors.textPrimary,
+                        fontSize = 16.sp
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "您可以创建如「车载专用」、「手机精选」等分组，方便在不同设备场景下管理歌单。",
+                        fontSize = 12.sp,
+                        color = OrbitTheme.colors.textSecondary,
+                        lineHeight = 16.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    allGroupsList.forEach { groupName ->
+                        val localCount = playlists.count { it.groupName == groupName }
+                        val onlineCount = OnlinePlaylistFavoriteManager.getInstance(context).favorites.value.count { it.customGroup == groupName }
+                        val totalInGroup = localCount + onlineCount
+
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = OrbitTheme.colors.surfaceCard,
+                            border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.12f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = groupName,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = OrbitTheme.colors.textPrimary
+                                    )
+                                    Text(
+                                        text = "共 $totalInGroup 个歌单（本地 $localCount，在线 $onlineCount）",
+                                        fontSize = 11.sp,
+                                        color = OrbitTheme.colors.textSecondary
+                                    )
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = {
+                                            renamingGroupTarget = groupName
+                                            renamingGroupNewName = groupName
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = "重命名",
+                                            tint = OrbitTheme.colors.primary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+
+                                    if (groupName != "默认") {
+                                        IconButton(
+                                            onClick = {
+                                                deletingGroupTarget = groupName
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.DeleteOutline,
+                                                contentDescription = "删除",
+                                                tint = Color(0xFFEF4444),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    // 快速添加分组栏
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = inlineCreateName,
+                            onValueChange = { inlineCreateName = it },
+                            placeholder = { Text("输入新分组名...", fontSize = 12.sp, color = OrbitTheme.colors.textSecondary) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Button(
+                            onClick = {
+                                val trimmed = inlineCreateName.trim()
+                                if (trimmed.isNotBlank()) {
+                                    viewModel.addPlaylistGroup(trimmed)
+                                    inlineCreateName = ""
+                                    FastToast.show(context, "分组「$trimmed」添加成功")
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Text("添加", fontSize = 12.sp, color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showManageGroupsDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary)
+                ) {
+                    Text("完成", color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White)
+                }
+            },
+            containerColor = OrbitTheme.colors.surfaceDialog
+        )
+
+        // 重命名分组子弹窗
+        renamingGroupTarget?.let { targetGroup ->
+            AlertDialog(
+                onDismissRequest = { renamingGroupTarget = null },
+                title = { Text("重命名分组「$targetGroup」", fontWeight = FontWeight.Bold, color = OrbitTheme.colors.textPrimary, fontSize = 15.sp) },
+                text = {
+                    OutlinedTextField(
+                        value = renamingGroupNewName,
+                        onValueChange = { renamingGroupNewName = it },
+                        singleLine = true,
+                        label = { Text("新分组名称", color = OrbitTheme.colors.textSecondary) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val newName = renamingGroupNewName.trim()
+                            if (newName.isNotBlank() && newName != targetGroup) {
+                                viewModel.renamePlaylistGroup(targetGroup, newName)
+                                FastToast.show(context, "分组已重命名为「$newName」")
+                                renamingGroupTarget = null
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary)
+                    ) {
+                        Text("保存", color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { renamingGroupTarget = null }) {
+                        Text("取消", color = OrbitTheme.colors.textSecondary)
+                    }
+                },
+                containerColor = OrbitTheme.colors.surfaceDialog
+            )
+        }
+
+        // 删除分组子弹窗
+        deletingGroupTarget?.let { targetGroup ->
+            AlertDialog(
+                onDismissRequest = { deletingGroupTarget = null },
+                title = { Text("确认删除分组「$targetGroup」？", fontWeight = FontWeight.Bold, color = OrbitTheme.colors.textPrimary, fontSize = 15.sp) },
+                text = {
+                    Text(
+                        text = "删除此分组后，该分组下的所有歌单将自动归入「默认」分组，歌单与歌曲不会被删除。",
+                        fontSize = 13.sp,
+                        color = OrbitTheme.colors.textSecondary,
+                        lineHeight = 18.sp
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            viewModel.deletePlaylistGroup(targetGroup)
+                            FastToast.show(context, "已删除分组「$targetGroup」，歌单已移至默认分组")
+                            deletingGroupTarget = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                    ) {
+                        Text("删除", color = Color.White)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { deletingGroupTarget = null }) {
+                        Text("取消", color = OrbitTheme.colors.textSecondary)
+                    }
+                },
+                containerColor = OrbitTheme.colors.surfaceDialog
+            )
+        }
     }
 
     // 1.1 导出歌单弹窗
@@ -6044,6 +6860,17 @@ fun MusicLibraryScreen(
             isPlaying = playbackState.isPlaying
         )
     }
+
+    // 歌单多端云端备份与恢复同步弹窗
+    if (showCloudPlaylistSyncDialog) {
+        CloudPlaylistSyncDialog(
+            playlists = playlists,
+            onDismiss = { showCloudPlaylistSyncDialog = false },
+            onSyncCompleted = {
+                viewModel.refreshPlaylists()
+            }
+        )
+    }
 }
 
 @Composable
@@ -6814,6 +7641,7 @@ private fun PreviousPlayedPlaylistCard(
 private fun FavoritePlaylistItemCard(
     favTitle: String,
     songCount: Int,
+    coverArtUri: String? = null,
     onClick: () -> Unit,
     onPlayAll: () -> Unit,
     modifier: Modifier = Modifier
@@ -6833,12 +7661,42 @@ private fun FavoritePlaylistItemCard(
                 .background(Color(0xFFFF3366).copy(alpha = 0.15f)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.Default.Favorite,
-                contentDescription = null,
-                tint = Color(0xFFFF3366),
-                modifier = Modifier.size(28.dp)
-            )
+            if (!coverArtUri.isNullOrBlank()) {
+                AsyncImage(
+                    model = coverArtUri,
+                    contentDescription = favTitle,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(3.dp),
+                    contentAlignment = Alignment.BottomEnd
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.9f),
+                        modifier = Modifier.size(18.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Favorite,
+                                contentDescription = null,
+                                tint = Color(0xFFFF3366),
+                                modifier = Modifier.size(11.dp)
+                            )
+                        }
+                    }
+                }
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Favorite,
+                    contentDescription = null,
+                    tint = Color(0xFFFF3366),
+                    modifier = Modifier.size(28.dp)
+                )
+            }
         }
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -6878,6 +7736,7 @@ private fun FavoritePlaylistItemCard(
 private fun DislikedPlaylistItemCard(
     dislikedTitle: String,
     songCount: Int,
+    coverArtUri: String? = null,
     onClick: () -> Unit,
     onPlayAll: () -> Unit,
     modifier: Modifier = Modifier
@@ -6897,12 +7756,42 @@ private fun DislikedPlaylistItemCard(
                 .background(Color(0xFFE57373).copy(alpha = 0.15f)),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.Default.ThumbDown,
-                contentDescription = null,
-                tint = Color(0xFFE57373),
-                modifier = Modifier.size(26.dp)
-            )
+            if (!coverArtUri.isNullOrBlank()) {
+                AsyncImage(
+                    model = coverArtUri,
+                    contentDescription = dislikedTitle,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(3.dp),
+                    contentAlignment = Alignment.BottomEnd
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.9f),
+                        modifier = Modifier.size(18.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.ThumbDown,
+                                contentDescription = null,
+                                tint = Color(0xFFE57373),
+                                modifier = Modifier.size(11.dp)
+                            )
+                        }
+                    }
+                }
+            } else {
+                Icon(
+                    imageVector = Icons.Default.ThumbDown,
+                    contentDescription = null,
+                    tint = Color(0xFFE57373),
+                    modifier = Modifier.size(28.dp)
+                )
+            }
         }
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -6946,6 +7835,7 @@ private fun LocalPlaylistItemCard(
     onRename: () -> Unit,
     onDelete: () -> Unit,
     onExport: () -> Unit,
+    onSetGroup: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -6960,15 +7850,31 @@ private fun LocalPlaylistItemCard(
             modifier = Modifier
                 .size(54.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(OrbitTheme.colors.primary.copy(alpha = 0.12f)),
+                .background(OrbitTheme.colors.surface),
             contentAlignment = Alignment.Center
         ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.PlaylistPlay,
-                contentDescription = null,
-                tint = OrbitTheme.colors.primary,
-                modifier = Modifier.size(30.dp)
-            )
+            if (!playlist.coverArtUri.isNullOrBlank()) {
+                AsyncImage(
+                    model = playlist.coverArtUri,
+                    contentDescription = playlist.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(OrbitTheme.colors.primary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.PlaylistPlay,
+                        contentDescription = null,
+                        tint = OrbitTheme.colors.primary,
+                        modifier = Modifier.size(30.dp)
+                    )
+                }
+            }
         }
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -6981,11 +7887,31 @@ private fun LocalPlaylistItemCard(
                 overflow = TextOverflow.Ellipsis
             )
             Spacer(modifier = Modifier.height(3.dp))
-            Text(
-                text = stringResource(R.string.tracks_count, playlist.songCount),
-                color = OrbitTheme.colors.textSecondary,
-                fontSize = 12.sp
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (playlist.groupName.isNotBlank() && playlist.groupName != "默认") {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = OrbitTheme.colors.primary.copy(alpha = 0.12f),
+                        border = BorderStroke(0.5.dp, OrbitTheme.colors.primary.copy(alpha = 0.35f))
+                    ) {
+                        Text(
+                            text = playlist.groupName,
+                            color = OrbitTheme.colors.primary,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.tracks_count, playlist.songCount),
+                    color = OrbitTheme.colors.textSecondary,
+                    fontSize = 12.sp
+                )
+            }
         }
 
         // 快捷播放按钮
@@ -7020,6 +7946,16 @@ private fun LocalPlaylistItemCard(
                 onDismissRequest = { showMenu = false },
                 modifier = Modifier.background(OrbitTheme.colors.surfaceCard)
             ) {
+                DropdownMenuItem(
+                    text = { Text("设置分组", color = OrbitTheme.colors.textPrimary) },
+                    onClick = {
+                        showMenu = false
+                        onSetGroup()
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.FolderOpen, contentDescription = null, tint = OrbitTheme.colors.primary)
+                    }
+                )
                 DropdownMenuItem(
                     text = { Text("导出歌单", color = OrbitTheme.colors.textPrimary) },
                     onClick = {
@@ -7066,6 +8002,7 @@ private fun OnlinePlaylistItemCard(
     onRemoveFavorite: () -> Unit,
     onExport: () -> Unit,
     onImportToLocal: () -> Unit,
+    onSetGroup: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -7132,6 +8069,21 @@ private fun OnlinePlaylistItemCard(
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                     )
                 }
+                if (onlinePlaylist.customGroup.isNotBlank() && onlinePlaylist.customGroup != "默认") {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = OrbitTheme.colors.primary.copy(alpha = 0.12f),
+                        border = BorderStroke(0.5.dp, OrbitTheme.colors.primary.copy(alpha = 0.35f))
+                    ) {
+                        Text(
+                            text = onlinePlaylist.customGroup,
+                            color = OrbitTheme.colors.primary,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
 
                 val subtitle = buildString {
                     if (!onlinePlaylist.creatorName.isNullOrBlank()) {
@@ -7197,6 +8149,16 @@ private fun OnlinePlaylistItemCard(
                 onDismissRequest = { showOnlineMenu = false },
                 modifier = Modifier.background(OrbitTheme.colors.surfaceCard)
             ) {
+                DropdownMenuItem(
+                    text = { Text("设置分组", color = OrbitTheme.colors.textPrimary) },
+                    onClick = {
+                        showOnlineMenu = false
+                        onSetGroup()
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Default.FolderOpen, contentDescription = null, tint = OrbitTheme.colors.primary)
+                    }
+                )
                 DropdownMenuItem(
                     text = { Text("查看歌单详情", color = OrbitTheme.colors.textPrimary) },
                     onClick = {

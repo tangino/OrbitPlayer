@@ -55,6 +55,7 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     var showAudioSourceManager by remember { mutableStateOf(false) }
+    var showCloudPlaylistSyncDialog by remember { mutableStateOf(false) }
 
     if (showAudioSourceManager) {
         AudioSourceManagementScreen(
@@ -85,6 +86,7 @@ fun SettingsScreen(
     val includedFolders by musicViewModel?.includedFolders?.collectAsState() ?: remember { mutableStateOf(emptySet()) }
     val excludedFolders by musicViewModel?.excludedFolders?.collectAsState() ?: remember { mutableStateOf(emptySet()) }
     val isScanning by musicViewModel?.isScanning?.collectAsState() ?: remember { mutableStateOf(false) }
+    val playlists by musicViewModel?.playlists?.collectAsState() ?: remember { mutableStateOf(emptyList()) }
 
     val backgroundPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -2060,6 +2062,28 @@ fun SettingsScreen(
                 }
             }
 
+            // 2.5 云端多端数据同步与备份
+            item {
+                SettingsSectionHeader("云端多端数据同步与备份")
+                SettingsCard {
+                    SettingsActionItem(
+                        icon = Icons.Default.CloudSync,
+                        title = "歌单多端云同步 (选择性备份 / 恢复)",
+                        subtitle = "支持手机与车机自由勾选自建歌单及在线收藏歌单进行上传和下载",
+                        onClick = { showCloudPlaylistSyncDialog = true }
+                    )
+
+                    HorizontalDivider(color = GridLineColor)
+
+                    SettingsActionItem(
+                        icon = Icons.Default.SyncAlt,
+                        title = "在线音源云同步与备份",
+                        subtitle = "一键同步所有已启用的音源脚本配置，手机车机免配置共享",
+                        onClick = { showAudioSourceManager = true }
+                    )
+                }
+            }
+
             // 3. 设备与显示规格识别
             item {
                 val deviceModel = remember {
@@ -2556,6 +2580,16 @@ fun SettingsScreen(
                 }
             },
             containerColor = OrbitTheme.colors.surfaceDialog
+        )
+    }
+
+    if (showCloudPlaylistSyncDialog && musicViewModel != null) {
+        com.orbit.music.ui.components.CloudPlaylistSyncDialog(
+            playlists = playlists,
+            onDismiss = { showCloudPlaylistSyncDialog = false },
+            onSyncCompleted = {
+                musicViewModel.refreshPlaylists()
+            }
         )
     }
 }

@@ -9,6 +9,7 @@ import com.orbit.music.data.model.FolderItem
 import com.orbit.music.data.model.Playlist
 import com.orbit.music.data.model.Song
 import com.orbit.music.data.model.SongAttitude
+import com.orbit.music.data.online.repository.OnlinePlaylistFavoriteManager
 import com.orbit.music.data.scanner.MediaStoreScanner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -276,10 +277,30 @@ class MusicRepository private constructor(private val context: Context) {
         _playlists.value = db.songDao.getAllPlaylists()
     }
 
-    suspend fun createPlaylist(name: String): Long = withContext(Dispatchers.IO) {
-        val id = db.songDao.insertPlaylist(name)
+    suspend fun createPlaylist(name: String, groupName: String = "默认"): Long = withContext(Dispatchers.IO) {
+        val id = db.songDao.insertPlaylist(name, groupName)
         refreshPlaylists()
         id
+    }
+
+    suspend fun updatePlaylistGroup(playlistId: Long, groupName: String) = withContext(Dispatchers.IO) {
+        db.songDao.updatePlaylistGroup(playlistId, groupName)
+        refreshPlaylists()
+    }
+
+    suspend fun renamePlaylistGroup(oldGroup: String, newGroup: String) = withContext(Dispatchers.IO) {
+        db.songDao.batchUpdatePlaylistGroup(oldGroup, newGroup)
+        OnlinePlaylistFavoriteManager.getInstance(context).batchUpdateCustomGroup(oldGroup, newGroup)
+        com.orbit.music.data.playlist.PlaylistGroupManager.getInstance(context).renameGroup(oldGroup, newGroup)
+        refreshPlaylists()
+    }
+
+    suspend fun deletePlaylistGroup(groupName: String) = withContext(Dispatchers.IO) {
+        // 删除分组时，该分组下的本地歌单及网络收藏歌单全部自动归入"默认"分组
+        db.songDao.batchUpdatePlaylistGroup(groupName, "默认")
+        OnlinePlaylistFavoriteManager.getInstance(context).batchUpdateCustomGroup(groupName, "默认")
+        com.orbit.music.data.playlist.PlaylistGroupManager.getInstance(context).deleteGroup(groupName)
+        refreshPlaylists()
     }
 
     suspend fun renamePlaylist(playlistId: Long, newName: String) = withContext(Dispatchers.IO) {
@@ -316,6 +337,11 @@ class MusicRepository private constructor(private val context: Context) {
 
     suspend fun removeSongFromPlaylist(playlistId: Long, songId: Long) = withContext(Dispatchers.IO) {
         db.songDao.removeSongFromPlaylist(playlistId, songId)
+        refreshPlaylists()
+    }
+
+    suspend fun clearPlaylistSongs(playlistId: Long) = withContext(Dispatchers.IO) {
+        db.songDao.clearPlaylistSongs(playlistId)
         refreshPlaylists()
     }
 

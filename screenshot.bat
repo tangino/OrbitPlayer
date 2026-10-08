@@ -21,55 +21,135 @@ if %ERRORLEVEL% neq 0 (
 )
 
 :: 2. Check connected devices
-echo [1/3] Checking connected Android devices...
-set "DEVICE_FOUND="
+echo.
+echo [Step 1/3] Checking connected Android devices...
+set "DEVICE_COUNT=0"
 for /f "tokens=1,2" %%A in ('adb devices') do (
     if "%%B"=="device" (
-        set "DEVICE_FOUND=%%A"
+        set /a DEVICE_COUNT+=1
+        set "DEV_!DEVICE_COUNT!=%%A"
     )
 )
 
-if not defined DEVICE_FOUND (
+if !DEVICE_COUNT! equ 0 (
     echo [ERROR] No authorized Android device detected.
-    echo Please make sure USB debugging is enabled on your phone.
+    echo Please make sure USB debugging is enabled on your phone or emulator.
     exit /b 1
 )
-echo [SUCCESS] Target device identified: %DEVICE_FOUND%
+
+set "SELECTED_DEVICES="
+if !DEVICE_COUNT! equ 1 (
+    set "SELECTED_DEVICES=!DEV_1!"
+    set "DEV_MODEL="
+    set "DEV_VER="
+    for /f "delims=" %%M in ('adb -s !DEV_1! shell getprop ro.product.model 2^>nul') do set "DEV_MODEL=%%M"
+    for /f "delims=" %%V in ('adb -s !DEV_1! shell getprop ro.build.version.release 2^>nul') do set "DEV_VER=%%V"
+    if not defined DEV_MODEL set "DEV_MODEL=Android Device"
+    if not defined DEV_VER set "DEV_VER=Unknown"
+    echo [SUCCESS] Target device identified: !DEV_1! [!DEV_MODEL!, Android !DEV_VER!]
+) else (
+    echo.
+    echo Detected !DEVICE_COUNT! connected Android devices:
+    echo ------------------------------------------------------
+    for /l %%i in (1,1,!DEVICE_COUNT!) do (
+        set "CUR_DEV=!DEV_%%i!"
+        set "CUR_MODEL="
+        set "CUR_VER="
+        for /f "delims=" %%M in ('adb -s !CUR_DEV! shell getprop ro.product.model 2^>nul') do set "CUR_MODEL=%%M"
+        for /f "delims=" %%V in ('adb -s !CUR_DEV! shell getprop ro.build.version.release 2^>nul') do set "CUR_VER=%%V"
+        if not defined CUR_MODEL set "CUR_MODEL=Android Device"
+        if not defined CUR_VER set "CUR_VER=Unknown"
+        echo   [%%i] !CUR_DEV! [!CUR_MODEL!, Android !CUR_VER!]
+    )
+    echo   [A] Capture ALL devices
+    echo   [Q] Quit
+    echo ------------------------------------------------------
+    
+    :CHOOSE_SCREENSHOT_DEVICE
+    set "USER_CHOICE="
+    set /p "USER_CHOICE=Please select device [1-!DEVICE_COUNT! / A / Q] (Default: 1): "
+    if not defined USER_CHOICE set "USER_CHOICE=1"
+    
+    if /i "!USER_CHOICE!"=="Q" (
+        echo [INFO] Screenshot cancelled by user.
+        exit /b 0
+    )
+    
+    if /i "!USER_CHOICE!"=="A" (
+        for /l %%i in (1,1,!DEVICE_COUNT!) do (
+            if not defined SELECTED_DEVICES (
+                set "SELECTED_DEVICES=!DEV_%%i!"
+            ) else (
+                set "SELECTED_DEVICES=!SELECTED_DEVICES! !DEV_%%i!"
+            )
+        )
+    ) else (
+        set "VALID_NUM=0"
+        for /l %%i in (1,1,!DEVICE_COUNT!) do (
+            if "!USER_CHOICE!"=="%%i" (
+                set "VALID_NUM=1"
+                set "SELECTED_DEVICES=!DEV_%%i!"
+            )
+        )
+        if !VALID_NUM! equ 0 (
+            echo [WARNING] Invalid selection. Please choose again.
+            goto CHOOSE_SCREENSHOT_DEVICE
+        )
+    )
+)
 
 :: 3. Generate timestamp
 set "TIMESTAMP="
 for /f "usebackq delims=" %%A in (`powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss"`) do (
     set "TIMESTAMP=%%A"
 )
-
 if not defined TIMESTAMP (
     set "TIMESTAMP=%RANDOM%"
 )
 
-set "OUTPUT_FILE=%~dp0screenshot_%TIMESTAMP%.png"
-set "DEVICE_TEMP=/sdcard/screenshot_temp.png"
-
 echo.
-echo [2/3] Capturing screen on device...
-adb shell screencap -p "%DEVICE_TEMP%"
-if %ERRORLEVEL% neq 0 (
-    echo [ERROR] Failed to take screenshot on device.
-    exit /b 1
+echo [Step 2/3] Capturing screen and pulling screenshots...
+
+set "DEVICE_TEMP=/sdcard/screenshot_temp_%RANDOM%.png"
+set "SUCCESS_COUNT=0"
+
+for %%D in (!SELECTED_DEVICES!) do (
+    set "DEV_ID=%%D"
+    set "SAFE_NAME=!DEV_ID::=_!"
+    set "SAFE_NAME=!SAFE_NAME:.=_!"
+    
+    if !DEVICE_COUNT! equ 1 (
+        set "OUTPUT_FILE=%~dp0screenshot_!TIMESTAMP!.png"
+    ) else (
+        set "OUTPUT_FILE=%~dp0screenshot_!SAFE_NAME!_!TIMESTAMP!.png"
+    )
+    
+    echo   - Capturing screen on [!DEV_ID!]...
+    adb -s !DEV_ID! shell screencap -p "!DEVICE_TEMP!" >nul 2>&1
+    if !ERRORLEVEL! equ 0 (
+        adb -s !DEV_ID! pull "!DEVICE_TEMP!" "!OUTPUT_FILE!" >nul 2>&1
+        if !ERRORLEVEL! equ 0 (
+            if exist "!OUTPUT_FILE!" (
+                echo     [OK] Saved to: !OUTPUT_FILE!
+                set /a SUCCESS_COUNT+=1
+            )
+        ) else (
+            echo     [ERROR] Failed to pull screenshot from !DEV_ID!
+        )
+        adb -s !DEV_ID! shell rm -f "!DEVICE_TEMP!" >nul 2>&1
+    ) else (
+        echo     [ERROR] Failed to execute screencap on !DEV_ID!
+    )
 )
 
-echo [3/3] Pulling screenshot to local PC...
-adb pull "%DEVICE_TEMP%" "%OUTPUT_FILE%" >nul 2>&1
-set "PULL_RESULT=%ERRORLEVEL%"
-adb shell rm -f "%DEVICE_TEMP%" >nul 2>&1
-
-if %PULL_RESULT% equ 0 if exist "%OUTPUT_FILE%" (
-    echo.
+echo.
+echo [Step 3/3] Done!
+if !SUCCESS_COUNT! gtr 0 (
     echo ======================================================
-    echo [SUCCESS] Screenshot saved successfully!
-    echo Path: %OUTPUT_FILE%
+    echo [SUCCESS] !SUCCESS_COUNT! screenshot saved successfully!
     echo ======================================================
 ) else (
-    echo [ERROR] Failed to pull screenshot from device.
+    echo [ERROR] No screenshots were saved.
     exit /b 1
 )
 

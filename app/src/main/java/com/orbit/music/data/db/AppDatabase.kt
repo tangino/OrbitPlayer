@@ -33,7 +33,7 @@ data class AppProfileEntity(
 )
 
 class AppDatabase private constructor(context: Context) :
-    SQLiteOpenHelper(context, "equalizer_music_v2.db", null, 5) {
+    SQLiteOpenHelper(context, "equalizer_music_v2.db", null, 6) {
 
     val equalizerDao = EqualizerDaoImpl(this)
     val songDao = SongDaoImpl(this)
@@ -116,7 +116,8 @@ class AppDatabase private constructor(context: Context) :
             CREATE TABLE IF NOT EXISTS playlists (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
-                createdAt INTEGER NOT NULL
+                createdAt INTEGER NOT NULL,
+                groupName TEXT NOT NULL DEFAULT '默认'
             )
             """.trimIndent()
         )
@@ -186,6 +187,11 @@ class AppDatabase private constructor(context: Context) :
                 )
                 """.trimIndent()
             )
+        }
+        if (oldVersion < 6) {
+            try {
+                db.execSQL("ALTER TABLE playlists ADD COLUMN groupName TEXT NOT NULL DEFAULT '默认'")
+            } catch (_: Exception) {}
         }
     }
 
@@ -546,14 +552,31 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
     fun getAllPlaylists(): List<Playlist> {
         val list = mutableListOf<Playlist>()
         val db = helper.readableDatabase
-        db.rawQuery("SELECT p.id, p.name, p.createdAt, COUNT(ps.songId) FROM playlists p LEFT JOIN playlist_songs ps ON p.id = ps.playlistId GROUP BY p.id ORDER BY p.createdAt DESC", null).use { c ->
+        val sql = """
+            SELECT p.id, p.name, p.createdAt, COUNT(ps.songId), COALESCE(p.groupName, '默认'),
+                   (
+                       SELECT s.albumArtUri
+                       FROM playlist_songs ps2
+                       JOIN songs s ON ps2.songId = s.id
+                       WHERE ps2.playlistId = p.id AND s.albumArtUri IS NOT NULL AND s.albumArtUri != ''
+                       ORDER BY ps2.orderIndex ASC, ps2.rowid ASC
+                       LIMIT 1
+                   ) AS firstCover
+            FROM playlists p
+            LEFT JOIN playlist_songs ps ON p.id = ps.playlistId
+            GROUP BY p.id
+            ORDER BY p.createdAt DESC
+        """.trimIndent()
+        db.rawQuery(sql, null).use { c ->
             while (c.moveToNext()) {
                 list.add(
                     Playlist(
                         id = c.getLong(0),
                         name = c.getString(1),
                         createdAt = c.getLong(2),
-                        songCount = c.getInt(3)
+                        songCount = c.getInt(3),
+                        groupName = c.getString(4).ifBlank { "默认" },
+                        coverArtUri = if (c.isNull(5)) null else c.getString(5).takeIf { it.isNotBlank() }
                     )
                 )
             }
@@ -561,10 +584,11 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
         return list
     }
 
-    fun insertPlaylist(name: String): Long {
+    fun insertPlaylist(name: String, groupName: String = "默认"): Long {
         val cv = ContentValues().apply {
             put("name", name)
             put("createdAt", System.currentTimeMillis())
+            put("groupName", groupName.trim().ifBlank { "默认" })
         }
         return helper.writableDatabase.insert("playlists", null, cv)
     }
@@ -580,6 +604,20 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
             put("name", newName)
         }
         return helper.writableDatabase.update("playlists", cv, "id = ?", arrayOf(playlistId.toString()))
+    }
+
+    fun updatePlaylistGroup(playlistId: Long, groupName: String): Int {
+        val cv = ContentValues().apply {
+            put("groupName", groupName.trim().ifBlank { "默认" })
+        }
+        return helper.writableDatabase.update("playlists", cv, "id = ?", arrayOf(playlistId.toString()))
+    }
+
+    fun batchUpdatePlaylistGroup(oldGroup: String, newGroup: String): Int {
+        val cv = ContentValues().apply {
+            put("groupName", newGroup.trim().ifBlank { "默认" })
+        }
+        return helper.writableDatabase.update("playlists", cv, "groupName = ?", arrayOf(oldGroup.trim()))
     }
 
     fun insertSongToPlaylist(playlistId: Long, songId: Long, orderIndex: Int) {
@@ -650,6 +688,10 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
 
     fun removeSongFromPlaylist(playlistId: Long, songId: Long): Int {
         return helper.writableDatabase.delete("playlist_songs", "playlistId = ? AND songId = ?", arrayOf(playlistId.toString(), songId.toString()))
+    }
+
+    fun clearPlaylistSongs(playlistId: Long): Int {
+        return helper.writableDatabase.delete("playlist_songs", "playlistId = ?", arrayOf(playlistId.toString()))
     }
 
     fun getSongsInPlaylist(playlistId: Long): List<Song> {

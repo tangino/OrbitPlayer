@@ -81,7 +81,9 @@ data class Playlist(
     val id: Long,
     val name: String,
     val songCount: Int,
-    val createdAt: Long
+    val createdAt: Long,
+    val groupName: String = "默认",
+    val coverArtUri: String? = null
 )
 
 

@@ -297,6 +297,31 @@ class SourceScriptManager private constructor(private val context: Context) {
     }
 
     /**
+     * 全量覆盖替换本地所有音源脚本 (云端恢复覆盖模式)
+     */
+    fun replaceAllScripts(newScripts: List<SourceScriptItem>) {
+        _scripts.value = newScripts
+        saveConfig()
+    }
+
+    /**
+     * 增量合并云端音源脚本 (云端恢复合并模式)
+     */
+    fun mergeScripts(incoming: List<SourceScriptItem>) {
+        val current = _scripts.value.toMutableList()
+        for (item in incoming) {
+            val idx = current.indexOfFirst { it.id == item.id || it.name == item.name }
+            if (idx >= 0) {
+                current[idx] = item
+            } else {
+                current.add(item)
+            }
+        }
+        _scripts.value = current
+        saveConfig()
+    }
+
+    /**
      * 辅助方法：从脚本注释或常量中智能提取元数据
      */
     private fun parseScriptMeta(script: String): ParsedMeta {

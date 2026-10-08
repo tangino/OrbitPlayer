@@ -15,6 +15,8 @@ build/
 # 用户指定的外部环境与SDK排除
 Android/
 android studio/
+node_modules/
+.wrangler/
 
 # 截图输出
 screenshot_*.png

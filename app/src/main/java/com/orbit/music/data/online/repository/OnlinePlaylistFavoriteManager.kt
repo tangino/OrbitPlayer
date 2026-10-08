@@ -66,7 +66,8 @@ class OnlinePlaylistFavoriteManager private constructor(private val context: Con
                     trackCount = obj.optInt("trackCount", 0),
                     creatorName = obj.optString("creatorName").takeIf { it.isNotBlank() },
                     creatorAvatarUrl = obj.optString("creatorAvatarUrl").takeIf { it.isNotBlank() },
-                    description = obj.optString("description").takeIf { it.isNotBlank() }
+                    description = obj.optString("description").takeIf { it.isNotBlank() },
+                    customGroup = obj.optString("customGroup").takeIf { it.isNotBlank() } ?: "默认"
                 )
                 if (playlist.id.isNotBlank()) {
                     list.add(playlist)
@@ -92,6 +93,7 @@ class OnlinePlaylistFavoriteManager private constructor(private val context: Con
                     put("creatorName", item.creatorName ?: "")
                     put("creatorAvatarUrl", item.creatorAvatarUrl ?: "")
                     put("description", item.description ?: "")
+                    put("customGroup", item.customGroup)
                 }
                 jsonArray.put(obj)
             }
@@ -117,6 +119,30 @@ class OnlinePlaylistFavoriteManager private constructor(private val context: Con
             current[index] = playlist
         } else {
             current.add(0, playlist)
+        }
+        _favorites.value = current
+        saveFavoritesToPrefs(current)
+    }
+
+    /**
+     * 更新指定网络歌单的分组
+     */
+    fun updateCustomGroup(playlist: OnlinePlaylist, newGroup: String) {
+        val current = _favorites.value.toMutableList()
+        val index = current.indexOfFirst { it.platform == playlist.platform && it.id == playlist.id }
+        if (index >= 0) {
+            current[index] = current[index].copy(customGroup = newGroup)
+            _favorites.value = current
+            saveFavoritesToPrefs(current)
+        }
+    }
+
+    /**
+     * 批量更新网络歌单分组（如重命名分组或删除分组归入默认）
+     */
+    fun batchUpdateCustomGroup(oldGroup: String, newGroup: String) {
+        val current = _favorites.value.map {
+            if (it.customGroup == oldGroup) it.copy(customGroup = newGroup) else it
         }
         _favorites.value = current
         saveFavoritesToPrefs(current)
