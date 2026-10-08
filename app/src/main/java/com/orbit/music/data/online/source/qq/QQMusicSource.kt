@@ -197,15 +197,20 @@ class QQMusicSource(
             }
         }
 
+        val cleanDissId = playlistId.removePrefix("dir_")
+        val activeCookie = cookieProvider?.invoke()?.takeIf { it.isNotBlank() } ?: "uin=0; qm_keyst=;"
+        val uin = Regex("uin=([0-9]+)").find(activeCookie)?.groupValues?.getOrNull(1) ?: "0"
+
         try {
             val url = "https://c.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg" +
-                    "?type=1&json=1&utf8=1&onlysong=0&disstid=$playlistId&format=json&inCharset=utf8&outCharset=utf-8"
+                    "?type=1&json=1&utf8=1&onlysong=0&disstid=$cleanDissId&dirid=$cleanDissId&format=json&inCharset=utf8&outCharset=utf-8&g_tk=5381&hostUin=$uin&loginUin=$uin"
 
             val request = Request.Builder()
                 .url(url)
                 .header("User-Agent", userAgent)
-                .header("Referer", "https://y.qq.com/n/ryqq/playlist/$playlistId")
-                .header("Cookie", "uin=0; qm_keyst=;")
+                .header("Referer", "https://y.qq.com/n/ryqq/playlist/$cleanDissId")
+                .header("Origin", "https://y.qq.com")
+                .header("Cookie", activeCookie)
                 .header("Host", "c.y.qq.com")
                 .get()
                 .build()
@@ -216,11 +221,11 @@ class QQMusicSource(
             val cdlistArr = root.optJSONArray("cdlist")
             if (cdlistArr == null || cdlistArr.length() == 0) {
                 // 若旧版 qzone 接口未能返回 cdlist，自动降级切换至 musicu.fcg 网关接口
-                return@withContext getPlaylistDetailViaMusicU(playlistId)
+                return@withContext getPlaylistDetailViaMusicU(cleanDissId)
             }
-            val cdObj = cdlistArr.optJSONObject(0) ?: return@withContext getPlaylistDetailViaMusicU(playlistId)
+            val cdObj = cdlistArr.optJSONObject(0) ?: return@withContext getPlaylistDetailViaMusicU(cleanDissId)
 
-            val dissid = cdObj.optString("disstid")
+            val dissid = cdObj.optString("disstid", cleanDissId)
             val dissname = cdObj.optString("dissname")
             val logo = cdObj.optString("logo")
             val desc = cdObj.optString("desc")
@@ -291,7 +296,7 @@ class QQMusicSource(
             Pair(playlist, songs)
         } catch (e: Exception) {
             try {
-                getPlaylistDetailViaMusicU(playlistId)
+                getPlaylistDetailViaMusicU(cleanDissId)
             } catch (e2: Exception) {
                 if (numericId != null) {
                     getLeaderboardDetailInternal(numericId)
@@ -306,7 +311,12 @@ class QQMusicSource(
      * 通过 QQ 音乐官方 musicu.fcg 网关获取歌单详情 (支持全量与现代歌单)
      */
     private suspend fun getPlaylistDetailViaMusicU(playlistId: String): Pair<OnlinePlaylist, List<OnlineSongItem>> = withContext(Dispatchers.IO) {
-        val dissIdNum = playlistId.toLongOrNull() ?: throw IllegalArgumentException("非法歌单 ID: $playlistId")
+        val cleanId = playlistId.removePrefix("dir_")
+        val dissIdNum = cleanId.toLongOrNull() ?: throw IllegalArgumentException("非法歌单 ID: $playlistId")
+        val activeCookie = cookieProvider?.invoke()?.takeIf { it.isNotBlank() } ?: ""
+        val uinLong = Regex("uin=([0-9]+)").find(activeCookie)?.groupValues?.getOrNull(1)?.toLongOrNull() ?: 0L
+        val authst = Regex("(?:qm_keyst|qqmusic_key|authst)=([A-Za-z0-9_-]+)").find(activeCookie)?.groupValues?.getOrNull(1) ?: ""
+
         val payload = JSONObject().apply {
             put("comm", JSONObject().apply {
                 put("cv", 4747474)
@@ -317,15 +327,22 @@ class QQMusicSource(
                 put("notice", 0)
                 put("platform", "yqq.json")
                 put("needNewCode", 1)
+                if (uinLong > 0L) put("uin", uinLong)
+                if (authst.isNotBlank()) put("authst", authst)
+                put("tmeLoginType", 2)
             })
             put("req_0", JSONObject().apply {
                 put("module", "music.srfDissInfo.aiDissInfo")
                 put("method", "uniform_get_Dissinfo")
                 put("param", JSONObject().apply {
                     put("disstid", dissIdNum)
+                    put("dirid", dissIdNum)
                     put("userinfo", 1)
                     put("tag", 1)
                     put("order", 1)
+                    put("song_begin", 0)
+                    put("song_num", 1000)
+                    if (uinLong > 0L) put("uin", uinLong)
                 })
             })
         }
