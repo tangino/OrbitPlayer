@@ -585,9 +585,10 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
         title: String,
         artist: String,
         album: String,
-        expectedDurationMs: Long = 0L
+        expectedDurationMs: Long = 0L,
+        explicitQuality: String? = null
     ): ResolvedAudioSource? = withContext(Dispatchers.IO) {
-        val cacheKey = "${platform.id}:$songId"
+        val cacheKey = if (explicitQuality != null) "${platform.id}:$songId:$explicitQuality" else "${platform.id}:$songId"
         val now = System.currentTimeMillis()
 
         // 1. 查内存缓存 (0ms 秒开)
@@ -598,13 +599,14 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
                 url = cached.url,
                 platform = platform,
                 sourceName = platform.displayName,
-                durationMs = expectedDurationMs
+                durationMs = expectedDurationMs,
+                quality = explicitQuality
             )
         }
 
         val engine = lxEngine
         val scriptName = getCustomScriptName() ?: "音源脚本"
-        val prefQuality = SourceScriptManager.getInstance(context).preferredQuality.value
+        val prefQuality = explicitQuality ?: SourceScriptManager.getInstance(context).preferredQuality.value
         val qualityTryList = when (prefQuality) {
             "flac24bit" -> listOf("flac24bit", "flac", "320k", "128k")
             "flac" -> listOf("flac", "320k", "128k")

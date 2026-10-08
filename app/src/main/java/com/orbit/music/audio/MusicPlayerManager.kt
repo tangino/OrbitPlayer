@@ -12,6 +12,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.orbit.music.data.model.Song
 import com.orbit.music.data.online.engine.OnlineAudioSourceManager
+import com.orbit.music.data.online.engine.SourceScriptManager
 import com.orbit.music.data.online.model.OnlinePlatform
 import com.orbit.music.data.online.model.OnlineSongItem
 import java.util.ArrayDeque
@@ -427,7 +428,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
     /**
      * 异步解析 online:// 协议歌曲的真实音频 URL 与音源元数据
      */
-    suspend fun resolveOnlineSongSource(song: Song): OnlineAudioSourceManager.ResolvedAudioSource? {
+    suspend fun resolveOnlineSongSource(song: Song, explicitQuality: String? = null): OnlineAudioSourceManager.ResolvedAudioSource? {
         if (!song.path.startsWith("online://")) {
             return OnlineAudioSourceManager.ResolvedAudioSource(
                 url = song.path,
@@ -447,22 +448,63 @@ class MusicPlayerManager private constructor(private val context: Context) {
             title = song.title,
             artist = song.artist,
             album = song.album,
-            expectedDurationMs = song.durationMs
+            expectedDurationMs = song.durationMs,
+            explicitQuality = explicitQuality
         )
     }
 
     /**
      * 异步解析 online:// 协议歌曲的真实音频 URL (兼容)
      */
-    suspend fun resolveOnlineSongDirectUrl(song: Song): String? {
-        return resolveOnlineSongSource(song)?.url
+    suspend fun resolveOnlineSongDirectUrl(song: Song, explicitQuality: String? = null): String? {
+        return resolveOnlineSongSource(song, explicitQuality)?.url
+    }
+
+    /**
+     * 实时切换当前在线歌曲的音频清晰度/音质 (保持当前播放进度无缝重载)
+     */
+    fun switchOnlineAudioQuality(targetQuality: String) {
+        val currentSong = _playbackState.value.currentSong ?: return
+        val currentPos = player.currentPosition.coerceAtLeast(0L)
+        val isPlaying = player.isPlaying
+
+        // 更新全局默认偏好音质
+        SourceScriptManager.getInstance(context).setPreferredQuality(targetQuality)
+
+        val qualityLabel = when (targetQuality) {
+            "flac24bit" -> "Hi-Res 无损 (24bit)"
+            "flac" -> "SQ 超品质无损"
+            "320k" -> "HQ 高品质 (320k)"
+            else -> "标准音质 (128k)"
+        }
+
+        if (!currentSong.path.startsWith("online://") && !currentSong.isOnlineSong) {
+            com.orbit.music.utils.FastToast.show(context, "已设置网络默认偏好音质为【$qualityLabel】\n当前本地歌曲为原音直出", 2000L)
+            return
+        }
+
+        com.orbit.music.utils.FastToast.show(context, "正在切换音质为【$qualityLabel】...", 1200L)
+
+        // 重新启动该曲目的解析与播放 (带上 targetQuality)
+        val currentIndex = _playbackState.value.currentIndex
+        playTrackInternal(
+            targetIndex = currentIndex,
+            startPositionMs = currentPos,
+            autoPlay = isPlaying,
+            explicitQuality = targetQuality
+        )
     }
 
     /**
      * 参照 auralis 核心架构：统一单轨播放调度引擎
      * 无论在线歌曲或本地歌曲，均通过全局单调递增事务序号 (playbackSequenceId) 与严格状态机驱动
      */
-    private fun playTrackInternal(targetIndex: Int, startPositionMs: Long = 0L, autoPlay: Boolean = true) {
+    private fun playTrackInternal(
+        targetIndex: Int,
+        startPositionMs: Long = 0L,
+        autoPlay: Boolean = true,
+        explicitQuality: String? = null
+    ) {
         val playlist = _playbackState.value.currentPlaylist
         if (playlist.isEmpty()) return
         val safeIndex = targetIndex.coerceIn(0, playlist.size - 1)
@@ -506,7 +548,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
                 var resolvedSource: OnlineAudioSourceManager.ResolvedAudioSource? = null
                 var resolveException: Exception? = null
                 try {
-                    resolvedSource = resolveOnlineSongSource(targetSong)
+                    resolvedSource = resolveOnlineSongSource(targetSong, explicitQuality)
                 } catch (e: Exception) {
                     resolveException = e
                 }

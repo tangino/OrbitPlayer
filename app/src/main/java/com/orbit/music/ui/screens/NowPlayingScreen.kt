@@ -183,11 +183,13 @@ fun NowPlayingScreen(
     var draggingProgress by remember { mutableFloatStateOf(0f) }
 
     val playlists by viewModel.playlists.collectAsState()
+    val preferredQuality by viewModel.preferredQuality.collectAsState()
 
     var showAddToPlaylistDialog by remember { mutableStateOf(false) }
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
     var showMoreOptionsMenu by remember { mutableStateOf(false) }
+    var showAudioQualityDialog by remember { mutableStateOf(false) }
     var showEditSongTagsDialog by remember { mutableStateOf(false) }
     var showSongDetailInfoDialog by remember { mutableStateOf(false) }
     var currentSongMetadata by remember { mutableStateOf(com.orbit.music.data.model.SongMetadata()) }
@@ -830,8 +832,40 @@ fun NowPlayingScreen(
         // 3.5 歌曲技术规格参数栏 (来源平台/音源标签、比特率、时长、格式、采样率等)
         val techSpecsView: @Composable (Modifier) -> Unit = { mod ->
             val specs = songTechSpecs
-            val rawFormatText = specs?.format?.uppercase() ?: (song?.mimeType?.takeIf { it.isNotBlank() }?.substringAfterLast('/')?.uppercase() ?: "AUDIO")
-            val formatText = if (rawFormatText.length > 8 || rawFormatText.contains("=") || rawFormatText.contains("&")) "AUDIO" else rawFormatText
+            val currentSong = song
+            val isOnline = currentSong?.isOnlineSong == true
+            val rawExt = specs?.format?.uppercase() ?: (song?.mimeType?.takeIf { it.isNotBlank() }?.substringAfterLast('/')?.uppercase() ?: "")
+            val bitDepth = specs?.bitDepth ?: 0
+            val sampleRate = specs?.sampleRateHz ?: 0
+            val bitrate = specs?.bitrateKbps ?: 0
+            val sourceTagLower = song?.sourceTag?.lowercase() ?: ""
+            val pathLower = song?.path?.lowercase() ?: ""
+
+            // 计算音质档位标识：标准，HQ，SQ，Hi-Res
+            val (qualityBadgeText, qualityBadgeColor) = when {
+                // 1. Hi-Res (24bit 或 >=88.2kHz/96kHz，或码率 >= 1500k，或在线音质标签包含 24bit/hires)
+                bitDepth >= 24 || sampleRate >= 88200 || bitrate >= 1500 ||
+                sourceTagLower.contains("24bit") || sourceTagLower.contains("hires") || sourceTagLower.contains("hi-res") ||
+                pathLower.contains("flac24bit") || (isOnline && preferredQuality == "flac24bit" && (rawExt.contains("FLAC") || rawExt.isBlank())) -> {
+                    "Hi-Res" to Color(0xFFFFD700)
+                }
+                // 2. SQ (FLAC/APE/WAV/ALAC/DSD 等无损格式，或码率 >= 500k，或在线偏好/标签为 flac/sq)
+                rawExt in listOf("FLAC", "APE", "WAV", "ALAC", "AIFF", "DSD", "DSF", "DFF") || bitrate >= 500 ||
+                sourceTagLower.contains("flac") || sourceTagLower.contains("sq") ||
+                pathLower.contains("flac") || (isOnline && preferredQuality == "flac" && (rawExt.contains("FLAC") || rawExt.isBlank())) -> {
+                    "SQ" to Color(0xFF00E5FF)
+                }
+                // 3. HQ (码率 >= 240k 如 320k MP3，或在线偏好/标签为 320k/hq)
+                bitrate >= 240 || sourceTagLower.contains("320") || sourceTagLower.contains("hq") ||
+                pathLower.contains("320") || (isOnline && preferredQuality == "320k") -> {
+                    "HQ" to Color(0xFFF59E0B)
+                }
+                // 4. 标准 (128k MP3 或基础有损格式)
+                else -> {
+                    "标准" to OrbitTheme.colors.primary
+                }
+            }
+
             val bitrateText = if ((specs?.bitrateKbps ?: 0) > 0) "${specs?.bitrateKbps} kbps" else ""
             val sampleRateText = if ((specs?.sampleRateHz ?: 0) > 0) {
                 val sr = specs!!.sampleRateHz
@@ -840,8 +874,6 @@ fun NowPlayingScreen(
             val bitDepthText = if ((specs?.bitDepth ?: 0) > 0) "${specs?.bitDepth} bit" else ""
             val durationText = specs?.durationFormatted?.ifBlank { song?.formattedDuration } ?: (song?.formattedDuration ?: "0:00")
 
-            val currentSong = song
-            val isOnline = currentSong?.isOnlineSong == true
             val srcPlatform = currentSong?.sourcePlatform
             val origPlatform = currentSong?.originalPlatform
             val isFallbackSource = origPlatform != null && srcPlatform != null && origPlatform != srcPlatform
@@ -869,12 +901,13 @@ fun NowPlayingScreen(
                 horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 在线来源平台与音源徽标
+                // 在线来源平台与音源徽标 (可点击唤起音频清晰度选择)
                 if (sourceDisplayText != null) {
                     Surface(
                         shape = RoundedCornerShape(4.dp),
                         color = platformColor.copy(alpha = 0.16f),
-                        border = BorderStroke(0.6.dp, platformColor.copy(alpha = 0.45f))
+                        border = BorderStroke(0.6.dp, platformColor.copy(alpha = 0.45f)),
+                        modifier = Modifier.clickable { showAudioQualityDialog = true }
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
@@ -897,17 +930,18 @@ fun NowPlayingScreen(
                     }
                 }
 
-                // 格式胶囊 (FLAC, MP3, WAV 等)
+                // 音质档位胶囊 (标准, HQ, SQ, Hi-Res，可点击唤起音频清晰度选择)
                 Surface(
                     shape = RoundedCornerShape(4.dp),
-                    color = OrbitTheme.colors.primary.copy(alpha = 0.15f),
-                    border = BorderStroke(0.6.dp, OrbitTheme.colors.primary.copy(alpha = 0.35f))
+                    color = qualityBadgeColor.copy(alpha = 0.16f),
+                    border = BorderStroke(0.6.dp, qualityBadgeColor.copy(alpha = 0.50f)),
+                    modifier = Modifier.clickable { showAudioQualityDialog = true }
                 ) {
                     Text(
-                        text = formatText,
+                        text = qualityBadgeText,
                         fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold,
-                        color = OrbitTheme.colors.primary,
+                        color = qualityBadgeColor,
                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                     )
                 }
@@ -2297,6 +2331,40 @@ fun NowPlayingScreen(
 
                     HorizontalDivider(color = OrbitTheme.colors.textSecondary.copy(alpha = 0.15f))
 
+                    // 0. 音频清晰度 / 音质选择
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                showMoreOptionsMenu = false
+                                showAudioQualityDialog = true
+                            }
+                            .padding(vertical = 12.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.HighQuality,
+                            contentDescription = null,
+                            tint = OrbitTheme.colors.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column {
+                            Text(
+                                text = "音频清晰度",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = OrbitTheme.colors.textPrimary
+                            )
+                            Text(
+                                text = "Hi-Res / 无损 FLAC / 极高 HQ / 标准",
+                                fontSize = 11.sp,
+                                color = OrbitTheme.colors.textSecondary
+                            )
+                        }
+                    }
+
                     // 1. 选择封面 (弹窗内提供预览、下载/重新下载以及保存)
                     Row(
                         modifier = Modifier
@@ -2507,6 +2575,19 @@ fun NowPlayingScreen(
                 showSongDetailInfoDialog = false
                 onToggleShowLyrics(true)
             }
+        )
+    }
+
+    // 音频清晰度选择弹窗
+    if (showAudioQualityDialog && song != null) {
+        val targetSong = song
+        com.orbit.music.ui.components.AudioQualitySelectorDialog(
+            song = targetSong,
+            currentQuality = preferredQuality,
+            onQualitySelect = { qualityKey ->
+                viewModel.switchAudioQuality(qualityKey)
+            },
+            onDismissRequest = { showAudioQualityDialog = false }
         )
     }
 

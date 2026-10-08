@@ -814,6 +814,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    val preferredQuality = com.orbit.music.data.online.engine.SourceScriptManager.getInstance(getApplication()).preferredQuality
+
+    fun switchAudioQuality(quality: String) {
+        playerManager.switchOnlineAudioQuality(quality)
+    }
+
     fun deleteSong(
         song: Song,
         deleteLocalFile: Boolean,
