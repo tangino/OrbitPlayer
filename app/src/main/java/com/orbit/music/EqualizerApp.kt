@@ -29,5 +29,12 @@ class EqualizerApp : Application() {
         } catch (e: Exception) {
             Log.e("EqualizerApp", "初始化平台账号管理器失败: ${e.message}", e)
         }
+
+        // 初始化车载媒体中心通信桥接 (适配吉利/领克/极氪/银河等车机系统播放源下拉菜单与控制)
+        try {
+            com.orbit.music.car.EcarxMediaBridge.init(this)
+        } catch (e: Throwable) {
+            Log.w("EqualizerApp", "初始化车载媒体中心桥接失败: ${e.message}")
+        }
     }
 }

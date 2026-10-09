@@ -206,7 +206,7 @@ fun MiniPlayerBar(
         val currentHeight = lerp(68.dp, collapsedSize, morphProgress)
         val currentCorner = lerp(20.dp, 23.dp, morphProgress)
         val currentEndPadding = lerp(expandedEndPadding, collapsedEndPadding, morphProgress)
-        val currentBottomPadding = lerp(12.dp, 48.dp, morphProgress)
+        val currentBottomPadding = lerp(12.dp, 16.dp, morphProgress)
         val dockShape = RoundedCornerShape(currentCorner)
 
         // ========== 1. 底层核心 Dock 交互卡片 (双层 Skia 高斯模糊投影 + 变形位移) ==========

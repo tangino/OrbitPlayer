@@ -2,6 +2,8 @@ package com.orbit.music.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -47,6 +49,7 @@ import androidx.compose.ui.layout.ContentScale
 import android.content.res.Configuration
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -141,6 +144,7 @@ fun rememberSynchronizedGridStateHolder(): SynchronizedGridStateHolder {
 fun MusicLibraryScreen(
     viewModel: MusicPlayerViewModel,
     isTabletMode: Boolean = false,
+    isMiniPlayerCollapsed: Boolean = false,
     onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -164,6 +168,28 @@ fun MusicLibraryScreen(
     val artists by viewModel.filteredArtists.collectAsState()
     val allPlaylists by viewModel.playlists.collectAsState()
     val playlists by viewModel.filteredPlaylists.collectAsState()
+
+    // 🎯 动态计算程序四个物理安全边界 (SystemBars + DisplayCutout Insets)
+    val insetsPadding = WindowInsets.systemBars
+        .union(WindowInsets.displayCutout)
+        .asPaddingValues()
+    val bottomSafeInset = insetsPadding.calculateBottomPadding()
+    val endSafeInset = insetsPadding.calculateEndPadding(LocalLayoutDirection.current)
+
+    val hasPlayingSong = playbackState.currentSong != null
+    val targetFabBottomPadding = when {
+        !hasPlayingSong -> bottomSafeInset + 16.dp
+        isMiniPlayerCollapsed -> bottomSafeInset + 16.dp + 46.dp + 12.dp // 74dp: 悬浮唱片胶囊停在 bottomSafeInset + 16dp，定位按钮在小球正上方并相隔 12dp
+        else -> bottomSafeInset + 80.dp + 16.dp // 96dp: 展开条高 68dp + 边距 12dp = 80dp，悬浮按钮悬浮于上方留出 16dp 呼吸感
+    }
+    val dynamicFabBottomPadding by animateDpAsState(
+        targetValue = targetFabBottomPadding,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioLowBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "dynamicFabBottomPadding"
+    )
 
     var showNewPlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistSelectedGroup by remember { mutableStateOf("默认") }
@@ -5180,13 +5206,13 @@ fun MusicLibraryScreen(
                             .weight(1f)
                             .fillMaxWidth()
                     ) {
-                        LibraryMainContent(bottomPadding = 98.dp)
+                        LibraryMainContent(bottomPadding = bottomSafeInset + if (hasPlayingSong && !isMiniPlayerCollapsed) 98.dp else 48.dp)
 
                         // 🎯 平板专属右下角悬浮控制按钮组（搜索输入框在搜索按钮左侧悬浮展开、双栏/Grid切换、定位当前播放）
                         Column(
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
-                                .padding(end = 24.dp, bottom = 106.dp),
+                                .padding(end = 24.dp + endSafeInset, bottom = dynamicFabBottomPadding),
                             horizontalAlignment = Alignment.End,
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
@@ -5316,7 +5342,7 @@ fun MusicLibraryScreen(
                         multiSelectActionBar(
                             Modifier
                                 .align(Alignment.BottomCenter)
-                                .padding(bottom = 106.dp)
+                                .padding(bottom = dynamicFabBottomPadding)
                         )
                     }
                 }
@@ -5333,19 +5359,19 @@ fun MusicLibraryScreen(
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                LibraryMainContent(bottomPadding = 98.dp)
+                LibraryMainContent(bottomPadding = bottomSafeInset + if (hasPlayingSong && !isMiniPlayerCollapsed) 98.dp else 48.dp)
 
                 LocatePlayingSongFab(
                     fabModifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = 16.dp, bottom = 106.dp)
+                        .padding(end = 16.dp + endSafeInset, bottom = dynamicFabBottomPadding)
                 )
 
                 // 手机端多选悬浮工具栏
                 multiSelectActionBar(
                     Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 106.dp)
+                        .padding(bottom = dynamicFabBottomPadding)
                 )
             }
         }

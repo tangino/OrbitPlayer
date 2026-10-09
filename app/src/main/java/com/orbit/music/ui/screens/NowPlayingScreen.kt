@@ -3092,9 +3092,9 @@ private fun LuminousGlowingSlider(
     currentPositionMs: Long = 0L,
     durationMs: Long = 0L,
     trailStyle: String = ProgressTrailStyle.NEON_PULSE.id,
-    startWidthDp: Float = 3.8f,
+    startWidthDp: Float = 2.0f,
     endWidthDp: Float = 1.2f,
-    orbitRadiusDp: Float = 9.5f,
+    orbitRadiusDp: Float = 13.0f,
     color1: Long = 0xFF00FFFFL,
     color2: Long = 0xFF5E72E4L,
     modifier: Modifier = Modifier
@@ -3237,12 +3237,16 @@ private fun LuminousGlowingSlider(
             // 2. 根据用户设置渲染不同拖尾动效
             when (selectedStyle) {
                 ProgressTrailStyle.NEON_PULSE -> {
-                    // ==================== 样式一：高能霓虹双发光管 (零对象分配极速绘制) ====================
+                    // ==================== 样式一：高能霓虹双发光管 (自适应平滑生长模型) ====================
                     val maxTailLength = 76.dp.toPx()
                     val tailLength = minOf(thumbX, maxTailLength)
 
-                    if (tailLength > 3f) {
-                        val maxAmp = orbitRadiusDp.dp.toPx()
+                    if (tailLength > 2f) {
+                        // 成熟度因子：避免短距离内强行塞入多圈螺旋导致密集拥挤
+                        val maturity = (tailLength / maxTailLength).coerceIn(0f, 1f)
+                        val maxAmp = orbitRadiusDp.dp.toPx() * maturity.pow(0.55f)
+                        val spiralCycles = 0.8f + 2.4f * maturity
+                        val birthAlpha = (tailLength / 12.dp.toPx()).coerceIn(0f, 1f)
                         val phaseRad = tailRotationPhase * (PI.toFloat() / 180f)
                         val startWidthPx = startWidthDp.dp.toPx()
                         val endWidthPx = endWidthDp.dp.toPx()
@@ -3256,11 +3260,11 @@ private fun LuminousGlowingSlider(
                                 val x = thumbX - u * tailLength
                                 val envelope = (sin(u * pi)).pow(0.85f) * (1f - 0.16f * u)
                                 val amp = maxAmp * envelope
-                                val theta = phaseRad - u * (3.2f * pi) + phaseOffset
+                                val theta = phaseRad - u * (spiralCycles * pi) + phaseOffset
                                 val y = centerY + amp * sin(theta)
                                 val z = cos(theta)
                                 val depthAlpha = 0.65f + 0.35f * ((z + 1f) * 0.5f)
-                                val alpha = ((1f - u).pow(1.05f) * twinkleAlpha * depthAlpha).coerceIn(0f, 1f)
+                                val alpha = ((1f - u).pow(1.05f) * twinkleAlpha * depthAlpha * birthAlpha).coerceIn(0f, 1f)
                                 val baseW = startWidthPx * (1f - u) + endWidthPx * u
                                 val width = (baseW * (1f + 0.28f * z)).coerceAtLeast(minWidthPx)
 
@@ -3395,15 +3399,20 @@ private fun LuminousGlowingSlider(
                 }
 
                 ProgressTrailStyle.COMET_HELIX -> {
-                    // ==================== 样式二：彗星双拖尾 3D 缠绕模型 (零内存分配) ====================
+                    // ==================== 样式二：彗星双拖尾 3D 缠绕模型 (自适应平滑生长模型) ====================
                     val maxTailLength = 68.dp.toPx()
                     val tailLength = minOf(thumbX, maxTailLength)
-                    val maxAmp = orbitRadiusDp.dp.toPx()
-                    val phaseRad = tailRotationPhase * (PI.toFloat() / 180f)
-                    val startWidthPx = startWidthDp.dp.toPx()
-                    val endWidthPx = endWidthDp.dp.toPx()
 
-                    if (tailLength > 3f) {
+                    if (tailLength > 2f) {
+                        // 成熟度因子：避免短距离内强行塞入多圈螺旋导致密集拥挤
+                        val maturity = (tailLength / maxTailLength).coerceIn(0f, 1f)
+                        val maxAmp = orbitRadiusDp.dp.toPx() * maturity.pow(0.55f)
+                        val spiralCycles = 0.8f + 2.2f * maturity
+                        val birthAlpha = (tailLength / 12.dp.toPx()).coerceIn(0f, 1f)
+                        val phaseRad = tailRotationPhase * (PI.toFloat() / 180f)
+                        val startWidthPx = startWidthDp.dp.toPx()
+                        val endWidthPx = endWidthDp.dp.toPx()
+
                         val pi = PI.toFloat()
                         fun fillComet(buf: FloatArray, phaseOffset: Float) {
                             for (i in 0..cometSegments) {
@@ -3411,12 +3420,12 @@ private fun LuminousGlowingSlider(
                                 val x = thumbX - u * tailLength
                                 val envelope = (sin(u * pi)).pow(0.85f) * (1f - 0.2f * u)
                                 val amp = maxAmp * envelope
-                                val theta = phaseRad - u * (3.0f * pi) + phaseOffset
+                                val theta = phaseRad - u * (spiralCycles * pi) + phaseOffset
                                 val y = centerY + amp * sin(theta)
                                 val z = cos(theta)
 
                                 val depthAlpha = 0.55f + 0.45f * ((z + 1f) * 0.5f)
-                                val alpha = ((1f - u).pow(1.1f) * twinkleAlpha * depthAlpha).coerceIn(0f, 1f)
+                                val alpha = ((1f - u).pow(1.1f) * twinkleAlpha * depthAlpha * birthAlpha).coerceIn(0f, 1f)
                                 val baseW = startWidthPx * (1f - u) + endWidthPx * u
                                 val strokeW = (baseW * (1f + 0.25f * z)).coerceAtLeast(0.5f)
 
@@ -3905,19 +3914,7 @@ private fun MaximizedVisualizerOverlay(
         }
         val topBarBottom = if (equalizerUiState.maximizedShowTopBar && !isCoverFlowMode && !isCleanScreen) (topBarPaddingTop + 48.dp + (if (screenHeight < 500.dp) 6.dp else 12.dp)) else (topBarPaddingTop + 6.dp)
 
-        // 2. 精准测量系统底部导航栏 / 车机原生 Dock 控制条高度
-        val navBarResId = remember(context) {
-            context.resources.getIdentifier("navigation_bar_height", "dimen", "android")
-        }
-        val systemNavBarHeight = remember(context, navBarResId) {
-            if (navBarResId > 0) {
-                val px = context.resources.getDimensionPixelSize(navBarResId)
-                val density = context.resources.displayMetrics.density
-                if (density > 0f) (px / density).dp else 0.dp
-            } else {
-                0.dp
-            }
-        }
+        // 2. 精准动态获取系统底部导航栏 / 车机原生 Dock 控制条真实安全厚度 (杜绝静态资源常数与强制保底72dp造成的严重悬空截断)
         val composeNavBar = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         val composeSafeDrawingBottom = WindowInsets.safeDrawing.asPaddingValues().calculateBottomPadding()
         val composeSystemBarsBottom = WindowInsets.systemBars.asPaddingValues().calculateBottomPadding()
@@ -3931,20 +3928,12 @@ private fun MaximizedVisualizerOverlay(
         }
         val isCarOrLargeScreen = (isCarUiMode || (isLandscape && screenWidth >= 680.dp)) && screenHeight >= 500.dp
 
-        val rawNavBarBottom = maxOf(
-            systemNavBarHeight,
+        val actualNavBarHeight = maxOf(
             composeNavBar,
             composeSafeDrawingBottom,
             composeSystemBarsBottom,
             composeSafeGesturesBottom
         )
-        // 在车载大屏与宽屏横屏下，车机 Dock 栏通常占据 64~90dp。
-        // 若系统未如实上报（或上报值为0），强制保底避让 72.dp；若系统上报了更大高度，则以系统为准
-        val actualNavBarHeight = if (isCarOrLargeScreen) {
-            rawNavBarBottom.coerceAtLeast(72.dp)
-        } else {
-            rawNavBarBottom
-        }
 
         // 3. 精准测量底部控制卡片实际占用的高度 (包含底部避让空间与卡片自身高度)
         val bottomControlsHeight = (if (equalizerUiState.maximizedShowControls) {
@@ -3956,12 +3945,12 @@ private fun MaximizedVisualizerOverlay(
         // 4. 计算垂直可用净空距离
         val verticalAvailableGap = (screenHeight - topBarBottom - bottomControlsHeight).coerceAtLeast(80.dp)
 
-        // 5. 动态自适应常规状态封面尺寸 (手机横屏上方控制条隐藏时进一步扩大，车机大屏放宽上限至320dp)
+        // 5. 动态自适应常规状态封面尺寸 (车机大屏与平板放宽上限至340~390dp，营造极具冲击力的视觉效果)
         val isSmallLandscapePhone = isLandscape && screenHeight < 500.dp
         val isTopControlBarVisible = equalizerUiState.maximizedShowTopBar && !isCoverFlowMode && !isCleanScreen
-        val maxCoverHeight = (verticalAvailableGap - 28.dp).coerceAtLeast(80.dp)
+        val maxCoverHeight = (verticalAvailableGap - (if (isCarOrLargeScreen) 12.dp else 24.dp)).coerceAtLeast(80.dp)
         val maxCoverWidth = if (isLandscape) {
-            (screenWidth * 0.40f).coerceAtLeast(80.dp)
+            (screenWidth * (if (isCarOrLargeScreen) 0.46f else 0.40f)).coerceAtLeast(80.dp)
         } else {
             (screenWidth - 36.dp).coerceAtLeast(80.dp)
         }
@@ -3986,7 +3975,12 @@ private fun MaximizedVisualizerOverlay(
         val coverSize = if (isSmallLandscapePhone) {
             animatedPhoneCoverSize
         } else if (isLandscape) {
-            val landscapeMaxCoverCap = if (screenHeight >= 550.dp && screenWidth >= 800.dp) 320.dp else 260.dp
+            val landscapeMaxCoverCap = when {
+                isCarOrLargeScreen && screenWidth >= 900.dp && screenHeight >= 550.dp -> 390.dp
+                isCarOrLargeScreen -> 340.dp
+                screenHeight >= 550.dp && screenWidth >= 800.dp -> 320.dp
+                else -> 280.dp
+            }
             minOf(maxCoverHeight, maxCoverWidth, landscapeMaxCoverCap)
         } else {
             minOf(maxCoverHeight, maxCoverWidth, 240.dp)
@@ -4062,7 +4056,7 @@ private fun MaximizedVisualizerOverlay(
                             start = 0.dp,
                             end = 0.dp,
                             top = if (isLandscape) (topBarBottom + 6.dp).coerceAtLeast(64.dp) else (actualStatusBarHeight + 8.dp).coerceAtLeast(52.dp),
-                            bottom = actualNavBarHeight
+                            bottom = 0.dp
                         )
                     }
                 ),
@@ -4102,7 +4096,7 @@ private fun MaximizedVisualizerOverlay(
 
         // Cover Flow 模式下的封面目标尺寸
         val flowCoverSize = if (isLandscape) {
-            minOf(screenHeight * 0.50f, 220.dp)
+            if (isCarOrLargeScreen) minOf(screenHeight * 0.62f, 340.dp) else minOf(screenHeight * 0.50f, 240.dp)
         } else {
             minOf(screenWidth * 0.65f, screenHeight * 0.38f, 260.dp)
         }

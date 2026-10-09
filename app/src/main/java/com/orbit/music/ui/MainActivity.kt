@@ -302,6 +302,7 @@ class MainActivity : ComponentActivity() {
                                     MusicLibraryScreen(
                                         viewModel = musicPlayerViewModel,
                                         isTabletMode = uiState.isTabletLandscapeModeEnabled,
+                                        isMiniPlayerCollapsed = uiState.isMiniPlayerCollapsed,
                                         onOpenSettings = {
                                             previousScreenBeforeSettings = AppScreen.LIBRARY
                                             equalizerViewModel.navigateTo(AppScreen.SETTINGS)

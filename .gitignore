@@ -17,6 +17,8 @@ Android/
 android studio/
 node_modules/
 .wrangler/
+yaoyin/
+yunting/
 
 # 截图输出
 screenshot_*.png

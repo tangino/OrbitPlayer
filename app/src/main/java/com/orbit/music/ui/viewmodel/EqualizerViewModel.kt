@@ -57,9 +57,9 @@ data class EqualizerUiState(
     val launchAsEqualizerOnly: Boolean = false,
     val persistentMiniPlayer: Boolean = true,
     val progressTrailStyle: String = ProgressTrailStyle.NEON_PULSE.id,
-    val trailStartWidth: Float = 3.8f,
+    val trailStartWidth: Float = 2.0f,
     val trailEndWidth: Float = 1.2f,
-    val trailOrbitRadius: Float = 9.5f,
+    val trailOrbitRadius: Float = 13.0f,
     val trailColor1: Long = 0xFF00B8D4L,
     val trailColor2: Long = 0xFF818CF8L,
     val visualizerEnabled: Boolean = true,
@@ -126,9 +126,9 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         val savedPersistentMiniPlayer = prefs.getBoolean(KEY_PERSISTENT_MINI_PLAYER, true)
         val savedIsMiniPlayerCollapsed = prefs.getBoolean(KEY_IS_MINI_PLAYER_COLLAPSED, false)
         val savedTrailStyle = prefs.getString(KEY_PROGRESS_TRAIL_STYLE, ProgressTrailStyle.NEON_PULSE.id) ?: ProgressTrailStyle.NEON_PULSE.id
-        val savedTrailStartWidth = prefs.getFloat(KEY_TRAIL_START_WIDTH, 3.8f)
+        val savedTrailStartWidth = prefs.getFloat(KEY_TRAIL_START_WIDTH, 2.0f)
         val savedTrailEndWidth = prefs.getFloat(KEY_TRAIL_END_WIDTH, 1.2f)
-        val savedTrailOrbitRadius = prefs.getFloat(KEY_TRAIL_ORBIT_RADIUS, 9.5f)
+        val savedTrailOrbitRadius = prefs.getFloat(KEY_TRAIL_ORBIT_RADIUS, 13.0f)
         val savedTrailColor1 = prefs.getLong(KEY_TRAIL_COLOR1, 0xFF00B8D4L)
         val savedTrailColor2 = prefs.getLong(KEY_TRAIL_COLOR2, 0xFF818CF8L)
         val savedVizEnabled = prefs.getBoolean(KEY_VIZ_ENABLED, true)
@@ -406,17 +406,17 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun resetTrailSettings() {
         prefs.edit()
-            .putFloat(KEY_TRAIL_START_WIDTH, 3.8f)
+            .putFloat(KEY_TRAIL_START_WIDTH, 2.0f)
             .putFloat(KEY_TRAIL_END_WIDTH, 1.2f)
-            .putFloat(KEY_TRAIL_ORBIT_RADIUS, 9.5f)
+            .putFloat(KEY_TRAIL_ORBIT_RADIUS, 13.0f)
             .putLong(KEY_TRAIL_COLOR1, 0xFF00B8D4L)
             .putLong(KEY_TRAIL_COLOR2, 0xFF818CF8L)
             .apply()
         _uiState.update {
             it.copy(
-                trailStartWidth = 3.8f,
+                trailStartWidth = 2.0f,
                 trailEndWidth = 1.2f,
-                trailOrbitRadius = 9.5f,
+                trailOrbitRadius = 13.0f,
                 trailColor1 = 0xFF00B8D4L,
                 trailColor2 = 0xFF818CF8L
             )

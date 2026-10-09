@@ -20,6 +20,18 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- 车载媒体中心权限与服务发现 (适配吉利/领克/极氪/银河等车载系统) -->
+    <uses-permission android:name="ecarx.oem.permission.OPENAPI_MEDIACENTER_PERMISSION" />
+
+    <queries>
+        <package android:name="com.ecarx.sdk.openapi" />
+        <package android:name="com.ecarx.eas.carservice" />
+        <package android:name="com.flyme.auto.music" />
+        <package android:name="com.flyme.auto.mediacontrol" />
+        <package android:name="com.flyme.auto.dimservice" />
+        <package android:name="com.geely.auto.music" />
+    </queries>
+
     <!-- 声明 USB Host 硬件特性支持 (用于 U 盘直接通信) -->
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
