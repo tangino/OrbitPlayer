@@ -11,8 +11,8 @@ android {
         applicationId = "com.orbit.music"
         minSdk = 21
         targetSdk = 34
-        versionCode = 31
-        versionName = "0.4.1"
+        versionCode = 32
+        versionName = "0.4.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -133,9 +133,6 @@ dependencies {
 
     // Haze 专为 Jetpack Compose 打造的实时背景高斯模糊 (Backdrop Blur) 库
     implementation("dev.chrisbanes.haze:haze:0.7.3")
-
-    // libaums: USB Mass Storage (无需存储权限直接读取 U 盘 FAT32)
-    implementation("me.jahnen.libaums:core:0.9.1")
 
     // ZXing (用于二维码生成与扫码登录渲染)
     implementation("com.google.zxing:core:3.5.3")

@@ -270,6 +270,7 @@ class MusicPlaybackService : MediaLibraryService() {
                         KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
                         KeyEvent.KEYCODE_MEDIA_STEP_FORWARD,
                         KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD -> {
+                            com.orbit.music.car.EcarxMediaBridge.takeFocus()
                             playerManager.playNext()
                             return true
                         }
@@ -277,10 +278,12 @@ class MusicPlaybackService : MediaLibraryService() {
                         KeyEvent.KEYCODE_MEDIA_REWIND,
                         KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD,
                         KeyEvent.KEYCODE_MEDIA_SKIP_BACKWARD -> {
+                            com.orbit.music.car.EcarxMediaBridge.takeFocus()
                             playerManager.playPrevious()
                             return true
                         }
                         KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                            com.orbit.music.car.EcarxMediaBridge.takeFocus()
                             playerManager.play()
                             return true
                         }
@@ -290,6 +293,7 @@ class MusicPlaybackService : MediaLibraryService() {
                         }
                         KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
                         KeyEvent.KEYCODE_HEADSETHOOK -> {
+                            com.orbit.music.car.EcarxMediaBridge.takeFocus()
                             playerManager.togglePlayPause()
                             return true
                         }

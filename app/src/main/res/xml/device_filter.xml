@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- USB Mass Storage Device (Class 8 = 0x08 大容量存储/U盘) -->
-    <usb-device class="8" />
-</resources>

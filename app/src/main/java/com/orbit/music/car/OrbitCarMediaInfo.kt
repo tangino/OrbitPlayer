@@ -7,6 +7,7 @@ import com.orbit.music.data.model.Song
 
 /**
  * 车机媒体中心歌曲条目封装 (适配吉利/领克/银河/极氪 ECARX 架构)
+ * 参考 Flyme Auto 版 QQ音乐 FaMediaInfo 设计
  */
 class OrbitCarMediaInfo(
     private val song: Song,
@@ -24,11 +25,15 @@ class OrbitCarMediaInfo(
 
     override fun getMediaId(): String = song.id.toString()
 
-    override fun getUuid(): String = "${song.title}|${song.artist}"
+    override fun getUuid(): String = "${song.id}"
 
-    override fun getArtwork(): Uri? {
-        return song.albumArtUri?.let { Uri.parse(it) }
-            ?: Uri.parse("content://com.orbit.music.cover/${song.id}")
+    override fun getArtwork(): Uri {
+        val uriStr = song.albumArtUri
+        return if (!uriStr.isNullOrEmpty()) {
+            Uri.parse(uriStr)
+        } else {
+            Uri.parse("content://com.orbit.music.cover/${song.id}")
+        }
     }
 
     override fun getSourceType(): Int = SourceType.SOURCE_TYPE_ONLINE
@@ -38,4 +43,8 @@ class OrbitCarMediaInfo(
     override fun getLyricContent(): String? = lyricText
 
     override fun getMediaPath(): Uri = Uri.parse(song.path)
+
+    override fun getMediaCp(): String = "OrBitPlayer"
+
+    override fun getSupportCollect(): Int = 1
 }

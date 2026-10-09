@@ -1,17 +1,29 @@
 # Orbit Player 更新日志 (Change Note)
 
-## [v0.4.1] - 2026-10-09
+## [v0.4.2] - 2026-10-09
 
-### 🚗 车载系统播放源下拉菜单切换深度兼容 (吉利/领克/极氪/银河 ECARX MediaCenter)
-- **原生适配车机播放源切换下拉列表**：
-  - 新增 `EcarxMediaBridge` 与 `OrbitCarMusicClient`，注册进入车机系统媒体中心（MediaCenter）；
-  - 在车机中控屏顶栏、状态栏及负一屏媒体卡片的「播放源下拉菜单」中直接显示 **Orbit Player**（支持在线音乐 `SOURCE_TYPE_ONLINE` 与本地音乐 `SOURCE_TYPE_LOCAL`）；
-  - **下拉菜单点击即播与焦点夺取**：响应车机下拉菜单选中回调（`onSourceSelected`），即时夺取车载音频播放焦点并智能续播；
-  - **车机桌面/仪表/HUD 深度双向联动**：
-    - 实时推送歌曲元数据、高保真专辑封面、歌曲时长与播放/暂停状态；
-    - 实时向车机仪表盘与 HUD 抬头显示推送当前歌词（`updateCurrentLyric`）；
-    - 启动 1 秒心跳进度同步器（`updateCurrentProgress`），确保车机中控进度条无缝跟随；
+### 🚗 车载系统播放源下拉菜单与方向盘切歌深度重构 (参考车机官方 QQ 音乐)
+- **彻底解决车机播放源下拉菜单无入口问题**：
+  - 参考 Flyme Auto / 吉利车机官方 QQ 音乐协议，在客户端注册后主动向媒体中心推送音源类型列表 `updateMediaSourceTypeList(token, [SOURCE_TYPE_LOCAL, SOURCE_TYPE_ONLINE])`，成功激活车机顶栏与负一屏下拉播放源菜单；
+  - 注册车载音频恢复意图 `registerMusicRecoveryIntent` 并新增 `OrbitCarRecoveryService`，在车机下拉切换、休眠唤醒或倒车恢复时平滑续播；
+  - 新增 `OrbitCarBootReceiver`，监听车机媒体中心就绪广播（`ecarx.xsf.mediacenter.action.BROADCAST_MEDIA_CENTER`）与开机广播，实现开机即时与车机系统重新握手绑定。
+- **彻底解决方向盘多功能按键切歌与播放控制无响应问题**：
+  - **纠正底层播放状态码映射**：将播放状态值修正为官方规范中的 `PLAYING = 3`（原先返回 1 被车机系统误判为暂停状态导致拒绝按键路由），暂停状态返回 `PAUSED = 1`；
+  - **实现主动争夺底层播放焦点 (takeFocus / requestPlay)**：在歌曲起播、音源被下拉菜单激活以及按键触发时主动调用媒体中心 `requestPlay` 争夺系统级媒体焦点，确保车机方向盘按键精确路由到 Orbit Player；
+  - **静态注册硬件媒体按键接收器**：新增 `OrbitMediaButtonReceiver` 静态监听 `android.intent.action.MEDIA_BUTTON` 广播，适配不同车机固件的方向盘切歌硬件键事件，并配备防抖过滤与有序广播截断机制；
+  - **车载播放列表同步**：新增 `OrbitCarMediaListInfo`，将当前播放队列实时同步至车机媒体中心（前 300 首安全切片防 Binder 溢出），支持在中控仪表端直观查看与点播。
+- **车机桌面/仪表/HUD 深度双向联动**：
+  - 实时推送歌曲元数据、高保真专辑封面、歌曲时长与播放/暂停状态；
+  - 实时向车机仪表盘与 HUD 抬头显示推送当前歌词（`updateCurrentLyric`）；
+  - 启动 1 秒心跳进度同步器（`updateCurrentProgress`），确保车机中控进度条无缝跟随；
   - **零侵入与优雅降级**：通过自适应反射与安全代理设计，在非车机 Android 设备或普通车机上自动静默降级，零性能损耗、零崩溃隐患。
+
+### 🧹 移除 USB Host 直接读取功能代码与体积瘦身
+- **彻底移除底层 U 盘直接读取代码**：
+  - 移除基于 `me.jahnen.libaums` 的底层 USB Mass Storage 协议栈及 `UsbStorageScanner`；
+  - 移除 `android.hardware.usb.host` 特性要求与 `device_filter.xml`，不再申请 USB 硬件直接访问权限；
+  - 移除多媒体扫描器中的 USB Host 硬件枚举流程，精简扫描链路；
+  - 正常保留标准 Android 存储体系（OTG/U 盘被车机或手机系统自动挂载至 `/storage/` 时仍可照常极速扫描与读取）。
 
 ### 📐 屏幕动态边界自适应与悬浮按钮组错位穿模重构 (全形态设备适配)
 - **动态计算程序四个物理安全边界 (Edge-to-Edge Insets)**：

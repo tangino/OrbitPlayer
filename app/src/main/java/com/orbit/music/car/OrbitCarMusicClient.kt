@@ -10,12 +10,13 @@ import com.orbit.music.audio.MusicPlayerManager
 
 /**
  * 亿咖通 (ECARX) / 吉利银河 OS / 领克 Flyme Auto 车载音乐客户端
+ * 参考 Flyme Auto 版 QQ音乐 FaMusicClient 重新实现
  *
  * 核心功能：
  * 1. 响应车机中控屏音源下拉菜单切换 (onSourceSelected)
- * 2. 声明应用所支持的车载音源类型 (在线音乐 SOURCE_TYPE_ONLINE, 本地音乐 SOURCE_TYPE_LOCAL)
+ * 2. 声明应用所支持的车载音源类型 (在线音乐 SOURCE_TYPE_ONLINE = 6)
  * 3. 响应方向盘按键与车载多媒体卡片控制 (播放/暂停/上一曲/下一曲/拖动进度条/收藏等)
- * 4. 为车机系统提供当前曲目信息与播放列表
+ * 4. 向车机系统供给当前曲目信息与播放列表
  */
 class OrbitCarMusicClient(
     private val context: Context
@@ -25,12 +26,15 @@ class OrbitCarMusicClient(
         MusicPlayerManager.getInstance(context)
     }
 
+    @Volatile
+    var currentPlaybackInfo: MusicPlaybackInfo? = null
+
     /**
      * 声明本播放器支持的车载播放源类型列表
-     * 车机系统的“播放源下拉菜单”会读取此数组，并在下拉栏中创建 Orbit Player 的音源选项！
+     * 车机中控系统的“播放源下拉菜单”会读取此数组，并在下拉栏中创建对应音源入口！
      */
     override fun getMediaSourceTypeList(): IntArray {
-        Log.i(TAG, "getMediaSourceTypeList requested by car system")
+        Log.i(TAG, "车机请求 getMediaSourceTypeList -> [ONLINE(6), LOCAL(0)]")
         return intArrayOf(SourceType.SOURCE_TYPE_ONLINE, SourceType.SOURCE_TYPE_LOCAL)
     }
 
@@ -38,26 +42,20 @@ class OrbitCarMusicClient(
      * 获取当前生效的播放源类型
      */
     override fun getCurrentSourceType(): Int {
-        val currentSong = playerManager.playbackState.value.currentSong
-        val path = currentSong?.path ?: ""
-        return if (path.startsWith("http://") || path.startsWith("https://") || path.startsWith("online://")) {
-            SourceType.SOURCE_TYPE_ONLINE
-        } else {
-            SourceType.SOURCE_TYPE_LOCAL
-        }
+        return currentPlaybackInfo?.sourceType ?: SourceType.SOURCE_TYPE_ONLINE
     }
 
     /**
-     * 车主在车机屏幕顶栏或媒体卡片的【播放源下拉菜单】中点击切换至 Orbit Player 时回调！
+     * 车主在车机屏幕顶栏或媒体卡片的【播放源下拉菜单】中点击切换至本播放器时回调！
      *
      * @param source 选中的音源类型 (如 6 为在线音乐, 0 为本地音乐)
      */
     override fun onSourceSelected(source: Int): Boolean {
-        Log.i(TAG, "★ 车机播放源下拉菜单切换选中 Orbit Player! source=$source")
+        Log.i(TAG, "★ 车机播放源下拉菜单切换选中当前应用! source=$source")
         try {
-            // 1. 请求车机底层音频播放焦点
+            // 1. 立即请求车机底层音频播放焦点
             EcarxMediaBridge.takeFocus()
-            // 2. 如果当前未在播放，则恢复/启动播放
+            // 2. 如果当前未在播放，则启动播放续播
             if (!playerManager.playbackState.value.isPlaying) {
                 playerManager.play()
             }
@@ -74,55 +72,76 @@ class OrbitCarMusicClient(
     }
 
     override fun onPlay(): Boolean {
-        Log.d(TAG, "onPlay triggered from car")
-        playerManager.play()
-        return true
+        Log.i(TAG, "★ 车机触发 onPlay")
+        try {
+            EcarxMediaBridge.takeFocus()
+            playerManager.play()
+            return true
+        } catch (e: Throwable) {
+            Log.e(TAG, "onPlay failed: ${e.message}", e)
+            return false
+        }
     }
 
     override fun onPause(): Boolean {
-        Log.d(TAG, "onPause triggered from car")
-        playerManager.pause()
-        return true
+        Log.i(TAG, "★ 车机触发 onPause")
+        try {
+            playerManager.pause()
+            return true
+        } catch (e: Throwable) {
+            Log.e(TAG, "onPause failed: ${e.message}", e)
+            return false
+        }
     }
 
     override fun onNext(): Boolean {
-        Log.d(TAG, "onNext triggered from car")
-        playerManager.playNext()
-        return true
+        Log.i(TAG, "★ 车机触发 onNext (方向盘按键/中控卡片切下一曲)")
+        try {
+            playerManager.playNext()
+            return true
+        } catch (e: Throwable) {
+            Log.e(TAG, "onNext failed: ${e.message}", e)
+            return false
+        }
     }
 
     override fun onPrevious(): Boolean {
-        Log.d(TAG, "onPrevious triggered from car")
-        playerManager.playPrevious()
-        return true
+        Log.i(TAG, "★ 车机触发 onPrevious (方向盘按键/中控卡片切上一曲)")
+        try {
+            playerManager.playPrevious()
+            return true
+        } catch (e: Throwable) {
+            Log.e(TAG, "onPrevious failed: ${e.message}", e)
+            return false
+        }
     }
 
     override fun onForward(): Boolean {
-        Log.d(TAG, "onForward triggered from car")
+        Log.i(TAG, "onForward triggered from car")
         playerManager.playNext()
         return true
     }
 
     override fun onRewind(): Boolean {
-        Log.d(TAG, "onRewind triggered from car")
+        Log.i(TAG, "onRewind triggered from car")
         playerManager.playPrevious()
         return true
     }
 
     override fun onReplay(): Boolean {
-        Log.d(TAG, "onReplay triggered from car")
+        Log.i(TAG, "onReplay triggered from car")
         playerManager.seekTo(0L)
         playerManager.play()
         return true
     }
 
     override fun onSeek(position: Long) {
-        Log.d(TAG, "onSeek triggered from car: position=$position")
+        Log.i(TAG, "onSeek triggered from car: position=$position")
         playerManager.seekTo(position)
     }
 
     override fun onLoopModeChange(mode: Int): Boolean {
-        Log.d(TAG, "onLoopModeChange triggered from car: mode=$mode")
+        Log.i(TAG, "onLoopModeChange triggered from car: mode=$mode")
         playerManager.toggleRepeatMode()
         return true
     }
@@ -131,19 +150,23 @@ class OrbitCarMusicClient(
         return playerManager.playbackState.value.currentPositionMs
     }
 
-    override fun getMusicPlaybackInfo(): MusicPlaybackInfo {
-        return EcarxMediaBridge.getCurrentPlaybackInfo()
+    override fun getMusicPlaybackInfo(): MusicPlaybackInfo? {
+        return currentPlaybackInfo ?: EcarxMediaBridge.getCurrentPlaybackInfo()
     }
 
+    /**
+     * 向车机提供当前播放列表 (截取最多 300 首，防止跨进程 Binder 传输溢出)
+     */
     override fun getPlaylist(source: Int): List<MediaInfo> {
         val playlist = playerManager.playbackState.value.currentPlaylist
-        return playlist.mapIndexed { index, song ->
+        val limitedList = if (playlist.size > 300) playlist.take(300) else playlist
+        return limitedList.mapIndexed { index, song ->
             OrbitCarMediaInfo(song, index)
         }
     }
 
     override fun onMediaSelected(source: Int, id: String?): Boolean {
-        Log.d(TAG, "onMediaSelected: source=$source, id=$id")
+        Log.i(TAG, "onMediaSelected by id: source=$source, id=$id")
         if (id == null) return false
         val playlist = playerManager.playbackState.value.currentPlaylist
         val index = playlist.indexOfFirst { it.id.toString() == id }
@@ -155,6 +178,7 @@ class OrbitCarMusicClient(
     }
 
     override fun onMediaSelected(mediaInfo: MediaInfo?): Boolean {
+        Log.i(TAG, "onMediaSelected by mediaInfo: ${mediaInfo?.title}")
         return onMediaSelected(mediaInfo?.sourceType ?: 0, mediaInfo?.mediaId)
     }
 
@@ -165,6 +189,6 @@ class OrbitCarMusicClient(
     }
 
     companion object {
-        private const val TAG = "OrbitCarClient"
+        private const val TAG = "OrbitCarMusicClient"
     }
 }

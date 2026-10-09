@@ -19,7 +19,6 @@ import java.io.File
 class MediaStoreScanner(private val context: Context) {
 
     private val db = AppDatabase.getInstance(context)
-    private val usbScanner = UsbStorageScanner(context)
 
     suspend fun scanLocalMedia(
         includedFolders: Set<String> = emptySet(),
@@ -162,21 +161,6 @@ class MediaStoreScanner(private val context: Context) {
             scanCommonDirectories(songMap, includedFolders, excludedFolders)
         } catch (e: Exception) {
             Log.e(TAG, "Direct directory scan error", e)
-        }
-
-        // 3. USB Host 硬件层扫描 (方案二: libaums 直接访问 U 盘大容量存储设备)
-        try {
-            val usbSongs = usbScanner.scanUsbDevices()
-            for (usbSong in usbSongs) {
-                if (!songMap.containsKey(usbSong.path)) {
-                    songMap[usbSong.path] = usbSong
-                }
-            }
-            if (usbSongs.isNotEmpty()) {
-                Log.i(TAG, "Indexed ${usbSongs.size} song(s) from USB Host.")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "USB Host media scan error", e)
         }
 
         val resultList = songMap.values.toList().sortedBy { it.title.lowercase() }

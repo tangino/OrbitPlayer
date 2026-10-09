@@ -22,6 +22,14 @@
 
     <!-- 车载媒体中心权限与服务发现 (适配吉利/领克/极氪/银河等车载系统) -->
     <uses-permission android:name="ecarx.oem.permission.OPENAPI_MEDIACENTER_PERMISSION" />
+    <permission
+        android:name="com.orbit.music.source"
+        android:protectionLevel="normal" />
+    <uses-permission android:name="com.orbit.music.source" />
+    <uses-permission android:name="music.intent.action.source" />
+    <uses-permission android:name="com.flyme.auto.coreservice.permission.CONNECTION" />
+    <uses-permission android:name="android.car.permission.CAR_VENDOR_EXTENSION" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <queries>
         <package android:name="com.ecarx.sdk.openapi" />
@@ -31,9 +39,6 @@
         <package android:name="com.flyme.auto.dimservice" />
         <package android:name="com.geely.auto.music" />
     </queries>
-
-    <!-- 声明 USB Host 硬件特性支持 (用于 U 盘直接通信) -->
-    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
     <!-- 声明支持所有屏幕尺寸与像素密度 (支持车载大屏与高分屏) -->
     <supports-screens
@@ -60,6 +65,20 @@
             android:name="android.max_aspect"
             android:value="3.2" />
 
+        <!-- 亿咖通 / 吉利银河 OS / 领克 Flyme Auto 车机媒体与语音识别元数据 -->
+        <meta-data
+            android:name="ECARX_VR_APP_NAME_EXPAND"
+            android:value="在线音乐|恒星律动|音乐|本地音乐|OrBitPlayer" />
+        <meta-data
+            android:name="eCarX_OpenAPI_AppId"
+            android:value="338018" />
+        <meta-data
+            android:name="eCarX_OpenAPI_AppKey"
+            android:value="DXeoZ25hdrtMjgGY3OJA" />
+        <meta-data
+            android:name="app_unite_code"
+            android:value="flyme_music_unit_code" />
+
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
@@ -71,14 +90,6 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-
-            <!-- 响应 USB 大容量存储设备 (U 盘) 插入事件 -->
-            <intent-filter>
-                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
-            </intent-filter>
-            <meta-data
-                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
-                android:resource="@xml/device_filter" />
 
             <!-- 声明系统默认音乐播放器类别 (系统“默认应用 -> 音乐应用”扫描识别项) -->
             <intent-filter>
@@ -172,6 +183,44 @@
             android:authorities="com.orbit.music.cover"
             android:exported="true"
             android:grantUriPermissions="true" />
+
+        <!-- 车载方向盘按键与硬件媒体按键广播拦截器 (支持方向盘上一曲/下一曲/播放/暂停) -->
+        <receiver
+            android:name=".car.OrbitMediaButtonReceiver"
+            android:exported="true">
+            <intent-filter android:priority="1000">
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+                <action android:name="com.tencent.qqmusiccar.action.MEDIA_BUTTON_INNER_MUSICMEDIA" />
+                <action android:name="com.tencent.qqmusiccar.action.MEDIA_BUTTON_INNER_ONKEY" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 车载系统音源切换与开机唤醒广播接收器 -->
+        <receiver
+            android:name=".car.OrbitCarBootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="ecarx.xsf.mediacenter.action.BROADCAST_MEDIA_CENTER" />
+                <action android:name="ecarx.xsf.mediacenter.action.BROADCAST_MEDIA_CENTER.SEMANTIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="ecarx.intent.action.power.STRMODE" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 车载媒体恢复与音源唤起服务 (响应车机中控选择与熄火唤醒续播) -->
+        <service
+            android:name=".car.OrbitCarRecoveryService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.orbit.music.recovery" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
 
     </application>
 

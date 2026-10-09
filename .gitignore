@@ -19,6 +19,7 @@ node_modules/
 .wrangler/
 yaoyin/
 yunting/
+qqmusic/
 
 # 截图输出
 screenshot_*.png

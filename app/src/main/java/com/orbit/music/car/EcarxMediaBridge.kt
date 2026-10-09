@@ -1,8 +1,7 @@
 package com.orbit.music.car
 
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
+import android.content.Intent
 import android.util.Log
 import com.ecarx.eas.sdk.mediacenter.MusicPlaybackInfo
 import com.ecarx.eas.sdk.mediacenter.SourceType
@@ -25,12 +24,14 @@ import java.lang.reflect.Proxy
 
 /**
  * 亿咖通 (ECARX) / 吉利银河 OS / 领克 Flyme Auto / 极氪 车机媒体中心通信桥接核心
+ * 参考 Flyme Auto 版 QQ音乐 MediaCenterManager 与 MediaCenterFocusUseCase 重构实现
  *
  * 核心能力：
  * 1. 动态探测车机 MediaCenter 服务与 SDK 环境，非车机设备安全降级（零性能开销、零崩溃风险）
- * 2. 注册 OrbitCarMusicClient，使 Orbit Player 在车机中控屏顶栏【播放源下拉菜单】中高亮显示
- * 3. 响应车机中控源切换事件（onSourceSelected），智能夺取播放焦点并无缝续播
- * 4. 实时双向同步播放元数据（歌名、歌手、专辑、高保真封面、歌词、播放进度条）至车机桌面 Widget、仪表盘及 HUD
+ * 2. 注册 OrbitCarMusicClient，并调用 updateMediaSourceTypeList，使应用在车机顶栏【播放源下拉菜单】中高亮显示
+ * 3. 注册 MusicRecoveryIntent，使车机下拉切换音源或冷启动时能准确唤起与恢复播放
+ * 4. 实时争夺车机播放焦点 (requestPlay)，使方向盘切歌按键准确派发给本播放器
+ * 5. 双向同步播放元数据、歌单列表 (updateMediaList)、高保真封面、歌词与播放进度至车机中控与仪表盘 HUD
  */
 object EcarxMediaBridge {
 
@@ -45,6 +46,7 @@ object EcarxMediaBridge {
     private var apiInstance: Any? = null
     private var clientToken: Any? = null
     private var appContext: Context? = null
+    private var musicClientInstance: OrbitCarMusicClient? = null
 
     private val bridgeScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var stateObserverJob: Job? = null
@@ -73,7 +75,7 @@ object EcarxMediaBridge {
                 return
             }
 
-            Log.i(TAG, "检测到车载系统支持 ECARX MediaCenterAPI，开始初始化车载多媒体桥接...")
+            Log.i(TAG, "★ 检测到车载系统支持 ECARX MediaCenterAPI，启动车机多媒体与音源桥接初始化...")
 
             // 2. 获取 API 单例 (MediaCenterAPI.get(context))
             val getMethod = try {
@@ -139,7 +141,7 @@ object EcarxMediaBridge {
 
             // 5. 触发初始化绑定
             initMethod.invoke(apiObj, app, callbackProxy)
-            Log.i(TAG, "已调用 MediaCenterAPI.init，正在等待车机服务就绪...")
+            Log.i(TAG, "已调用 MediaCenterAPI.init，等待车机底层服务握手就绪...")
         } catch (e: Throwable) {
             Log.w(TAG, "初始化 ECARX MediaCenter 异常: ${e.message}", e)
         }
@@ -147,16 +149,18 @@ object EcarxMediaBridge {
 
     /**
      * 当与车机 MediaCenter 服务连接就绪时回调
+     * 参考 QQ音乐 MediaCenterManager.U 完整实现
      */
     private fun onMediaCenterReady() {
         val app = appContext ?: return
         val api = apiInstance ?: return
 
         try {
-            Log.i(TAG, "正在向车机媒体中心注册 OrbitCarMusicClient...")
+            Log.i(TAG, "★ 车机媒体中心已就绪，正在注册 OrbitCarMusicClient...")
 
             // 1. 实例化音乐客户端
             val musicClient = OrbitCarMusicClient(app)
+            musicClientInstance = musicClient
 
             // 2. 查找 registerMusic 方法 (优先 registerMusic(packageName, client))
             var regMethod: Method? = null
@@ -189,13 +193,34 @@ object EcarxMediaBridge {
             clientToken = token
             Log.i(TAG, "★ OrbitCarMusicClient 注册成功! token=$token")
 
-            // 3. 初始上报音源类型 (在线音乐 SOURCE_TYPE_ONLINE = 6)
+            // 3. 【核心修复 1】向车机声明支持的音源类型列表（使车机顶栏播放源下拉菜单能够生成入口）
+            val supportedSources = intArrayOf(SourceType.SOURCE_TYPE_ONLINE, SourceType.SOURCE_TYPE_LOCAL)
+            val updateListResult = invokeApi("updateMediaSourceTypeList", token, supportedSources)
+            Log.i(TAG, "★ updateMediaSourceTypeList([6, 0]) -> $updateListResult")
+
+            // 4. 【核心修复 2】向车机注册音源恢复 Intent（响应下拉选择、熄火唤醒续播）
+            try {
+                val recoveryIntent = Intent("com.orbit.music.recovery").setPackage(app.packageName)
+                val regIntentRet = invokeApi("registerMusicRecoveryIntent", token, 0, recoveryIntent)
+                Log.i(TAG, "★ registerMusicRecoveryIntent(com.orbit.music.recovery) -> $regIntentRet")
+            } catch (e: Throwable) {
+                Log.w(TAG, "registerMusicRecoveryIntent 异常: ${e.message}")
+            }
+
+            // 5. 【核心修复 3】向车机声明支持收藏功能
+            try {
+                invokeApi("declareSupportCollectTypes", token, intArrayOf(0, -1))
+            } catch (e: Throwable) {
+                // 兼容处理
+            }
+
+            // 6. 更新当前音源类型 (在线音乐 SOURCE_TYPE_ONLINE = 6)
             invokeApi("updateCurrentSourceType", token, SourceType.SOURCE_TYPE_ONLINE)
 
-            // 4. 立即同步当前播放器状态
+            // 7. 立即向车机全量同步当前状态与播放列表
             pushCurrentStateToCar()
 
-            // 5. 开启播放状态监听与进度条定时器
+            // 8. 启动播放状态监听与进度条定时器
             startStateObserver()
             startProgressTicker()
         } catch (e: Throwable) {
@@ -204,25 +229,66 @@ object EcarxMediaBridge {
     }
 
     /**
-     * 请求车机底层音频播放焦点并同步音源类型
+     * 主动向车机媒体中心争夺播放焦点 (requestPlay)
+     * 参考 QQ音乐 MediaCenterFocusUseCase.requestPlay
+     *
+     * 作用：确保当前应用成为车机 Active Focus Client，方向盘切歌按键才能正确分发至本播放器！
      */
-    fun takeFocus() {
-        if (apiInstance == null) return
-        val token = clientToken ?: return
-        if (!isReady) return
+    fun takeFocus(): Boolean {
+        if (apiInstance == null) return false
+        val token = clientToken ?: return false
+        if (!isReady) return false
 
-        try {
-            Log.i(TAG, "takeFocus: 请求车机媒体播放焦点...")
-            invokeApi("requestPlay", token)
-            val currentSource = getCurrentSourceType()
-            invokeApi("updateCurrentSourceType", token, currentSource)
+        return try {
+            val app = appContext
+            val myPkg = app?.packageName ?: ""
+
+            // 检查当前焦点是否已属于自身
+            val currentFocusClient = try {
+                invokeApi("queryCurrentFocusClient", token) as? String
+            } catch (e: Throwable) {
+                null
+            }
+
+            if (currentFocusClient == myPkg && !myPkg.isEmpty()) {
+                Log.d(TAG, "takeFocus: 当前已持有车机媒体焦点，无需重复申请")
+                true
+            } else {
+                Log.i(TAG, "takeFocus: 请求车机媒体播放焦点 (旧焦点: $currentFocusClient)...")
+                val focusRet = invokeApi("requestPlay", token)
+                val granted = (focusRet as? Boolean) ?: true
+                Log.i(TAG, "takeFocus: requestPlay 返回 granted=$granted")
+
+                if (granted) {
+                    val currentSource = getCurrentSourceType()
+                    invokeApi("updateCurrentSourceType", token, currentSource)
+                    // 同步刷新一次媒体列表
+                    updateCarMediaList()
+                }
+                granted
+            }
         } catch (e: Throwable) {
             Log.w(TAG, "takeFocus failed: ${e.message}")
+            false
         }
     }
 
     /**
-     * 监听播放器状态变更，实时推送元数据与歌词
+     * 当车机顶栏下拉音源切换、或收到车机广播、或恢复服务唤起时响应
+     */
+    fun onCarSourceSwitched(sourceType: Int = SourceType.SOURCE_TYPE_ONLINE) {
+        Log.i(TAG, "★ 车机音源切换唤起: sourceType=$sourceType")
+        val app = appContext ?: return
+        val playerManager = MusicPlayerManager.getInstance(app)
+
+        takeFocus()
+        if (!playerManager.playbackState.value.isPlaying) {
+            playerManager.play()
+        }
+    }
+
+    /**
+     * 监听播放器状态变更，实时推送元数据、列表与歌词
      */
     private fun startStateObserver() {
         val app = appContext ?: return
@@ -234,9 +300,16 @@ object EcarxMediaBridge {
                 .distinctUntilChanged { old, new ->
                     old.currentSong?.id == new.currentSong?.id &&
                             old.isPlaying == new.isPlaying &&
-                            old.currentIndex == new.currentIndex
+                            old.currentIndex == new.currentIndex &&
+                            old.currentPlaylist.size == new.currentPlaylist.size &&
+                            old.repeatMode == new.repeatMode &&
+                            old.isShuffleEnabled == new.isShuffleEnabled
                 }
                 .collectLatest { state ->
+                    // 当播放状态变为 PLAYING 时，自动确保夺取车机播放焦点
+                    if (state.isPlaying) {
+                        takeFocus()
+                    }
                     pushState(state)
                     checkAndFetchLyric(state.currentSong)
                 }
@@ -330,6 +403,8 @@ object EcarxMediaBridge {
 
             // 2. 上报 MusicPlaybackInfo (歌曲标题/艺术家/专辑/封面/播放状态)
             val playbackInfo = OrbitCarMusicPlaybackInfo(app, state, cachedLyricText)
+            musicClientInstance?.currentPlaybackInfo = playbackInfo
+
             var stateMethod: Method? = null
             for (m in api.javaClass.methods) {
                 if (m.name == "updateMusicPlaybackState" && m.parameterTypes.size == 2) {
@@ -339,7 +414,10 @@ object EcarxMediaBridge {
             }
             stateMethod?.invoke(api, token, playbackInfo)
 
-            // 3. 上报当前曲目 MediaContent (用于中控卡片和桌面 Widget 显示)
+            // 3. 【核心补充】向车机上报当前播放列表 updateMediaList (供车机方向盘、中控卡片切歌与展示)
+            updateCarMediaList()
+
+            // 4. 上报当前曲目 MediaContent (用于中控卡片和桌面 Widget 显示)
             val song = state.currentSong
             if (song != null) {
                 val mediaInfo = OrbitCarMediaInfo(song, state.currentIndex, cachedLyricText)
@@ -347,6 +425,27 @@ object EcarxMediaBridge {
             }
         } catch (e: Throwable) {
             Log.w(TAG, "pushState to car failed: ${e.message}")
+        }
+    }
+
+    /**
+     * 上报当前播放列表至车机
+     */
+    private fun updateCarMediaList() {
+        val app = appContext ?: return
+        val token = clientToken ?: return
+        val playerManager = MusicPlayerManager.getInstance(app)
+        val playlist = playerManager.playbackState.value.currentPlaylist
+
+        try {
+            val limitedList = if (playlist.size > 300) playlist.take(300) else playlist
+            val mediaInfoList = limitedList.mapIndexed { index, song ->
+                OrbitCarMediaInfo(song, index)
+            }
+            val mediaListInfo = OrbitCarMediaListInfo(mediaInfoList)
+            invokeApi("updateMediaList", token, mediaListInfo)
+        } catch (e: Throwable) {
+            Log.d(TAG, "updateMediaList failed: ${e.message}")
         }
     }
 
@@ -368,7 +467,7 @@ object EcarxMediaBridge {
     }
 
     /**
-     * 反射调用 MediaCenterAPI 内部通用方法
+     * 反射调用 MediaCenterAPI 内部方法
      */
     private fun invokeApi(methodName: String, vararg args: Any?): Any? {
         val api = apiInstance ?: return null
