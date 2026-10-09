@@ -76,7 +76,7 @@ fun PlatformAccountsCard(
 
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "填入 QQ 音乐 / 酷狗音乐 Cookie 凭证，可同步个人自建歌单与 VIP 权益",
+                text = "支持酷狗音乐 / QQ 音乐扫码一键登录或填入 Cookie，可同步个人自建歌单与 VIP 权益",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -235,6 +235,18 @@ private fun PlatformAccountRow(
                     }
 
                     IconButton(
+                        onClick = onLoginClick,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.QrCodeScanner,
+                            contentDescription = "重新扫码登录",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    IconButton(
                         onClick = onLogoutClick,
                         modifier = Modifier.size(36.dp)
                     ) {
@@ -254,12 +266,12 @@ private fun PlatformAccountRow(
                     modifier = Modifier.height(34.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Key,
+                        imageVector = Icons.Default.QrCodeScanner,
                         contentDescription = null,
-                        modifier = Modifier.size(15.dp)
+                        modifier = Modifier.size(16.dp)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(text = "填入 Cookie", fontSize = 12.sp)
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(text = "扫码登录", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
         }

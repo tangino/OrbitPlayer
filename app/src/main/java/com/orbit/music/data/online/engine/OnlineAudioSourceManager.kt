@@ -162,16 +162,237 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
     fun getActiveEnginesCount(): Int = engineHolders.size
 
     private val okHttpClient = OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
         .followRedirects(true)
         .build()
+
+    /**
+     * 歌曲智能匹配与归一化工具类
+     * 严格遵守匹配规则：
+     * 1. 歌曲名称一致（支持繁简/标点归一化、去除副标题影视信息对比、区分特殊版本标签如 Live/伴奏/Remix 等）
+     * 2. 歌曲作者一致（支持多歌手拆分包含与核心歌手匹配）
+     * 3. 时间误差不超过 5 秒（当原歌曲与候选歌曲均有时长信息时）
+     */
+    private object SongMatcher {
+        private val SPECIAL_TAGS = listOf(
+            "live", "伴奏", "instrumental", "inst", "remix", "cover", "翻唱", "dj", "纯音乐",
+            "demo", "片段", "铃声", "ringtone", "慢摇", "变奏", "钢琴版", "吉他版", "八音盒"
+        )
+
+        private val HTML_TAG_REGEX = Regex("<[^>]+>")
+
+        fun cleanText(raw: String?): String {
+            if (raw.isNullOrBlank()) return ""
+            return raw.replace(HTML_TAG_REGEX, "")
+                .replace("&nbsp;", " ")
+                .replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replace("&#39;", "'")
+                .replace("&#039;", "'")
+                .trim()
+        }
+
+        fun normalizeForCompare(str: String): String {
+            return cleanText(str)
+                .lowercase()
+                .replace("（", "(")
+                .replace("）", ")")
+                .replace("【", "[")
+                .replace("】", "]")
+                .replace("［", "[")
+                .replace("］", "]")
+                .replace(" ", "")
+                .replace("-", "")
+                .replace("_", "")
+                .replace("·", "")
+                .replace("•", "")
+                .replace("'", "")
+                .replace("\"", "")
+                .replace(",", "")
+                .replace("，", "")
+                .replace(".", "")
+                .replace("。", "")
+        }
+
+        /**
+         * 提取歌曲中的核心歌名（去除括号说明与影视剧副标题）
+         */
+        fun extractCoreTitle(title: String): String {
+            val cleaned = cleanText(title)
+                .replace("（", "(")
+                .replace("）", ")")
+                .replace("【", "(")
+                .replace("】", ")")
+                .replace("［", "(")
+                .replace("］", ")")
+                .replace("[", "(")
+                .replace("]", ")")
+            val withoutBracket = cleaned.replace(Regex("\\([^)]*\\)"), "").trim()
+            val base = if (withoutBracket.isNotBlank()) withoutBracket else cleaned
+            return base.substringBefore(" - ").substringBefore(" — ").trim()
+        }
+
+        /**
+         * 提取文本中的特殊版本标签
+         */
+        private fun extractTags(text: String): Set<String> {
+            val lower = text.lowercase()
+            return SPECIAL_TAGS.filter { lower.contains(it) }.toSet()
+        }
+
+        /**
+         * 判断歌曲名称是否一致
+         */
+        fun isTitleMatched(targetTitle: String, candidateTitle: String): Boolean {
+            val normTarget = normalizeForCompare(targetTitle)
+            val normCandidate = normalizeForCompare(candidateTitle)
+            if (normTarget.isEmpty() || normCandidate.isEmpty()) return false
+
+            // 1. 完全一致
+            if (normTarget == normCandidate) return true
+
+            // 2. 特殊版本标签必须一致（如原歌不是 Live 版，候选歌曲带 Live 则不匹配）
+            val targetTags = extractTags(targetTitle)
+            val candidateTags = extractTags(candidateTitle)
+            if (targetTags != candidateTags) {
+                return false
+            }
+
+            // 3. 核心歌名比对
+            val coreTarget = normalizeForCompare(extractCoreTitle(targetTitle))
+            val coreCandidate = normalizeForCompare(extractCoreTitle(candidateTitle))
+            if (coreTarget.isNotEmpty() && coreTarget == coreCandidate) {
+                return true
+            }
+
+            return false
+        }
+
+        /**
+         * 解析歌手列表（支持 / , 、 & 等多歌手分割）
+         */
+        fun splitArtists(artistStr: String): List<String> {
+            val cleaned = cleanText(artistStr)
+                .replace("（", "(")
+                .replace("）", ")")
+            val withoutBracket = cleaned.replace(Regex("\\([^)]*\\)"), "").trim()
+            val base = if (withoutBracket.isNotBlank()) withoutBracket else cleaned
+
+            return base.split('/', '\\', ',', '，', '、', '&', '|', '+')
+                .map { normalizeForCompare(it) }
+                .filter { it.isNotBlank() }
+        }
+
+        /**
+         * 判断歌手名称是否一致
+         */
+        fun isArtistMatched(targetArtist: String, candidateArtist: String): Boolean {
+            val normTarget = normalizeForCompare(targetArtist)
+            val normCandidate = normalizeForCompare(candidateArtist)
+
+            if (normTarget.isEmpty() || normCandidate.isEmpty()) return true
+            if (normTarget == normCandidate) return true
+
+            if (normTarget in listOf("未知歌手", "群星", "variousartists", "unknown") ||
+                normCandidate in listOf("未知歌手", "群星", "variousartists", "unknown")) {
+                return true
+            }
+
+            val targetList = splitArtists(targetArtist)
+            val candidateList = splitArtists(candidateArtist)
+
+            if (targetList.isEmpty() || candidateList.isEmpty()) {
+                return normTarget.contains(normCandidate) || normCandidate.contains(normTarget)
+            }
+
+            val hasCommon = targetList.any { t ->
+                candidateList.any { c ->
+                    t == c || t.contains(c) || c.contains(t)
+                }
+            }
+            if (hasCommon) return true
+
+            return normTarget.contains(normCandidate) || normCandidate.contains(normTarget)
+        }
+
+        /**
+         * 严格综合匹配判定：
+         * 1. 歌名一致
+         * 2. 作者一致
+         * 3. 时间误差不超过 5 秒 (5000ms)
+         */
+        fun isMatched(
+            targetTitle: String,
+            targetArtist: String,
+            candidateTitle: String,
+            candidateArtist: String,
+            targetDurationMs: Long,
+            candidateDurationMs: Long
+        ): Boolean {
+            // 1. 歌名判定
+            if (!isTitleMatched(targetTitle, candidateTitle)) {
+                return false
+            }
+
+            // 2. 作者判定
+            if (!isArtistMatched(targetArtist, candidateArtist)) {
+                return false
+            }
+
+            // 3. 时间误差判定：当两者均有有效时长（>5秒）时，时间误差不得超过 5 秒 (5000ms)
+            if (targetDurationMs > 5000L && candidateDurationMs > 5000L) {
+                val diffMs = kotlin.math.abs(targetDurationMs - candidateDurationMs)
+                if (diffMs > 5000L) {
+                    return false
+                }
+            }
+
+            return true
+        }
+
+        /**
+         * 计算匹配优选度得分 (用于候选结果排序)
+         */
+        fun calculateMatchScore(
+            targetTitle: String,
+            targetArtist: String,
+            candidateTitle: String,
+            candidateArtist: String,
+            targetDurationMs: Long,
+            candidateDurationMs: Long
+        ): Int {
+            var score = 0
+            val normTargetTitle = normalizeForCompare(targetTitle)
+            val normCandidateTitle = normalizeForCompare(candidateTitle)
+            if (normTargetTitle == normCandidateTitle) score += 50 else score += 30
+
+            val normTargetArtist = normalizeForCompare(targetArtist)
+            val normCandidateArtist = normalizeForCompare(candidateArtist)
+            if (normTargetArtist == normCandidateArtist) score += 30 else score += 15
+
+            if (targetDurationMs > 5000L && candidateDurationMs > 5000L) {
+                val diffMs = kotlin.math.abs(targetDurationMs - candidateDurationMs)
+                if (diffMs <= 1000L) score += 20
+                else if (diffMs <= 3000L) score += 12
+                else if (diffMs <= 5000L) score += 6
+            } else {
+                score += 10
+            }
+            return score
+        }
+    }
 
     private data class MatchedPlatformSong(
         val platform: OnlinePlatform,
         val songId: String,
         val hash: String? = null,
-        val matchTitle: String? = null
+        val matchTitle: String? = null,
+        val matchArtist: String? = null,
+        val durationMs: Long = 0L,
+        val matchScore: Int = 0
     )
 
     /**
@@ -225,14 +446,16 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
     }
 
     /**
-     * 跨平台在目标平台上轻量搜索匹配对应的单曲 ID 与哈希
+     * 跨平台在目标平台上搜索并筛选所有满足匹配条件的候选单曲（按匹配得分降序排列）
      */
-    private suspend fun searchMatchedSongOnPlatform(
+    private suspend fun searchMatchedSongsOnPlatform(
         targetPlatform: OnlinePlatform,
         title: String,
-        artist: String
-    ): MatchedPlatformSong? = withContext(Dispatchers.IO) {
+        artist: String,
+        expectedDurationMs: Long = 0L
+    ): List<MatchedPlatformSong> = withContext(Dispatchers.IO) {
         val keyword = "$title $artist".trim()
+        val matchedList = mutableListOf<MatchedPlatformSong>()
         try {
             when (targetPlatform) {
                 OnlinePlatform.NETEASE -> {
@@ -240,7 +463,7 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
                         .add("s", keyword)
                         .add("type", "1")
                         .add("offset", "0")
-                        .add("limit", "3")
+                        .add("limit", "10")
                         .add("total", "true")
                         .build()
                     val req = Request.Builder()
@@ -249,12 +472,28 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
                         .header("Referer", "https://music.163.com/")
                         .post(postData)
                         .build()
-                    val res = okHttpClient.newCall(req).execute().body?.string() ?: return@withContext null
-                    val obj = JSONObject(res).optJSONObject("result")?.optJSONArray("songs")?.optJSONObject(0)
-                    val id = obj?.optLong("id")?.toString()
-                    if (!id.isNullOrBlank() && id != "0") {
-                        MatchedPlatformSong(targetPlatform, id, matchTitle = obj.optString("name"))
-                    } else null
+                    val res = okHttpClient.newCall(req).execute().body?.string()
+                    if (!res.isNullOrBlank()) {
+                        val songsArr = JSONObject(res).optJSONObject("result")?.optJSONArray("songs")
+                        if (songsArr != null) {
+                            for (i in 0 until songsArr.length()) {
+                                val obj = songsArr.optJSONObject(i) ?: continue
+                                val id = obj.optLong("id").toString()
+                                if (id.isBlank() || id == "0") continue
+                                val candTitle = SongMatcher.cleanText(obj.optString("name"))
+                                val artistsArr = obj.optJSONArray("artists")
+                                val candArtist = (0 until (artistsArr?.length() ?: 0))
+                                    .mapNotNull { artistsArr?.optJSONObject(it)?.optString("name") }
+                                    .joinToString(" / ")
+                                val candDur = obj.optLong("duration", 0L)
+
+                                if (SongMatcher.isMatched(title, artist, candTitle, candArtist, expectedDurationMs, candDur)) {
+                                    val score = SongMatcher.calculateMatchScore(title, artist, candTitle, candArtist, expectedDurationMs, candDur)
+                                    matchedList.add(MatchedPlatformSong(targetPlatform, id, matchTitle = candTitle, matchArtist = candArtist, durationMs = candDur, matchScore = score))
+                                }
+                            }
+                        }
+                    }
                 }
                 OnlinePlatform.QQ -> {
                     val payload = JSONObject().apply {
@@ -269,7 +508,7 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
                             put("param", JSONObject().apply {
                                 put("query", keyword)
                                 put("search_type", 0)
-                                put("num_per_page", 3)
+                                put("num_per_page", 10)
                                 put("page_num", 1)
                             })
                         })
@@ -281,65 +520,132 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
                         .header("Referer", "https://y.qq.com/")
                         .post(body)
                         .build()
-                    val res = okHttpClient.newCall(req).execute().body?.string() ?: return@withContext null
-                    val list = JSONObject(res).optJSONObject("req")?.optJSONObject("data")?.optJSONObject("body")?.optJSONObject("song")?.optJSONArray("list")
-                    val first = list?.optJSONObject(0)
-                    val mid = first?.optString("mid")?.ifEmpty { first.optString("songmid") }
-                    if (!mid.isNullOrBlank()) {
-                        MatchedPlatformSong(targetPlatform, mid, matchTitle = first.optString("name").ifEmpty { first.optString("title") })
-                    } else null
+                    val res = okHttpClient.newCall(req).execute().body?.string()
+                    if (!res.isNullOrBlank()) {
+                        val list = JSONObject(res).optJSONObject("req")?.optJSONObject("data")?.optJSONObject("body")?.optJSONObject("song")?.optJSONArray("list")
+                        if (list != null) {
+                            for (i in 0 until list.length()) {
+                                val first = list.optJSONObject(i) ?: continue
+                                val mid = first.optString("mid").ifEmpty { first.optString("songmid") }
+                                if (mid.isBlank()) continue
+                                val candTitle = SongMatcher.cleanText(first.optString("name").ifEmpty { first.optString("title") })
+                                val singerArr = first.optJSONArray("singer")
+                                val candArtist = (0 until (singerArr?.length() ?: 0))
+                                    .mapNotNull { singerArr?.optJSONObject(it)?.optString("name") }
+                                    .joinToString(" / ")
+                                val candDur = first.optLong("interval", 0L) * 1000L
+
+                                if (SongMatcher.isMatched(title, artist, candTitle, candArtist, expectedDurationMs, candDur)) {
+                                    val score = SongMatcher.calculateMatchScore(title, artist, candTitle, candArtist, expectedDurationMs, candDur)
+                                    matchedList.add(MatchedPlatformSong(targetPlatform, mid, matchTitle = candTitle, matchArtist = candArtist, durationMs = candDur, matchScore = score))
+                                }
+                            }
+                        }
+                    }
                 }
                 OnlinePlatform.KUGOU -> {
                     val encoded = URLEncoder.encode(keyword, "UTF-8")
-                    val url = "http://songsearch.kugou.com/song_search_v2?keyword=$encoded&page=1&pagesize=3&platform=WebFilter"
+                    val url = "http://songsearch.kugou.com/song_search_v2?keyword=$encoded&page=1&pagesize=10&platform=WebFilter"
                     val req = Request.Builder()
                         .url(url)
                         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
                         .build()
-                    val res = okHttpClient.newCall(req).execute().body?.string() ?: return@withContext null
-                    val first = JSONObject(res).optJSONObject("data")?.optJSONArray("lists")?.optJSONObject(0)
-                    val hash = first?.optString("FileHash")?.ifEmpty { first.optString("HQFileHash") }
-                    val id = first?.optString("Audioid")?.ifEmpty { first.optString("Scid") } ?: ""
-                    if (!hash.isNullOrBlank()) {
-                        MatchedPlatformSong(targetPlatform, if (id.isNotEmpty()) id else hash, hash = hash, matchTitle = first.optString("SongName"))
-                    } else null
+                    val res = okHttpClient.newCall(req).execute().body?.string()
+                    if (!res.isNullOrBlank()) {
+                        val list = JSONObject(res).optJSONObject("data")?.optJSONArray("lists")
+                        if (list != null) {
+                            for (i in 0 until list.length()) {
+                                val first = list.optJSONObject(i) ?: continue
+                                val hash = first.optString("FileHash").ifEmpty { first.optString("HQFileHash").ifEmpty { first.optString("SQFileHash") } }
+                                val id = first.optString("Audioid").ifEmpty { first.optString("Scid") }
+                                if (hash.isBlank() && id.isBlank()) continue
+                                val candTitle = SongMatcher.cleanText(first.optString("SongName"))
+                                val candArtist = SongMatcher.cleanText(first.optString("SingerName"))
+                                val candDur = first.optLong("Duration", 0L) * 1000L
+
+                                if (SongMatcher.isMatched(title, artist, candTitle, candArtist, expectedDurationMs, candDur)) {
+                                    val score = SongMatcher.calculateMatchScore(title, artist, candTitle, candArtist, expectedDurationMs, candDur)
+                                    matchedList.add(MatchedPlatformSong(targetPlatform, if (id.isNotEmpty()) id else hash, hash = hash, matchTitle = candTitle, matchArtist = candArtist, durationMs = candDur, matchScore = score))
+                                }
+                            }
+                        }
+                    }
                 }
                 OnlinePlatform.KUWO -> {
                     val encoded = URLEncoder.encode(keyword, "UTF-8")
-                    val url = "http://search.kuwo.cn/r.s?all=$encoded&ft=music&itemset=web_2013&client=kt&pn=0&rn=3&rformat=json&encoding=utf8"
+                    val url = "http://search.kuwo.cn/r.s?all=$encoded&ft=music&itemset=web_2013&client=kt&pn=0&rn=10&rformat=json&encoding=utf8"
                     val req = Request.Builder()
                         .url(url)
                         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
                         .build()
-                    val raw = okHttpClient.newCall(req).execute().body?.string() ?: return@withContext null
-                    val fixed = raw.replace('\'', '"')
-                    val first = JSONObject(fixed).optJSONArray("abslist")?.optJSONObject(0)
-                    val id = first?.optString("MUSICRID")?.replace("MUSIC_", "")?.ifEmpty { first.optString("id") }
-                    if (!id.isNullOrBlank()) {
-                        MatchedPlatformSong(targetPlatform, id, matchTitle = first.optString("SONGNAME"))
-                    } else null
+                    val raw = okHttpClient.newCall(req).execute().body?.string()
+                    if (!raw.isNullOrBlank()) {
+                        val fixed = raw.replace('\'', '"')
+                        val list = JSONObject(fixed).optJSONArray("abslist")
+                        if (list != null) {
+                            for (i in 0 until list.length()) {
+                                val first = list.optJSONObject(i) ?: continue
+                                val id = first.optString("MUSICRID").replace("MUSIC_", "").ifEmpty { first.optString("id") }
+                                if (id.isBlank()) continue
+                                val candTitle = SongMatcher.cleanText(first.optString("SONGNAME").ifEmpty { first.optString("name") })
+                                val candArtist = SongMatcher.cleanText(first.optString("ARTIST").ifEmpty { first.optString("artist") })
+                                val candDur = first.optLong("DURATION", 0L) * 1000L
+
+                                if (SongMatcher.isMatched(title, artist, candTitle, candArtist, expectedDurationMs, candDur)) {
+                                    val score = SongMatcher.calculateMatchScore(title, artist, candTitle, candArtist, expectedDurationMs, candDur)
+                                    matchedList.add(MatchedPlatformSong(targetPlatform, id, matchTitle = candTitle, matchArtist = candArtist, durationMs = candDur, matchScore = score))
+                                }
+                            }
+                        }
+                    }
                 }
                 OnlinePlatform.MIGU -> {
                     val encoded = URLEncoder.encode(keyword, "UTF-8")
                     val switchJson = URLEncoder.encode("{\"song\":1,\"album\":0,\"singer\":0,\"tagSong\":0,\"mvSong\":0,\"songlist\":0,\"bestShow\":0}", "UTF-8")
-                    val url = "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/search_all.do?text=$encoded&pageNo=1&pageSize=3&searchSwitch=$switchJson"
+                    val url = "https://c.musicapp.migu.cn/MIGUM2.0/v1.0/content/search_all.do?text=$encoded&pageNo=1&pageSize=10&searchSwitch=$switchJson"
                     val req = Request.Builder()
                         .url(url)
                         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
                         .header("Referer", "https://m.music.migu.cn")
                         .build()
-                    val res = okHttpClient.newCall(req).execute().body?.string() ?: return@withContext null
-                    val first = JSONObject(res).optJSONObject("songResultData")?.optJSONArray("result")?.optJSONObject(0)
-                    val id = first?.optString("copyrightId")?.ifEmpty { first.optString("id") }
-                    if (!id.isNullOrBlank()) {
-                        MatchedPlatformSong(targetPlatform, id, matchTitle = first.optString("name"))
-                    } else null
+                    val res = okHttpClient.newCall(req).execute().body?.string()
+                    if (!res.isNullOrBlank()) {
+                        val list = JSONObject(res).optJSONObject("songResultData")?.optJSONArray("result")
+                        if (list != null) {
+                            for (i in 0 until list.length()) {
+                                val first = list.optJSONObject(i) ?: continue
+                                val id = first.optString("copyrightId").ifEmpty { first.optString("id") }
+                                if (id.isBlank()) continue
+                                val candTitle = SongMatcher.cleanText(first.optString("name"))
+                                val singersArr = first.optJSONArray("singers")
+                                val candArtist = if (singersArr != null) {
+                                    (0 until singersArr.length()).mapNotNull { singersArr.optJSONObject(it)?.optString("name") }.joinToString(" / ")
+                                } else {
+                                    SongMatcher.cleanText(first.optString("singer"))
+                                }
+                                val lengthStr = first.optString("length", "")
+                                val candDur = if (lengthStr.contains(":")) {
+                                    val parts = lengthStr.split(":")
+                                    val m = parts.getOrNull(0)?.toLongOrNull() ?: 0L
+                                    val s = parts.getOrNull(1)?.toLongOrNull() ?: 0L
+                                    (m * 60L + s) * 1000L
+                                } else {
+                                    lengthStr.toLongOrNull()?.let { if (it < 1000) it * 1000L else it } ?: 0L
+                                }
+
+                                if (SongMatcher.isMatched(title, artist, candTitle, candArtist, expectedDurationMs, candDur)) {
+                                    val score = SongMatcher.calculateMatchScore(title, artist, candTitle, candArtist, expectedDurationMs, candDur)
+                                    matchedList.add(MatchedPlatformSong(targetPlatform, id, matchTitle = candTitle, matchArtist = candArtist, durationMs = candDur, matchScore = score))
+                                }
+                            }
+                        }
+                    }
                 }
             }
         } catch (e: Exception) {
-            Log.d(TAG, "Search match failed on ${targetPlatform.displayName} for $keyword: ${e.message}")
-            null
+            Log.d(TAG, "Search match error on ${targetPlatform.displayName} for $keyword: ${e.message}")
         }
+        matchedList.sortedByDescending { it.matchScore }
     }
 
     data class ResolvedAudioSource(
@@ -353,9 +659,7 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
     )
 
     /**
-     * 针对音频直链进行快速探活、流长度与实际时间长度完整性校验 (分级高速通道)
-     * 1. 优先通过 Range 响应头秒级确认文件大小与音频流格式 (大文件可在 50ms 内直接放行)
-     * 2. 仅对小体积或可疑流启动 MediaMetadataRetriever 时长校验，杜绝截断与试听短流
+     * 针对音频直链进行快速探活、流长度与实际时间长度完整性校验
      */
     private suspend fun probeAndValidateAudioUrl(
         rawUrl: String,
@@ -374,72 +678,79 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
                 .header("Accept", "*/*")
                 .build()
 
-            val finalUrl: String?
+            var finalUrl: String? = null
             var totalContentLength = -1L
-            val contentType: String
+            var contentType = ""
+            var httpSuccess = false
 
-            okHttpClient.newCall(req).execute().use { resp ->
-                val code = resp.code
-                finalUrl = resp.request.url.toString()
-                contentType = resp.header("Content-Type", "")?.lowercase() ?: ""
+            try {
+                okHttpClient.newCall(req).execute().use { resp ->
+                    val code = resp.code
+                    finalUrl = resp.request.url.toString()
+                    contentType = resp.header("Content-Type", "")?.lowercase() ?: ""
 
-                // 若状态码为 4xx/5xx，或返回网页/JSON 报错文本，判定为无效音频流
-                if (code >= 400 || contentType.contains("text/html") || contentType.contains("application/json")) {
-                    Log.d(TAG, "Audio probe rejected URL: status=$code, contentType=$contentType for $rawUrl")
-                    return@withContext null
-                }
-
-                if (!resp.isSuccessful && code != 206) {
-                    return@withContext null
-                }
-
-                // 提取总流大小 (针对 206 Partial Content 从 Content-Range 提取总大小，针对 200 从 Content-Length 提取)
-                val contentRange = resp.header("Content-Range")
-                if (!contentRange.isNullOrBlank() && contentRange.contains("/")) {
-                    val totalStr = contentRange.substringAfterLast("/").trim()
-                    totalContentLength = totalStr.toLongOrNull() ?: -1L
-                }
-                if (totalContentLength <= 0L) {
-                    totalContentLength = resp.header("Content-Length")?.toLongOrNull() ?: -1L
-                }
-
-                // 检查响应体大小，若小于 1024 字节且不是分段音频，判定为无效
-                if (code == 200 && totalContentLength in 0..1024) {
-                    Log.d(TAG, "Audio probe rejected URL: file too small ($totalContentLength bytes) for $rawUrl")
-                    return@withContext null
-                }
-
-                // 流字节数长度与预期时间长度比对检验
-                if (expectedDurationMs >= 45000L && totalContentLength > 0L) {
-                    val minExpectedBytes = (expectedDurationMs / 1000L) * 3500L // 即使按极低 28kbps 算每秒至少 3.5KB
-                    if (totalContentLength < minExpectedBytes) {
-                        Log.w(TAG, "Audio probe rejected URL: stream length too short ($totalContentLength bytes, expected >= $minExpectedBytes for ${expectedDurationMs}ms) for $rawUrl")
+                    // 若返回网页报错或 JSON 错误文本，判定为无效音频直链
+                    if (code >= 400 || contentType.contains("text/html") || contentType.contains("application/json")) {
+                        Log.d(TAG, "Audio probe rejected URL: status=$code, contentType=$contentType for $rawUrl")
                         return@withContext null
                     }
+
+                    if (resp.isSuccessful || code == 206) {
+                        httpSuccess = true
+                        val contentRange = resp.header("Content-Range")
+                        if (!contentRange.isNullOrBlank() && contentRange.contains("/")) {
+                            val totalStr = contentRange.substringAfterLast("/").trim()
+                            totalContentLength = totalStr.toLongOrNull() ?: -1L
+                        }
+                        if (totalContentLength <= 0L) {
+                            totalContentLength = resp.header("Content-Length")?.toLongOrNull() ?: -1L
+                        }
+
+                        // 文件太小（如小于 1KB 的错误响应体）
+                        if (code == 200 && totalContentLength in 0..1024) {
+                            return@withContext null
+                        }
+                    }
                 }
+            } catch (e: Exception) {
+                Log.d(TAG, "Range probe exception for $rawUrl: ${e.message}")
             }
 
-            val validUrl = finalUrl ?: return@withContext null
+            // 若 Range 请求因 CDN 限制返回非成功，尝试轻量 HEAD 确认连通性
+            if (!httpSuccess) {
+                try {
+                    val headReq = Request.Builder()
+                        .url(rawUrl)
+                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 13; Mobile)")
+                        .head()
+                        .build()
+                    okHttpClient.newCall(headReq).execute().use { resp ->
+                        if (resp.isSuccessful) {
+                            finalUrl = resp.request.url.toString()
+                            contentType = resp.header("Content-Type", "")?.lowercase() ?: ""
+                            totalContentLength = resp.header("Content-Length")?.toLongOrNull() ?: -1L
+                            httpSuccess = true
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
 
-            // 2. 🚀 高速免检通道 (Fast-Path)：
-            // 典型 30 秒试听截断片段大小通常仅为 200KB~600KB。
-            // 当探测到的真实文件大小 >= 1.5MB（或预期时长存在且文件大小完全达到完整音轨基准），
-            // 且内容类型为音频流或默认二进制流时，可在 50ms 内直接判定为有效完整音频，跳过耗时的 MediaMetadataRetriever！
-            val isKnownLargeCompleteFile = totalContentLength >= 1_500_000L ||
-                    (expectedDurationMs >= 45000L && totalContentLength >= (expectedDurationMs / 1000L) * 11_000L)
+            val validUrl = finalUrl ?: rawUrl
+
+            // 2. 🚀 高速放行通道：已知完整大文件（>=500KB 或达到预期时长基准）直接放行
+            val isKnownLargeCompleteFile = totalContentLength >= 500_000L ||
+                    (expectedDurationMs >= 45000L && totalContentLength >= (expectedDurationMs / 1000L) * 8_000L)
             if (isKnownLargeCompleteFile) {
                 return@withContext Pair(validUrl, expectedDurationMs)
             }
 
-            // 3. 针对可疑较小文件（或无法得知大小的流），启动轻量时长检验 (超时从 2200ms 压缩至 1200ms)
+            // 3. 针对可疑较小文件，启动 MediaMetadataRetriever 时长检验 (超时设为 2500ms，保障网络稳定性)
             var detectedDurationMs = 0L
             try {
-                kotlinx.coroutines.withTimeoutOrNull(1200L) {
+                kotlinx.coroutines.withTimeoutOrNull(2500L) {
                     val retriever = android.media.MediaMetadataRetriever()
                     try {
-                        val headers = mapOf(
-                            "User-Agent" to "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36"
-                        )
+                        val headers = mapOf("User-Agent" to "Mozilla/5.0 (Linux; Android 13; Mobile)")
                         retriever.setDataSource(validUrl, headers)
                         val durStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
                         detectedDurationMs = durStr?.toLongOrNull() ?: 0L
@@ -453,9 +764,9 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
                 Log.d(TAG, "MediaMetadataRetriever probe skipped for $validUrl: ${e.message}")
             }
 
-            // 若探测到实际时长，且歌曲预期时长较长（如正规歌曲），校验时长是否严重偏短（如 30s 试听截断片段）
+            // 4. 杜绝 30 秒试听截断短流
             if (expectedDurationMs >= 45000L && detectedDurationMs > 0L) {
-                if (detectedDurationMs < 60000L && expectedDurationMs >= 90000L) {
+                if (detectedDurationMs < 45000L && expectedDurationMs >= 60000L) {
                     Log.w(TAG, "Audio probe rejected URL: preview duration too short ($detectedDurationMs ms vs expected $expectedDurationMs ms) for $validUrl")
                     return@withContext null
                 }
@@ -473,7 +784,7 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
     }
 
     /**
-     * 针对单个平台执行音频解析 (脚本解析 + 官方直链兜底)
+     * 针对单个平台执行音频解析 (脚本引擎解析 + 官方直链兜底)
      */
     private suspend fun resolveSinglePlatformSource(
         targetPlatform: OnlinePlatform,
@@ -487,15 +798,20 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
         scriptName: String,
         qualityTryList: List<String>
     ): ResolvedAudioSource? = withContext(Dispatchers.IO) {
-        var targetSongId = if (isOriginal) songId else ""
-        var targetHash = if (isOriginal) songId else ""
+        val candidates = mutableListOf<MatchedPlatformSong>()
 
-        if (!isOriginal) {
-            val match = searchMatchedSongOnPlatform(targetPlatform, title, artist)
-            if (match != null) {
-                targetSongId = match.songId
-                targetHash = match.hash ?: match.songId
-            }
+        if (isOriginal && songId.isNotBlank()) {
+            candidates.add(MatchedPlatformSong(targetPlatform, songId, hash = songId, matchTitle = title, matchArtist = artist, durationMs = expectedDurationMs))
+        }
+
+        // 跨平台寻源或原平台初步失败时，搜索匹配符合严格规则的候选集
+        if (!isOriginal || candidates.isEmpty()) {
+            val searched = searchMatchedSongsOnPlatform(targetPlatform, title, artist, expectedDurationMs)
+            candidates.addAll(searched)
+        }
+
+        if (candidates.isEmpty()) {
+            return@withContext null
         }
 
         val sourceKey = when (targetPlatform) {
@@ -506,98 +822,98 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
             OnlinePlatform.MIGU -> "mg"
         }
 
-        var resolvedResult: ResolvedAudioSource? = null
+        // 遍历所有满足匹配规则的候选曲目进行解析
+        for (cand in candidates) {
+            val effectiveId = cand.songId
+            val effectiveHash = cand.hash ?: cand.songId
 
-        // 1. 尝试通过音源脚本引擎解析 (超时优化为 1800ms)
-        if (engine != null) {
-            val effectiveId = targetSongId.ifEmpty { songId }
-            val effectiveHash = targetHash.ifEmpty { songId }
-            val musicInfo = JSONObject().apply {
-                put("name", title)
-                put("singer", artist)
-                put("albumName", album)
-                put("songmid", effectiveId)
-                put("id", effectiveId)
-                put("hash", effectiveHash)
-                put("copyrightId", effectiveId)
-                put("source", sourceKey)
-                put("types", JSONArray().apply {
-                    put(JSONObject().put("type", "128k"))
-                    put(JSONObject().put("type", "320k"))
-                    put(JSONObject().put("type", "flac"))
-                    put(JSONObject().put("type", "flac24bit"))
-                })
-            }
+            // 1. 尝试通过音源脚本引擎解析 (给予充足超时时间：首选 3500ms，备选 2500ms)
+            if (engine != null) {
+                val musicInfo = JSONObject().apply {
+                    put("name", cand.matchTitle ?: title)
+                    put("singer", cand.matchArtist ?: artist)
+                    put("albumName", album)
+                    put("songmid", effectiveId)
+                    put("id", effectiveId)
+                    put("hash", effectiveHash)
+                    put("copyrightId", effectiveId)
+                    put("source", sourceKey)
+                    put("types", JSONArray().apply {
+                        put(JSONObject().put("type", "128k"))
+                        put(JSONObject().put("type", "320k"))
+                        put(JSONObject().put("type", "flac"))
+                        put(JSONObject().put("type", "flac24bit"))
+                    })
+                }
 
-            for (q in qualityTryList) {
-                val timeout = if (q == qualityTryList.first()) 1200L else 800L
-                val url = engine.resolveMusicUrl(sourceKey, musicInfo, q, timeoutMs = timeout)
-                if (!url.isNullOrBlank() && url.startsWith("http", ignoreCase = true)) {
-                    val probePair = probeAndValidateAudioUrl(url, expectedDurationMs)
-                    if (probePair != null) {
-                        val (validUrl, detectedDur) = probePair
-                        val finalDur = if (detectedDur > 0L) detectedDur else expectedDurationMs
-                        resolvedResult = ResolvedAudioSource(
-                            url = validUrl,
-                            platform = targetPlatform,
-                            sourceName = scriptName,
-                            quality = q,
-                            durationMs = finalDur,
-                            isFallback = !isOriginal,
-                            fallbackReason = if (!isOriginal) "原平台音频缺失或试听短流，自动降级切换至 ${targetPlatform.displayName}" else null
-                        )
-                        Log.i(TAG, "Successfully resolved & verified $title ($q) via ${targetPlatform.displayName} (${if (isOriginal) "当前音源" else "跨平台备用源"}): $validUrl (duration: ${finalDur}ms)")
-                        return@withContext resolvedResult
+                for (q in qualityTryList) {
+                    val timeout = if (q == qualityTryList.first()) 3500L else 2500L
+                    val url = engine.resolveMusicUrl(sourceKey, musicInfo, q, timeoutMs = timeout)
+                    if (!url.isNullOrBlank() && url.startsWith("http", ignoreCase = true)) {
+                        val probePair = probeAndValidateAudioUrl(url, expectedDurationMs)
+                        if (probePair != null) {
+                            val (validUrl, detectedDur) = probePair
+                            val finalDur = if (detectedDur > 0L) detectedDur else if (cand.durationMs > 0L) cand.durationMs else expectedDurationMs
+                            val res = ResolvedAudioSource(
+                                url = validUrl,
+                                platform = targetPlatform,
+                                sourceName = scriptName,
+                                quality = q,
+                                durationMs = finalDur,
+                                isFallback = !isOriginal,
+                                fallbackReason = if (!isOriginal) "原平台音频缺失，已精准匹配切换至 ${targetPlatform.displayName}" else null
+                            )
+                            Log.i(TAG, "Successfully resolved & verified $title ($q) via ${targetPlatform.displayName} (${if (isOriginal) "当前音源" else "跨平台备用源"}): $validUrl (duration: ${finalDur}ms)")
+                            return@withContext res
+                        }
                     }
                 }
             }
-        }
 
-        // 2. 针对网易云官方 outer 兜底直链
-        if (targetPlatform == OnlinePlatform.NETEASE) {
-            val neteaseId = targetSongId.ifEmpty { if (isOriginal) songId else "" }
-            if (neteaseId.isNotEmpty() && neteaseId.matches(Regex("^\\d+$"))) {
-                val outerUrl = "https://music.163.com/song/media/outer/url?id=$neteaseId.mp3"
-                val probePair = probeAndValidateAudioUrl(outerUrl, expectedDurationMs)
-                if (probePair != null) {
-                    val (validUrl, detectedDur) = probePair
-                    val finalDur = if (detectedDur > 0L) detectedDur else expectedDurationMs
-                    resolvedResult = ResolvedAudioSource(
-                        url = validUrl,
-                        platform = targetPlatform,
-                        sourceName = "网易云官方",
-                        quality = "128k",
-                        durationMs = finalDur,
-                        isFallback = !isOriginal,
-                        fallbackReason = if (!isOriginal) "原音源未匹配，自动降级至网易云官方音频" else null
-                    )
-                    Log.i(TAG, "Fallback to verified Netease outer URL for $title via ${targetPlatform.displayName}: $validUrl")
-                    return@withContext resolvedResult
-                }
-            }
-        }
-
-        // 3. 针对咪咕音乐官方免费直链兜底
-        if (targetPlatform == OnlinePlatform.MIGU) {
-            val miguId = targetSongId.ifEmpty { if (isOriginal) songId else "" }
-            if (miguId.isNotEmpty()) {
-                val miguUrl = resolveMiguDirectPlayUrl(miguId)
-                if (!miguUrl.isNullOrBlank()) {
-                    val probePair = probeAndValidateAudioUrl(miguUrl, expectedDurationMs)
+            // 2. 针对网易云官方 outer 兜底直链
+            if (targetPlatform == OnlinePlatform.NETEASE) {
+                if (effectiveId.isNotEmpty() && effectiveId.matches(Regex("^\\d+$"))) {
+                    val outerUrl = "https://music.163.com/song/media/outer/url?id=$effectiveId.mp3"
+                    val probePair = probeAndValidateAudioUrl(outerUrl, expectedDurationMs)
                     if (probePair != null) {
                         val (validUrl, detectedDur) = probePair
-                        val finalDur = if (detectedDur > 0L) detectedDur else expectedDurationMs
-                        resolvedResult = ResolvedAudioSource(
+                        val finalDur = if (detectedDur > 0L) detectedDur else if (cand.durationMs > 0L) cand.durationMs else expectedDurationMs
+                        val res = ResolvedAudioSource(
                             url = validUrl,
                             platform = targetPlatform,
-                            sourceName = "咪咕官方",
-                            quality = "HQ",
+                            sourceName = "网易云官方",
+                            quality = "128k",
                             durationMs = finalDur,
                             isFallback = !isOriginal,
-                            fallbackReason = if (!isOriginal) "原音源未匹配，自动降级至咪咕官方直链" else null
+                            fallbackReason = if (!isOriginal) "原音源未匹配，自动降级至网易云官方音频" else null
                         )
-                        Log.i(TAG, "Fallback to verified Migu official direct URL for $title: $validUrl")
-                        return@withContext resolvedResult
+                        Log.i(TAG, "Fallback to verified Netease outer URL for $title via ${targetPlatform.displayName}: $validUrl")
+                        return@withContext res
+                    }
+                }
+            }
+
+            // 3. 针对咪咕音乐官方免费直链兜底
+            if (targetPlatform == OnlinePlatform.MIGU) {
+                if (effectiveId.isNotEmpty()) {
+                    val miguUrl = resolveMiguDirectPlayUrl(effectiveId)
+                    if (!miguUrl.isNullOrBlank()) {
+                        val probePair = probeAndValidateAudioUrl(miguUrl, expectedDurationMs)
+                        if (probePair != null) {
+                            val (validUrl, detectedDur) = probePair
+                            val finalDur = if (detectedDur > 0L) detectedDur else if (cand.durationMs > 0L) cand.durationMs else expectedDurationMs
+                            val res = ResolvedAudioSource(
+                                url = validUrl,
+                                platform = targetPlatform,
+                                sourceName = "咪咕官方",
+                                quality = "HQ",
+                                durationMs = finalDur,
+                                isFallback = !isOriginal,
+                                fallbackReason = if (!isOriginal) "原音源未匹配，自动降级至咪咕官方直链" else null
+                            )
+                            Log.i(TAG, "Fallback to verified Migu official direct URL for $title: $validUrl")
+                            return@withContext res
+                        }
                     }
                 }
             }
@@ -663,7 +979,7 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
             qualityTryList = qualityTryList
         )
 
-        // 4. 第二阶段：主音源跨平台并发竞速寻源 (原平台无源时，对其余平台发起并发)
+        // 4. 第二阶段：主音源跨平台并发搜救寻源 (原平台无源时，对其余平台发起精准匹配与并发解析)
         if (resolvedResult == null) {
             val fallbackPlatforms = OnlinePlatform.values().filter { it != platform }
             val channel = Channel<ResolvedAudioSource?>(fallbackPlatforms.size)

@@ -109,15 +109,11 @@ set "APK_PATH=%~dp0app\build\outputs\apk\debug\app-debug.apk"
 echo.
 echo [2/4] Checking APK status...
 
-if not exist "%APK_PATH%" (
-    echo APK not found. Building debug APK...
-    call "%~dp0build.bat"
-    if !ERRORLEVEL! neq 0 (
-        echo [ERROR] Build failed.
-        exit /b !ERRORLEVEL!
-    )
-) else (
-    echo Found existing APK: %APK_PATH%
+echo Building / checking debug APK...
+call "%~dp0build.bat"
+if !ERRORLEVEL! neq 0 (
+    echo [ERROR] Build failed.
+    exit /b !ERRORLEVEL!
 )
 
 :: 4. Install APK

@@ -26,8 +26,6 @@ class CloudSourceSyncManager private constructor(private val context: Context) {
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
-    private val defaultBaseUrl = "https://orbit.ginodung.workers.dev"
-
     companion object {
         private const val KEY_SYNC_USERNAME = "cloud_sync_username"
         private const val KEY_SYNC_PASSWORD = "cloud_sync_password"
@@ -45,19 +43,26 @@ class CloudSourceSyncManager private constructor(private val context: Context) {
     }
 
     /**
-     * 获取当前生效的云端 API 服务器地址
+     * 获取当前生效的云端 API 服务器地址（默认不内嵌，由用户自主输入配置）
      */
     fun getServerUrl(): String {
         val custom = prefs.getString(KEY_CUSTOM_SERVER_URL, null)
-        return if (!custom.isNullOrBlank()) custom.trim().removeSuffix("/") else defaultBaseUrl
+        return if (!custom.isNullOrBlank()) custom.trim().removeSuffix("/") else ""
     }
 
     /**
-     * 设置自定义云端 API 服务器地址 (如绑定了自定义域名的 Worker)
+     * 是否已配置云端同步服务器地址
+     */
+    fun hasServerUrl(): Boolean {
+        return getServerUrl().isNotBlank()
+    }
+
+    /**
+     * 设置自定义云端 API 服务器地址 (如绑定了自定义域名的 Cloudflare Worker)
      */
     fun setServerUrl(url: String) {
         val clean = url.trim().removeSuffix("/")
-        if (clean.isBlank() || clean == defaultBaseUrl) {
+        if (clean.isBlank()) {
             prefs.edit().remove(KEY_CUSTOM_SERVER_URL).apply()
         } else {
             val formatted = if (!clean.startsWith("http://") && !clean.startsWith("https://")) "https://$clean" else clean
@@ -102,6 +107,9 @@ class CloudSourceSyncManager private constructor(private val context: Context) {
             }
 
             val baseUrl = getServerUrl()
+            if (baseUrl.isBlank()) {
+                return@withContext Result.failure(Exception("请先设置 Cloudflare 同步服务地址"))
+            }
             val reqJson = JSONObject().apply {
                 put("username", cleanUser)
                 put("password", cleanPwd)
@@ -170,6 +178,9 @@ class CloudSourceSyncManager private constructor(private val context: Context) {
             val password = getPassword() ?: ""
 
             val baseUrl = getServerUrl()
+            if (baseUrl.isBlank()) {
+                return@withContext Result.failure(Exception("请先设置 Cloudflare 同步服务地址"))
+            }
             val jsonArray = JSONArray()
             for (script in scripts) {
                 jsonArray.put(script.toJson())
@@ -230,6 +241,9 @@ class CloudSourceSyncManager private constructor(private val context: Context) {
             val password = getPassword() ?: ""
 
             val baseUrl = getServerUrl()
+            if (baseUrl.isBlank()) {
+                return@withContext Result.failure(Exception("请先设置 Cloudflare 同步服务地址"))
+            }
             val reqJson = JSONObject().apply {
                 put("username", username)
                 put("password", password)
@@ -284,6 +298,9 @@ class CloudSourceSyncManager private constructor(private val context: Context) {
             val password = getPassword() ?: ""
 
             val baseUrl = getServerUrl()
+            if (baseUrl.isBlank()) {
+                return@withContext Result.failure(Exception("请先设置 Cloudflare 同步服务地址"))
+            }
             val reqJson = JSONObject().apply {
                 put("username", username)
                 put("password", password)
@@ -328,6 +345,9 @@ class CloudSourceSyncManager private constructor(private val context: Context) {
             val password = getPassword() ?: ""
 
             val baseUrl = getServerUrl()
+            if (baseUrl.isBlank()) {
+                return@withContext Result.failure(Exception("请先设置 Cloudflare 同步服务地址"))
+            }
             val reqJson = JSONObject().apply {
                 put("username", username)
                 put("password", password)
@@ -366,10 +386,10 @@ class CloudSourceSyncManager private constructor(private val context: Context) {
         val msg = e.localizedMessage ?: e.message ?: ""
         return when {
             msg.contains("failed to connect", ignoreCase = true) || msg.contains("timeout", ignoreCase = true) -> {
-                "连接超时：国内网络访问 workers.dev 域名受阻。建议开启代理测试，或在 Cloudflare 绑定自定义域名。"
+                "连接超时：访问云端节点受阻，请检查网络代理或确认 Cloudflare 节点地址配置。"
             }
             msg.contains("Unable to resolve host", ignoreCase = true) -> {
-                "无法解析服务器域名，请检查网络连接或服务器配置。"
+                "无法解析服务器域名，请检查网络连接或节点地址配置。"
             }
             else -> msg.ifBlank { "网络请求异常，请检查网络状态" }
         }

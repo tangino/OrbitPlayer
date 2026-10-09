@@ -24,7 +24,8 @@ class KugouMusicSource(
         .readTimeout(15, TimeUnit.SECONDS)
         .followRedirects(true)
         .build(),
-    private var cookieProvider: (() -> String)? = null
+    private var cookieProvider: (() -> String)? = null,
+    private var accountProvider: (() -> com.orbit.music.data.online.auth.model.PlatformAccount?)? = null
 ) : IOnlineMusicSource {
 
     override val platform: OnlinePlatform = OnlinePlatform.KUGOU
@@ -33,6 +34,10 @@ class KugouMusicSource(
 
     fun setCookieProvider(provider: () -> String) {
         this.cookieProvider = provider
+    }
+
+    fun setAccountProvider(provider: () -> com.orbit.music.data.online.auth.model.PlatformAccount?) {
+        this.accountProvider = provider
     }
 
     private suspend fun getApi(url: String): JSONObject = withContext(Dispatchers.IO) {
@@ -176,7 +181,7 @@ class KugouMusicSource(
 
                 list.add(
                     OnlineLeaderboard(
-                        id = id,
+                        id = "rank_$id",
                         platform = platform,
                         title = title,
                         coverUrl = cover,
@@ -193,9 +198,30 @@ class KugouMusicSource(
 
     override suspend fun getPlaylistDetail(playlistId: String): Pair<OnlinePlaylist, List<OnlineSongItem>> =
         withContext(Dispatchers.IO) {
-            // 如果是排行榜
-            if (playlistId.length <= 5 && playlistId.toIntOrNull() != null) {
-                return@withContext getRankDetail(playlistId)
+            // 如果显式带有 rank_ 排行榜前缀，才按排行榜处理
+            if (playlistId.startsWith("rank_")) {
+                return@withContext getRankDetail(playlistId.removePrefix("rank_"))
+            }
+
+            // 【优先核心】针对酷狗用户云歌单（自建/收藏），优先使用移动端云歌单协议拉取歌曲
+            try {
+                val account = accountProvider?.invoke()
+                val authService = com.orbit.music.data.online.auth.service.KugouMusicAuthService()
+                val (cloudPlaylist, cloudSongs) = authService.getPlaylistTracks(playlistId, account)
+                if (cloudSongs.isNotEmpty()) {
+                    android.util.Log.i("KugouMusicSource", "成功从酷狗云歌单核心接口拉取到 ${cloudSongs.size} 首歌曲 (playlistId=$playlistId)")
+                    val finalPlaylist = cloudPlaylist ?: OnlinePlaylist(
+                        id = playlistId,
+                        platform = platform,
+                        title = "酷狗歌单",
+                        coverUrl = cloudSongs.firstOrNull()?.coverUrl ?: "",
+                        trackCount = cloudSongs.size,
+                        creatorName = account?.nickname ?: "酷狗音乐"
+                    )
+                    return@withContext Pair(finalPlaylist, cloudSongs)
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("KugouMusicSource", "从酷狗云歌单接口获取失败: ${e.message}，尝试公共精选歌单接口")
             }
 
             // 1. 获取歌单元数据

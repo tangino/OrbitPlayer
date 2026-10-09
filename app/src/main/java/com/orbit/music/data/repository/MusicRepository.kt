@@ -314,6 +314,14 @@ class MusicRepository private constructor(private val context: Context) {
     }
 
     suspend fun addSongToPlaylist(playlistId: Long, songId: Long) = withContext(Dispatchers.IO) {
+        val matchedSong = _allSongs.value.firstOrNull { it.id == songId }
+            ?: _favoriteSongs.value.firstOrNull { it.id == songId }
+        if (matchedSong != null) {
+            val isOnline = matchedSong.isOnlineSong || matchedSong.path.startsWith("online://") || matchedSong.path.startsWith("http://") || matchedSong.path.startsWith("https://") || matchedSong.id < 0
+            if (isOnline) {
+                db.songDao.insertAll(listOf(matchedSong))
+            }
+        }
         db.songDao.insertSongToPlaylist(playlistId, songId, 0)
         refreshPlaylists()
     }
@@ -344,6 +352,11 @@ class MusicRepository private constructor(private val context: Context) {
 
     suspend fun addSongsToPlaylist(playlistId: Long, songIds: Collection<Long>) = withContext(Dispatchers.IO) {
         if (songIds.isEmpty()) return@withContext
+        val matchedSongs = (_allSongs.value + _favoriteSongs.value).filter { it.id in songIds }
+        val onlineSongs = matchedSongs.filter { it.isOnlineSong || it.path.startsWith("online://") || it.path.startsWith("http://") || it.path.startsWith("https://") || it.id < 0 }
+        if (onlineSongs.isNotEmpty()) {
+            db.songDao.insertAll(onlineSongs)
+        }
         db.songDao.insertSongsToPlaylist(playlistId, songIds)
         refreshPlaylists()
     }

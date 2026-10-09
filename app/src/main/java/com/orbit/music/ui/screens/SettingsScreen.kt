@@ -64,7 +64,6 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     var showAudioSourceManager by remember { mutableStateOf(false) }
-    var showCloudPlaylistSyncDialog by remember { mutableStateOf(false) }
 
     if (showAudioSourceManager) {
         AudioSourceManagementScreen(
@@ -106,7 +105,6 @@ fun SettingsScreen(
     val includedFolders by musicViewModel?.includedFolders?.collectAsState() ?: remember { mutableStateOf(emptySet()) }
     val excludedFolders by musicViewModel?.excludedFolders?.collectAsState() ?: remember { mutableStateOf(emptySet()) }
     val isScanning by musicViewModel?.isScanning?.collectAsState() ?: remember { mutableStateOf(false) }
-    val playlists by musicViewModel?.playlists?.collectAsState() ?: remember { mutableStateOf(emptyList()) }
 
     val backgroundPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -1987,12 +1985,12 @@ fun SettingsScreen(
                 }
             }
 
-            // 8. 数据备份与多端云同步
+            // 8. 预设备份与导出
             item {
                 CollapsibleSettingsCard(
-                    icon = Icons.Default.CloudSync,
-                    title = "数据备份与多端云同步",
-                    subtitle = "均衡器预设导入/导出 · 歌单多端云同步",
+                    icon = Icons.Default.Backup,
+                    title = "预设备份与导出",
+                    subtitle = "均衡器预设导入 / 导出",
                     isExpanded = isBackupExpanded,
                     onToggleExpand = { isBackupExpanded = !isBackupExpanded }
                 ) {
@@ -2019,18 +2017,6 @@ fun SettingsScreen(
                             exportedJson = viewModel.exportPresetsJson()
                             showExportDialog = true
                         }
-                    )
-
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
-                    )
-
-                    SettingsActionItem(
-                        icon = Icons.Default.CloudSync,
-                        title = "歌单多端云同步 (选择性备份 / 恢复)",
-                        subtitle = "支持手机与车机自由勾选自建歌单及在线收藏歌单进行上传和下载",
-                        onClick = { showCloudPlaylistSyncDialog = true }
                     )
                 }
             }
@@ -2556,16 +2542,6 @@ fun SettingsScreen(
                 }
             },
             containerColor = OrbitTheme.colors.surfaceDialog
-        )
-    }
-
-    if (showCloudPlaylistSyncDialog && musicViewModel != null) {
-        com.orbit.music.ui.components.CloudPlaylistSyncDialog(
-            playlists = playlists,
-            onDismiss = { showCloudPlaylistSyncDialog = false },
-            onSyncCompleted = {
-                musicViewModel.refreshPlaylists()
-            }
         )
     }
 }

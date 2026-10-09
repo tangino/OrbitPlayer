@@ -314,6 +314,7 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
                    COALESCE(st.playCount, 0) AS playCount
             FROM songs s
             LEFT JOIN song_stats st ON s.path = st.path
+            WHERE s.id >= 0 AND s.path NOT LIKE 'online://%' AND s.path NOT LIKE 'http://%' AND s.path NOT LIKE 'https://%'
             ORDER BY s.title COLLATE NOCASE ASC
         """.trimIndent()
         helper.readableDatabase.rawQuery(sql, null).use { c ->
@@ -461,8 +462,19 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
         }
     }
 
+    /**
+     * 仅清理本地扫描曲目，严禁误删混合歌单或自建网络歌单中的网络虚拟歌曲 (id < 0 或 path 为 online:// / http 开头)
+     */
+    fun clearLocalSongs() {
+        helper.writableDatabase.delete(
+            "songs",
+            "id >= 0 AND path NOT LIKE 'online://%' AND path NOT LIKE 'http://%' AND path NOT LIKE 'https://%'",
+            null
+        )
+    }
+
     fun clearAll() {
-        helper.writableDatabase.delete("songs", null, null)
+        clearLocalSongs()
     }
 
     fun deleteSong(songId: Long, path: String) {

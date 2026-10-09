@@ -69,7 +69,9 @@ fun CloudPlaylistSyncDialog(
 
     var currentTab by remember { mutableStateOf(SyncTab.UPLOAD) }
 
-    // 账号登录状态
+    // 账号登录状态与云端节点配置
+    var serverUrlInput by remember { mutableStateOf(authManager.getServerUrl()) }
+    var showServerSettings by remember { mutableStateOf(!authManager.hasServerUrl()) }
     var username by remember { mutableStateOf(authManager.getUsername() ?: "") }
     var password by remember { mutableStateOf("") }
     var isAuthExpanded by remember { mutableStateOf(!authManager.isLoggedIn()) }
@@ -296,12 +298,123 @@ fun CloudPlaylistSyncDialog(
                         }
                     }
 
-                    IconButton(onClick = onDismiss) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "关闭",
-                            tint = OrbitTheme.colors.textSecondary
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = { showServerSettings = !showServerSettings },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "服务器设置",
+                                tint = if (showServerSettings || !authManager.hasServerUrl()) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        IconButton(onClick = onDismiss) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "关闭",
+                                tint = OrbitTheme.colors.textSecondary
+                            )
+                        }
+                    }
+                }
+
+                // 1.5 服务器节点设置卡片
+                if (showServerSettings || !authManager.hasServerUrl()) {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = OrbitTheme.colors.surfaceCard,
+                        border = BorderStroke(1.dp, if (!authManager.hasServerUrl()) Color(0xFFFFB74D) else OrbitTheme.colors.primary.copy(alpha = 0.35f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Dns,
+                                        contentDescription = null,
+                                        tint = if (!authManager.hasServerUrl()) Color(0xFFFFB74D) else OrbitTheme.colors.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Cloudflare Worker 同步节点",
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = OrbitTheme.colors.textPrimary
+                                    )
+                                }
+                                if (authManager.hasServerUrl()) {
+                                    Text(
+                                        text = "已配置",
+                                        fontSize = 10.5.sp,
+                                        color = Color(0xFF4CAF50),
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                } else {
+                                    Text(
+                                        text = "未配置地址",
+                                        fontSize = 10.5.sp,
+                                        color = Color(0xFFFFB74D),
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "请输入您部署的 Cloudflare Worker 地址（如 https://xxxx.workers.dev 或自定义域名）",
+                                fontSize = 10.5.sp,
+                                color = OrbitTheme.colors.textSecondary,
+                                lineHeight = 14.sp
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedTextField(
+                                    value = serverUrlInput,
+                                    onValueChange = { serverUrlInput = it },
+                                    placeholder = { Text("https://...", fontSize = 11.sp) },
+                                    singleLine = true,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedContainerColor = OrbitTheme.colors.surface,
+                                        unfocusedContainerColor = OrbitTheme.colors.surface,
+                                        focusedBorderColor = OrbitTheme.colors.primary,
+                                        unfocusedBorderColor = OrbitTheme.colors.surfaceBorder,
+                                        focusedTextColor = OrbitTheme.colors.textPrimary,
+                                        unfocusedTextColor = OrbitTheme.colors.textPrimary
+                                    )
+                                )
+                                Button(
+                                    onClick = {
+                                        authManager.setServerUrl(serverUrlInput)
+                                        serverUrlInput = authManager.getServerUrl()
+                                        FastToast.show(context, "同步节点地址已保存")
+                                        if (authManager.hasServerUrl()) {
+                                            showServerSettings = false
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("保存", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
                     }
                 }
 

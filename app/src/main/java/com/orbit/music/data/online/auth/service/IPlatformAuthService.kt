@@ -33,4 +33,9 @@ interface IPlatformAuthService {
      * 获取用户在平台上的自建/收藏歌单
      */
     suspend fun getUserPlaylists(account: PlatformAccount): List<OnlinePlaylist>
+
+    /**
+     * 获取平台歌单/云歌单的歌曲曲目列表
+     */
+    suspend fun getPlaylistTracks(playlistId: String, account: PlatformAccount? = null): Pair<OnlinePlaylist?, List<com.orbit.music.data.online.model.OnlineSongItem>> = Pair(null, emptyList())
 }

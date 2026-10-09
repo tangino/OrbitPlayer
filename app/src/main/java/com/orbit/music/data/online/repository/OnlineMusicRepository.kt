@@ -55,6 +55,9 @@ class OnlineMusicRepository private constructor() {
         qqSource.setCookieProvider {
             accountManager.getCookieHeader(OnlinePlatform.QQ)
         }
+        kugouSource.setAccountProvider {
+            accountManager.getAccount(OnlinePlatform.KUGOU)
+        }
         kugouSource.setCookieProvider {
             accountManager.getCookieHeader(OnlinePlatform.KUGOU)
         }
@@ -127,13 +130,17 @@ class OnlineMusicRepository private constructor() {
     ): Result<Pair<OnlinePlaylist, List<OnlineSongItem>>> {
         val cacheKey = "${platform.id}_$playlistId"
         if (!forceRefresh) {
-            detailCache.get(cacheKey)?.let {
-                return Result.success(it)
+            detailCache.get(cacheKey)?.let { cached ->
+                if (cached.second.isNotEmpty()) {
+                    return Result.success(cached)
+                }
             }
         }
         return runCatching {
             val detail = getSource(platform).getPlaylistDetail(playlistId)
-            detailCache.put(cacheKey, detail)
+            if (detail.second.isNotEmpty()) {
+                detailCache.put(cacheKey, detail)
+            }
             detail
         }
     }

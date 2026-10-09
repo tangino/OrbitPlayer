@@ -106,7 +106,7 @@ fun AddToPlaylistDialog(
                 }
             }
             songs.isNotEmpty() -> {
-                viewModel.addSongsToPlaylist(targetPlaylist.id, songs.map { it.id }) {
+                viewModel.addSongsToPlaylist(targetPlaylist.id, songs) {
                     Toast.makeText(context, "已添加 ${songs.size} 首歌曲至歌单「${targetPlaylist.name}」", Toast.LENGTH_SHORT).show()
                     onAdded?.invoke(targetPlaylist.name)
                     onDismiss()

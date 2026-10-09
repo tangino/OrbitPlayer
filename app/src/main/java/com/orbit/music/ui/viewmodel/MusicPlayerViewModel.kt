@@ -552,6 +552,17 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun addSongsToPlaylist(
+        playlistId: Long,
+        songs: List<Song>,
+        onComplete: (() -> Unit)? = null
+    ) {
+        viewModelScope.launch {
+            repository.addSongsToPlaylist(playlistId, songs)
+            onComplete?.invoke()
+        }
+    }
+
     fun setFavoriteBatch(songs: List<Song>, isFavorite: Boolean) {
         viewModelScope.launch {
             repository.setFavoriteBatch(songs, isFavorite)

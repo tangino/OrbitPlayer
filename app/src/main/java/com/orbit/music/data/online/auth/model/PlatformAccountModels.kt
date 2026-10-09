@@ -38,6 +38,15 @@ data class PlatformAccount(
                 map["psrf_musickey_id"] = key
                 map["authst"] = key
             }
+        } else if (platform == OnlinePlatform.KUGOU && userId.isNotBlank()) {
+            if (!map.containsKey("KugouID")) map["KugouID"] = userId
+            if (!map.containsKey("KugooID")) map["KugooID"] = userId
+            if (!map.containsKey("userid")) map["userid"] = userId
+            val token = tokens["token"] ?: tokens["t"] ?: map["token"] ?: map["t"] ?: ""
+            if (token.isNotBlank()) {
+                map["token"] = token
+                map["t"] = token
+            }
         }
         return map.entries.joinToString("; ") { "${it.key}=${it.value}" }
     }
@@ -46,7 +55,7 @@ data class PlatformAccount(
      * 获取主要的认证 Token (如果有)
      */
     fun getPrimaryToken(): String {
-        return tokens["token"] ?: tokens["access_token"] ?: cookies["token"] ?: ""
+        return tokens["token"] ?: tokens["t"] ?: tokens["access_token"] ?: cookies["token"] ?: cookies["t"] ?: ""
     }
 }
 

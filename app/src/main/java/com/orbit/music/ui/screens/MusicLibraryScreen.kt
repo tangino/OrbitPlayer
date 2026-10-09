@@ -189,6 +189,7 @@ fun MusicLibraryScreen(
     // 播放列表下钻状态：直接由 ViewModel 的 libraryState 驱动，跨页面切换时状态完全保持
     val openedPlaylist = libraryState.selectedPlaylist
     var playlistSongs by remember { mutableStateOf<List<Song>>(emptyList()) }
+    var isPlaylistLoading by remember { mutableStateOf(false) }
     val playlistSongsListState = rememberLazyListState()
 
     // 在线公共歌单状态
@@ -224,8 +225,8 @@ fun MusicLibraryScreen(
             val res = repo.getPlaylistDetail(op.id, op.platform)
             res.onSuccess { (detail, songs) ->
                 if (libraryState.selectedOnlinePlaylist?.id == detail.id) {
-                    val fallbackTitles = setOf("咪咕歌单", "酷我歌单", "酷狗歌单", "QQ音乐歌单", "网易云歌单", "在线歌单")
-                    val fallbackCreators = setOf("咪咕音乐", "酷我用户", "酷我音乐", "酷狗音乐", "QQ音乐", "网易云音乐", "未知作者")
+                    val fallbackTitles = setOf("咪咕歌单", "酷我歌单", "酷狗歌单", "QQ音乐歌单", "网易云歌单", "在线歌单", "酷狗排行榜")
+                    val fallbackCreators = setOf("咪咕音乐", "酷我用户", "酷我音乐", "酷狗音乐", "QQ音乐", "网易云音乐", "未知作者", "酷狗官方")
                     val finalTitle = if (detail.title.isNotBlank() && !fallbackTitles.contains(detail.title)) detail.title else op.title
                     val finalCover = if (op.coverUrl.isNotBlank()) op.coverUrl else detail.coverUrl
                     val finalCreator = if (!op.creatorName.isNullOrBlank() && !fallbackCreators.contains(op.creatorName)) op.creatorName else detail.creatorName
@@ -282,23 +283,42 @@ fun MusicLibraryScreen(
     val favoriteSongs by viewModel.favoriteSongs.collectAsState()
     val dislikedSongs by viewModel.dislikedSongs.collectAsState()
 
-    // 监听 openedPlaylist 变化动态获取歌曲列表
-    LaunchedEffect(openedPlaylist?.id, playlists, favoriteSongs, dislikedSongs) {
-        val p = openedPlaylist
-        if (p != null) {
-            if (p.id == FAVORITE_PLAYLIST_ID) {
-                playlistSongs = favoriteSongs
-            } else if (p.id == DISLIKED_PLAYLIST_ID) {
-                playlistSongs = dislikedSongs
-            } else {
-                playlistSongs = viewModel.getSongsInPlaylist(p.id)
-                val updated = playlists.find { it.id == p.id }
-                if (updated != null && updated != p) {
-                    viewModel.selectPlaylist(updated)
+    // 监听 openedPlaylist.id 变化动态异步获取歌曲列表（隔离 playlists 的频繁状态更新，避免重入取消协程）
+    LaunchedEffect(openedPlaylist?.id) {
+        val pId = openedPlaylist?.id
+        if (pId != null) {
+            isPlaylistLoading = true
+            try {
+                if (pId == FAVORITE_PLAYLIST_ID) {
+                    playlistSongs = favoriteSongs
+                } else if (pId == DISLIKED_PLAYLIST_ID) {
+                    playlistSongs = dislikedSongs
+                } else {
+                    val songs = withContext(Dispatchers.IO) {
+                        viewModel.getSongsInPlaylist(pId)
+                    }
+                    playlistSongs = songs
                 }
+            } finally {
+                isPlaylistLoading = false
             }
         } else {
             playlistSongs = emptyList()
+            isPlaylistLoading = false
+        }
+    }
+
+    // 当收藏列表更新且当前停留在收藏歌单时自动同步
+    LaunchedEffect(favoriteSongs) {
+        if (openedPlaylist?.id == FAVORITE_PLAYLIST_ID) {
+            playlistSongs = favoriteSongs
+        }
+    }
+
+    // 当不喜欢列表更新且当前停留在不喜欢歌单时自动同步
+    LaunchedEffect(dislikedSongs) {
+        if (openedPlaylist?.id == DISLIKED_PLAYLIST_ID) {
+            playlistSongs = dislikedSongs
         }
     }
 
@@ -1140,6 +1160,7 @@ fun MusicLibraryScreen(
                                 )
                             }
                         }
+
 
                         // 4.5 歌单云同步快捷入口
                         if (libraryState.currentTab == LibraryTab.PLAYLISTS && !isDrillDown) {
@@ -3167,8 +3188,21 @@ fun MusicLibraryScreen(
 
                                 Spacer(modifier = Modifier.height(4.dp))
 
-                                // 歌曲列表或空状态
-                                if (filteredPlaylistSongs.isEmpty()) {
+                                // 歌曲列表、加载中或空状态
+                                if (isPlaylistLoading) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .weight(1f),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator(
+                                            color = OrbitTheme.colors.primary,
+                                            strokeWidth = 2.5.dp,
+                                            modifier = Modifier.size(36.dp)
+                                        )
+                                    }
+                                } else if (filteredPlaylistSongs.isEmpty()) {
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -3579,35 +3613,9 @@ fun MusicLibraryScreen(
                                             )
                                         }
                                     }
-
-                                    Surface(
-                                        shape = RoundedCornerShape(16.dp),
-                                        color = OrbitTheme.colors.primary.copy(alpha = 0.12f),
-                                        border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.45f)),
-                                        modifier = Modifier.clickable {
-                                            showCloudPlaylistSyncDialog = true
-                                        }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.CloudSync,
-                                                contentDescription = null,
-                                                tint = OrbitTheme.colors.primary,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                            Text(
-                                                text = "歌单云同步",
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = OrbitTheme.colors.primary
-                                            )
-                                        }
-                                    }
                                 }
+
+
 
                                 Spacer(modifier = Modifier.height(10.dp))
 
@@ -3961,27 +3969,6 @@ fun MusicLibraryScreen(
                                                         verticalAlignment = Alignment.CenterVertically,
                                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                                                     ) {
-                                                        TextButton(
-                                                            onClick = {
-                                                                showCloudPlaylistSyncDialog = true
-                                                            },
-                                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                                            modifier = Modifier.height(28.dp)
-                                                        ) {
-                                                            Icon(
-                                                                imageVector = Icons.Default.CloudSync,
-                                                                contentDescription = null,
-                                                                tint = OrbitTheme.colors.primary,
-                                                                modifier = Modifier.size(14.dp)
-                                                            )
-                                                            Spacer(modifier = Modifier.width(2.dp))
-                                                            Text(
-                                                                text = "云同步",
-                                                                fontSize = 11.5.sp,
-                                                                color = OrbitTheme.colors.primary,
-                                                                fontWeight = FontWeight.Medium
-                                                            )
-                                                        }
                                                         TextButton(
                                                             onClick = {
                                                                 showImportPlaylistDialog = true
@@ -8172,7 +8159,11 @@ private fun OnlinePlaylistItemCard(
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                     )
                 }
-                if (onlinePlaylist.customGroup.isNotBlank() && onlinePlaylist.customGroup != "默认") {
+                if (onlinePlaylist.customGroup.isNotBlank() &&
+                    onlinePlaylist.customGroup != "默认" &&
+                    onlinePlaylist.customGroup != onlinePlaylist.platform.displayName &&
+                    onlinePlaylist.customGroup != onlinePlaylist.platform.name
+                ) {
                     Surface(
                         shape = RoundedCornerShape(4.dp),
                         color = OrbitTheme.colors.primary.copy(alpha = 0.12f),

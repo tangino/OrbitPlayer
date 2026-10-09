@@ -108,6 +108,9 @@ class CloudPlaylistSyncManager private constructor(private val context: Context)
             }
 
             val baseUrl = authManager.getServerUrl()
+            if (baseUrl.isBlank()) {
+                return@withContext Result.failure(Exception("请先设置 Cloudflare 同步服务地址"))
+            }
 
             // 1. 序列化选中的本地自建歌单及其歌曲
             val localArray = JSONArray()
@@ -211,6 +214,9 @@ class CloudPlaylistSyncManager private constructor(private val context: Context)
             }
 
             val baseUrl = authManager.getServerUrl()
+            if (baseUrl.isBlank()) {
+                return@withContext Result.failure(Exception("请先设置 Cloudflare 同步服务地址"))
+            }
             val payload = JSONObject().apply {
                 put("username", username)
                 put("password", password)
@@ -490,6 +496,9 @@ class CloudPlaylistSyncManager private constructor(private val context: Context)
             }
 
             val baseUrl = authManager.getServerUrl()
+            if (baseUrl.isBlank()) {
+                return@withContext Result.failure(Exception("请先设置 Cloudflare 同步服务地址"))
+            }
             val localArr = JSONArray()
             selectedLocalNames.forEach { localArr.put(it) }
 
@@ -543,6 +552,9 @@ class CloudPlaylistSyncManager private constructor(private val context: Context)
             }
 
             val baseUrl = authManager.getServerUrl()
+            if (baseUrl.isBlank()) {
+                return@withContext Result.failure(Exception("请先设置 Cloudflare 同步服务地址"))
+            }
             val payload = JSONObject().apply {
                 put("username", username)
                 put("password", password)

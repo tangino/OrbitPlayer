@@ -168,6 +168,11 @@ fun AudioSourceManagementScreen(
                 )
             }
 
+            // 2.5 在线音乐平台账号授权与扫码登录 (酷狗音乐 / QQ 音乐)
+            item {
+                com.orbit.music.ui.components.auth.PlatformAccountsCard()
+            }
+
             // 3. 快速导入操作栏
             item {
                 Row(
@@ -1032,7 +1037,7 @@ private fun CloudSourceSyncDialog(
     var lastBackupTime by remember { mutableStateOf(cloudSyncManager.getLastBackupTime()) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var isSuccessStatus by remember { mutableStateOf(true) }
-    var showServerSettings by remember { mutableStateOf(false) }
+    var showServerSettings by remember { mutableStateOf(!cloudSyncManager.hasServerUrl()) }
     var serverUrlInput by remember { mutableStateOf(cloudSyncManager.getServerUrl()) }
 
     if (showDeleteConfirmDialog) {
