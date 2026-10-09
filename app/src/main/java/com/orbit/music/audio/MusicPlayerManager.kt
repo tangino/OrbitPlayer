@@ -61,6 +61,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
     private val effectManager = AudioEffectManager.getInstance(context)
     val visualizerManager = AudioVisualizerManager.getInstance(context)
     val onlineSourceManager = OnlineAudioSourceManager.getInstance(context)
+    val audioCacheManager = com.orbit.music.audio.cache.AudioCacheManager.getInstance(context)
     private val scope = CoroutineScope(Dispatchers.Main)
     private var progressJob: Job? = null
     private var visualizerWatchdogJob: Job? = null
@@ -80,18 +81,13 @@ class MusicPlayerManager private constructor(private val context: Context) {
     private val MAX_HISTORY_SIZE = 50
     private var hasRecordedPlayForCurrentSong = false
     private var consecutiveResolveFailures = 0
+    private var currentSongRefreshRetryCount = 0
 
-    private val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-        .setUserAgent("Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
-        .setConnectTimeoutMs(15000)
-        .setReadTimeoutMs(15000)
-        .setAllowCrossProtocolRedirects(true)
-        .setKeepPostFor302Redirects(true)
-
-    private val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+    // 采用具备本地磁盘边播边缓存能力的数据源工厂，断网或原直链失效依然可从本地分片离线读取
+    private val cachedDataSourceFactory = audioCacheManager.createCacheDataSourceFactory()
 
     private val player: ExoPlayer = ExoPlayer.Builder(context)
-        .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
+        .setMediaSourceFactory(DefaultMediaSourceFactory(cachedDataSourceFactory))
         .setAudioAttributes(
             AudioAttributes.Builder()
                 .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
@@ -350,6 +346,69 @@ class MusicPlayerManager private constructor(private val context: Context) {
 
                 val currentSong = _playbackState.value.currentSong
                 val playlist = _playbackState.value.currentPlaylist
+
+                // 主动驱逐当前歌曲失效的 URL 缓存，杜绝重复命中过期防盗链或失效链接
+                if (currentSong != null && (currentSong.path.startsWith("http") || currentSong.path.startsWith("online://") || currentSong.isOnlineSong)) {
+                    val origPlatform = currentSong.originalPlatform ?: currentSong.sourcePlatform ?: OnlinePlatform.NETEASE
+                    val uri = Uri.parse(currentSong.path)
+                    val sId = uri.lastPathSegment ?: currentSong.id.toString()
+                    onlineSourceManager.evictUrlCache(origPlatform, sId)
+                }
+
+                // 核心保障：若为网络歌曲且可能遭遇防盗链/Token超时失效，优先尝试静默刷新直链并从断点进度无缝续播
+                val isOnlineSong = currentSong != null && (OnlineAudioSourceManager.isOnlineSong(currentSong) || currentSong.path.startsWith("http"))
+                if (isOnlineSong && currentSong != null && currentSongRefreshRetryCount < 2) {
+                    currentSongRefreshRetryCount++
+                    val resumePos = player.currentPosition.coerceAtLeast(_playbackState.value.currentPositionMs).coerceAtLeast(0L)
+                    Log.w(TAG, "检测到网络歌曲播放中断，正在自动刷新直链并从断点进度(${resumePos}ms)无缝恢复播放(尝试第${currentSongRefreshRetryCount}次): ${currentSong.title}")
+                    _playbackState.update { it.copy(isBuffering = true, errorMessage = "链接更新中，正在恢复播放...") }
+                    
+                    scope.launch {
+                        try {
+                            val newSource = resolveOnlineSongSource(currentSong)
+                            if (newSource != null && newSource.url.isNotBlank() && !newSource.url.startsWith("online://")) {
+                                val refreshedSong = currentSong.copy(
+                                    path = newSource.url,
+                                    durationMs = if (newSource.durationMs > 0L) newSource.durationMs else currentSong.durationMs,
+                                    sourcePlatform = newSource.platform
+                                )
+                                val mediaItem = createMediaItem(refreshedSong)
+                                player.setMediaItem(mediaItem, resumePos)
+                                player.prepare()
+                                player.play()
+                                _playbackState.update {
+                                    it.copy(
+                                        currentSong = refreshedSong,
+                                        isPlaying = true,
+                                        isBuffering = false,
+                                        errorMessage = null
+                                    )
+                                }
+                                Log.i(TAG, "网络歌曲直链刷新成功，已无缝恢复播放: ${refreshedSong.title}")
+                                return@launch
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "网络歌曲静默刷新续播失败", e)
+                        }
+
+                        // 刷新续播若彻底失败，再走自动跳下一首逻辑
+                        if (playlist.size > 1 && consecutiveResolveFailures < playlist.size && consecutiveResolveFailures < 5) {
+                            consecutiveResolveFailures++
+                            com.orbit.music.utils.FastToast.show(
+                                context,
+                                "【${currentSong.title}】歌源失效，正在自动切至下一首...",
+                                1800L
+                            )
+                            delay(600L)
+                            playNext()
+                        } else {
+                            consecutiveResolveFailures = 0
+                            com.orbit.music.utils.FastToast.show(context, errorMsg, 2500L)
+                        }
+                    }
+                    return
+                }
+
                 if (currentSong?.let { OnlineAudioSourceManager.isOnlineSong(it) } == true &&
                     playlist.size > 1 &&
                     consecutiveResolveFailures < playlist.size &&
@@ -428,9 +487,11 @@ class MusicPlayerManager private constructor(private val context: Context) {
             song.path.startsWith("/") -> Uri.fromFile(java.io.File(song.path))
             else -> Uri.parse(song.path)
         }
+        val stableCacheKey = audioCacheManager.buildStableCacheKey(song)
         return MediaItem.Builder()
             .setUri(uri)
             .setMediaId(song.id.toString())
+            .setCustomCacheKey(stableCacheKey)
             .setMediaMetadata(
                 MediaMetadata.Builder()
                     .setTitle(song.title)
@@ -545,6 +606,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
 
         visualizerManager.reset()
         hasRecordedPlayForCurrentSong = false
+        currentSongRefreshRetryCount = 0
 
         val isOnline = targetSong.path.startsWith("online://") || 
                 targetSong.path.startsWith("http://") || 
@@ -868,14 +930,14 @@ class MusicPlayerManager private constructor(private val context: Context) {
     }
 
     /**
-     * 智能预热流水线：预解析即将播放的曲目（支持顺序预热、随机策略精准预热与候选池轻量并发预热）
+     * 智能预热流水线：双向预加载即将播放的曲目（支持下一首、上一首双向直链预解析与音频首块流预热，切歌 0ms 秒开）
      */
     private fun schedulePrefetchPipeline(currentIndex: Int, playlist: List<Song>) {
         if (playlist.isEmpty() || currentIndex !in playlist.indices) return
         prefetchJob?.cancel()
 
         prefetchJob = scope.launch(Dispatchers.IO) {
-            delay(350L) // 避开切歌初始启动瞬间的 CPU/网络争夺
+            delay(500L) // 避开切歌初始启动瞬间的 CPU/网络争夺
 
             val isShuffle = _playbackState.value.isShuffleEnabled
 
@@ -889,18 +951,44 @@ class MusicPlayerManager private constructor(private val context: Context) {
                 if (playlist.size > 1) (currentIndex + 1) % playlist.size else -1
             }
 
-            // 2. 第一优先级：必须预热第一确定的下一首 (命中率最高)
+            // 2. 确定上一个播放目标 (优先取播放历史栈，未入栈时取列表上一首)
+            val prevIndex = playHistory.peekLast()
+                ?: if (playlist.size > 1) (currentIndex - 1 + playlist.size) % playlist.size else -1
+
+            // 🚀 第一优先级：下一首直链预解析 + 音频首块数据预热并落入 SimpleCache 本地磁盘
             if (nextIndex in playlist.indices && nextIndex != currentIndex) {
                 val nextSong = playlist[nextIndex]
                 if (nextSong.path.startsWith("online://")) {
-                    runCatching { resolveOnlineSongSource(nextSong) }
+                    runCatching {
+                        val resolved = resolveOnlineSongSource(nextSong)
+                        if (resolved != null && resolved.url.startsWith("http", ignoreCase = true)) {
+                            audioCacheManager.preloadToCache(nextSong, resolved.url)
+                            onlineSourceManager.preloadAudioStream(resolved.url, resolved.platform)
+                            Log.i(TAG, "Preloaded next song audio: ${nextSong.title} (${resolved.platform.displayName})")
+                        }
+                    }
                 }
             }
 
-            // 3. 第二优先级：若处于随机模式，额外预热 2 个高概率候选（防止用户快速跳歌）
+            // 🚀 第二优先级：上一首直链预解析 + 音频首块数据预热并落入 SimpleCache 本地磁盘
+            if (prevIndex in playlist.indices && prevIndex != currentIndex && prevIndex != nextIndex) {
+                val prevSong = playlist[prevIndex]
+                if (prevSong.path.startsWith("online://")) {
+                    runCatching {
+                        val resolved = resolveOnlineSongSource(prevSong)
+                        if (resolved != null && resolved.url.startsWith("http", ignoreCase = true)) {
+                            audioCacheManager.preloadToCache(prevSong, resolved.url)
+                            onlineSourceManager.preloadAudioStream(resolved.url, resolved.platform)
+                            Log.i(TAG, "Preloaded previous song audio: ${prevSong.title} (${resolved.platform.displayName})")
+                        }
+                    }
+                }
+            }
+
+            // 第三优先级：若处于随机模式，额外轻量预解析 1-2 个候选池歌曲
             if (isShuffle && playlist.size > 2) {
                 val otherCandidates = playlist.indices
-                    .filter { it != currentIndex && it != nextIndex }
+                    .filter { it != currentIndex && it != nextIndex && it != prevIndex }
                     .shuffled()
                     .take(2)
                 for (cIdx in otherCandidates) {
@@ -908,15 +996,6 @@ class MusicPlayerManager private constructor(private val context: Context) {
                     if (cSong.path.startsWith("online://")) {
                         runCatching { resolveOnlineSongSource(cSong) }
                     }
-                }
-            }
-
-            // 4. 第三优先级：若历史记录中有上一首未解析的 online 歌曲，也进行预热
-            val prevIdx = playHistory.peekLast()
-            if (prevIdx != null && prevIdx in playlist.indices && prevIdx != currentIndex && prevIdx != nextIndex) {
-                val prevSong = playlist[prevIdx]
-                if (prevSong.path.startsWith("online://")) {
-                    runCatching { resolveOnlineSongSource(prevSong) }
                 }
             }
         }

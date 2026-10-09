@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.orbit.music.data.online.engine.SourceScriptManager
+import com.orbit.music.data.online.engine.ResolveStrategy
 import com.orbit.music.data.online.model.SourceScriptItem
 import com.orbit.music.ui.theme.*
 import kotlinx.coroutines.launch
@@ -57,6 +58,7 @@ fun AudioSourceManagementScreen(
     val enabledScripts by sourceManager.enabledScripts.collectAsState()
     val activeScript by sourceManager.activeScript.collectAsState()
     val preferredQuality by sourceManager.preferredQuality.collectAsState()
+    val resolveStrategy by sourceManager.resolveStrategy.collectAsState()
 
     val cloudSyncManager = remember { com.orbit.music.data.online.engine.CloudSourceSyncManager.getInstance(context) }
     var showUrlImportDialog by remember { mutableStateOf(false) }
@@ -168,10 +170,14 @@ fun AudioSourceManagementScreen(
                 )
             }
 
-            // 2.5 在线音乐平台账号授权与扫码登录 (酷狗音乐 / QQ 音乐)
+            // 2.2 寻源解析调度策略配置 (支持 0.3.0 经典多源轮询 与 并发智能寻源)
             item {
-                com.orbit.music.ui.components.auth.PlatformAccountsCard()
+                ResolveStrategyCard(
+                    currentStrategy = resolveStrategy,
+                    onSelectStrategy = { sourceManager.setResolveStrategy(it) }
+                )
             }
+
 
             // 3. 快速导入操作栏
             item {
@@ -569,6 +575,85 @@ private fun QualityPreferenceCard(
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                             color = if (isSelected) (if (OrbitTheme.colors.isDark) Color(0xFF101216) else Color.White) else OrbitTheme.colors.textSecondary
                         )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 寻源解析调度策略配置卡片 (0.3.0 经典多源轮询 / 并发智能寻源)
+ */
+@Composable
+private fun ResolveStrategyCard(
+    currentStrategy: ResolveStrategy,
+    onSelectStrategy: (ResolveStrategy) -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = OrbitTheme.colors.surfaceCard,
+        border = BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "寻源解析调度策略",
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = OrbitTheme.colors.textPrimary
+                )
+                Text(
+                    text = "支持双向预加载",
+                    fontSize = 11.sp,
+                    color = OrbitTheme.colors.primary
+                )
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ResolveStrategy.values().forEach { strategy ->
+                    val isSelected = currentStrategy == strategy
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (isSelected) OrbitTheme.colors.primary.copy(alpha = 0.15f)
+                                else OrbitTheme.colors.surface
+                            )
+                            .border(
+                                width = if (isSelected) 1.2.dp else 0.5.dp,
+                                color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.surfaceBorder,
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            .clickable { onSelectStrategy(strategy) }
+                            .padding(vertical = 10.dp, horizontal = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = strategy.title,
+                                fontSize = 11.5.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textPrimary
+                            )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(
+                                text = if (strategy == ResolveStrategy.CLASSIC_POLLING) "多源轮询 / 流长严检" else "多源并发 / 极速秒开",
+                                fontSize = 10.sp,
+                                color = OrbitTheme.colors.textSecondary,
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
             }

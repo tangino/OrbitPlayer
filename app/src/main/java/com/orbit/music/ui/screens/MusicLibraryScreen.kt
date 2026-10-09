@@ -3374,6 +3374,12 @@ fun MusicLibraryScreen(
                             var selectedPlaylistGroup by rememberSaveable { mutableStateOf("ALL") }
                             var collapsedPlaylistGroups by rememberSaveable { mutableStateOf(setOf<String>()) }
                             var loadingOnlinePlaylistId by remember { mutableStateOf<String?>(null) }
+                            val platformAccountManager = remember { com.orbit.music.data.online.auth.PlatformAccountManager.getInstance(context) }
+                            val platformAccounts by platformAccountManager.accounts.collectAsState()
+                            val qqAccount = platformAccounts[OnlinePlatform.QQ]
+                            val isQqLoggedIn = qqAccount != null && qqAccount.userId.isNotBlank()
+                            var isSyncingQqPlaylists by remember { mutableStateOf(false) }
+                            var showQqLoginDialog by remember { mutableStateOf(false) }
 
                             val q = libraryState.searchQuery.trim()
                             val favTitle = stringResource(R.string.favorite_songs)
@@ -3411,6 +3417,65 @@ fun MusicLibraryScreen(
                             val miguFavorites = remember(onlineFavorites, q) {
                                 val list = onlineFavorites.filter { it.platform == OnlinePlatform.MIGU }
                                 if (q.isBlank()) list else list.filter { it.title.contains(q, ignoreCase = true) || it.creatorName?.contains(q, ignoreCase = true) == true }
+                            }
+
+                            // 手动/快捷触发 QQ 歌单同步函数
+                            val syncQqPlaylists: () -> Unit = {
+                                if (!isSyncingQqPlaylists) {
+                                    coroutineScope.launch {
+                                        isSyncingQqPlaylists = true
+                                        com.orbit.music.utils.FastToast.show(context, "正在同步 QQ 音乐云端歌单...")
+                                        val (success, count) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            try {
+                                                val remotePlaylists = platformAccountManager.fetchUserPlaylists(OnlinePlatform.QQ)
+                                                if (remotePlaylists.isNotEmpty()) {
+                                                    val groupName = "QQ 音乐"
+                                                    val groupMgr = com.orbit.music.data.playlist.PlaylistGroupManager.getInstance(context)
+                                                    groupMgr.addGroup(groupName)
+                                                    for (pl in remotePlaylists) {
+                                                        onlineFavoriteManager.addFavorite(pl.copy(customGroup = groupName))
+                                                    }
+                                                    Pair(true, remotePlaylists.size)
+                                                } else {
+                                                    Pair(false, 0)
+                                                }
+                                            } catch (e: Exception) {
+                                                Pair(false, 0)
+                                            }
+                                        }
+                                        isSyncingQqPlaylists = false
+                                        if (success) {
+                                            com.orbit.music.utils.FastToast.show(context, "已成功同步 $count 个 QQ 音乐歌单")
+                                        } else {
+                                            com.orbit.music.utils.FastToast.show(context, "未获取到 QQ 音乐歌单，请检查登录态或网络")
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 首次检测到已登录 QQ 音乐且本地尚未同步歌单时，自动静默同步云端歌单
+                            LaunchedEffect(isQqLoggedIn, qqFavorites.size) {
+                                if (isQqLoggedIn && qqFavorites.isEmpty() && !isSyncingQqPlaylists) {
+                                    isSyncingQqPlaylists = true
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                        try {
+                                            val remotePlaylists = platformAccountManager.fetchUserPlaylists(OnlinePlatform.QQ)
+                                            if (remotePlaylists.isNotEmpty()) {
+                                                val groupName = "QQ 音乐"
+                                                val groupMgr = com.orbit.music.data.playlist.PlaylistGroupManager.getInstance(context)
+                                                groupMgr.addGroup(groupName)
+                                                for (pl in remotePlaylists) {
+                                                    onlineFavoriteManager.addFavorite(pl.copy(customGroup = groupName))
+                                                }
+                                            }
+                                            Unit
+                                        } catch (e: Exception) {
+                                            android.util.Log.e("MusicLibraryScreen", "自动拉取 QQ 歌单失败: ${e.message}")
+                                        } finally {
+                                            isSyncingQqPlaylists = false
+                                        }
+                                    }
+                                }
                             }
 
                             val allOnlineCount = neteaseFavorites.size + qqFavorites.size + kugouFavorites.size + kuwoFavorites.size + miguFavorites.size
@@ -3496,121 +3561,197 @@ fun MusicLibraryScreen(
                                     add(Triple("MIGU", "咪咕", miguFavorites.size))
                                 }
 
-                                Row(
+                                // 优雅二级分类过滤导航条 (告别粗笨双层胶囊，采用现代轻量化微圆角精致 Chip 与轨道设计)
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.28f),
+                                    border = BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder.copy(alpha = 0.2f)),
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .horizontalScroll(rememberScrollState())
-                                        .padding(vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .padding(vertical = 4.dp)
                                 ) {
-                                    filterCategories.forEach { (groupId, groupName, count) ->
-                                        val isSelected = selectedPlaylistGroup == groupId
-                                        Surface(
-                                            shape = RoundedCornerShape(16.dp),
-                                            color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.surfaceCard,
-                                            border = BorderStroke(
-                                                width = 1.dp,
-                                                color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.primary.copy(alpha = 0.15f)
-                                            ),
-                                            modifier = Modifier.clickable { selectedPlaylistGroup = groupId }
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .horizontalScroll(rememberScrollState())
+                                            .padding(horizontal = 6.dp, vertical = 5.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        filterCategories.forEach { (groupId, groupName, count) ->
+                                            val isSelected = selectedPlaylistGroup == groupId
+
+                                            // 平台专属徽标点缀色
+                                            val badgeColor = when (groupId) {
+                                                "QQ" -> Color(0xFF1ECF96)
+                                                "NETEASE" -> Color(0xFFE60026)
+                                                "KUGOU" -> Color(0xFF0088FF)
+                                                "KUWO" -> Color(0xFFFF9500)
+                                                "MIGU" -> Color(0xFFE91E63)
+                                                "LOCAL" -> OrbitTheme.colors.primary
+                                                else -> null
+                                            }
+
+                                            Surface(
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = if (isSelected) {
+                                                    OrbitTheme.colors.primary.copy(alpha = 0.16f)
+                                                } else {
+                                                    Color.Transparent
+                                                },
+                                                border = if (isSelected) {
+                                                    BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.75f))
+                                                } else {
+                                                    BorderStroke(0.5.dp, Color.Transparent)
+                                                },
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .clickable { selectedPlaylistGroup = groupId }
                                             ) {
-                                                Text(
-                                                    text = groupName,
-                                                    fontSize = 12.5.sp,
-                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                                    color = if (isSelected) {
-                                                        if (OrbitTheme.colors.isDark) DarkBackground else Color.White
-                                                    } else {
-                                                        OrbitTheme.colors.textPrimary
-                                                    }
-                                                )
-                                                if (count > 0) {
-                                                    Surface(
-                                                        shape = CircleShape,
-                                                        color = if (isSelected) {
-                                                            (if (OrbitTheme.colors.isDark) DarkBackground else Color.White).copy(alpha = 0.25f)
-                                                        } else {
-                                                            OrbitTheme.colors.primary.copy(alpha = 0.15f)
-                                                        }
-                                                    ) {
-                                                        Text(
-                                                            text = "$count",
-                                                            fontSize = 10.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            color = if (isSelected) {
-                                                                if (OrbitTheme.colors.isDark) DarkBackground else Color.White
-                                                            } else {
-                                                                OrbitTheme.colors.primary
-                                                            },
-                                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                                ) {
+                                                    if (badgeColor != null) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(6.dp)
+                                                                .background(badgeColor, CircleShape)
                                                         )
+                                                    }
+                                                    Text(
+                                                        text = groupName,
+                                                        fontSize = 12.sp,
+                                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                                        color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary
+                                                    )
+                                                    if (count > 0) {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .background(
+                                                                    if (isSelected) OrbitTheme.colors.primary.copy(alpha = 0.22f) else OrbitTheme.colors.textSecondary.copy(alpha = 0.12f),
+                                                                    RoundedCornerShape(4.dp)
+                                                                )
+                                                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = "$count",
+                                                                fontSize = 9.5.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary.copy(alpha = 0.85f)
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             }
                                         }
-                                    }
 
-                                    // 快捷操作胶囊：新建分组 & 分组管理
-                                    Surface(
-                                        shape = RoundedCornerShape(16.dp),
-                                        color = OrbitTheme.colors.surfaceCard,
-                                        border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.3f)),
-                                        modifier = Modifier.clickable {
-                                            newGroupNameInput = ""
-                                            showCreateGroupDialog = true
-                                        }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Add,
-                                                contentDescription = null,
-                                                tint = OrbitTheme.colors.primary,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                            Text(
-                                                text = "新建分组",
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = OrbitTheme.colors.primary
-                                            )
-                                        }
-                                    }
+                                        // 垂直微妙细分割线
+                                        Box(
+                                            modifier = Modifier
+                                                .height(14.dp)
+                                                .width(1.dp)
+                                                .background(OrbitTheme.colors.surfaceBorder.copy(alpha = 0.35f))
+                                                .padding(horizontal = 1.dp)
+                                        )
 
-                                    Surface(
-                                        shape = RoundedCornerShape(16.dp),
-                                        color = OrbitTheme.colors.surfaceCard,
-                                        border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.3f)),
-                                        modifier = Modifier.clickable {
-                                            showManageGroupsDialog = true
+                                        // QQ 音乐快捷同步按钮 (若选中 QQ 分组且已登录)
+                                        if (selectedPlaylistGroup == "QQ" && isQqLoggedIn) {
+                                            Surface(
+                                                shape = RoundedCornerShape(7.dp),
+                                                color = Color(0xFF1ECF96).copy(alpha = 0.12f),
+                                                border = BorderStroke(0.5.dp, Color(0xFF1ECF96).copy(alpha = 0.45f)),
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(7.dp))
+                                                    .clickable { syncQqPlaylists() }
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    if (isSyncingQqPlaylists) {
+                                                        CircularProgressIndicator(modifier = Modifier.size(11.dp), strokeWidth = 1.5.dp, color = Color(0xFF1ECF96))
+                                                    } else {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Refresh,
+                                                            contentDescription = null,
+                                                            tint = Color(0xFF1ECF96),
+                                                            modifier = Modifier.size(12.dp)
+                                                        )
+                                                    }
+                                                    Text(
+                                                        text = if (isSyncingQqPlaylists) "同步中" else "同步",
+                                                        fontSize = 11.5.sp,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = Color(0xFF1ECF96)
+                                                    )
+                                                }
+                                            }
                                         }
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+
+                                        // 新建分组微按钮
+                                        Surface(
+                                            shape = RoundedCornerShape(7.dp),
+                                            color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.5f),
+                                            border = BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder.copy(alpha = 0.35f)),
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(7.dp))
+                                                .clickable {
+                                                    newGroupNameInput = ""
+                                                    showCreateGroupDialog = true
+                                                }
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Tune,
-                                                contentDescription = null,
-                                                tint = OrbitTheme.colors.primary,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                            Text(
-                                                text = "分组管理",
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = OrbitTheme.colors.primary
-                                            )
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Add,
+                                                    contentDescription = null,
+                                                    tint = OrbitTheme.colors.primary,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                                Text(
+                                                    text = "新建分组",
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = OrbitTheme.colors.primary
+                                                )
+                                            }
+                                        }
+
+                                        // 分组管理微按钮
+                                        Surface(
+                                            shape = RoundedCornerShape(7.dp),
+                                            color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.5f),
+                                            border = BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder.copy(alpha = 0.35f)),
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(7.dp))
+                                                .clickable {
+                                                    showManageGroupsDialog = true
+                                                }
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Tune,
+                                                    contentDescription = null,
+                                                    tint = OrbitTheme.colors.textSecondary,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                                Text(
+                                                    text = "管理",
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = OrbitTheme.colors.textSecondary
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -3782,11 +3923,86 @@ fun MusicLibraryScreen(
                                                         )
                                                     }
                                                 }
-                                            } else if (selectedPlaylistGroup in listOf("NETEASE", "QQ", "KUGOU", "KUWO", "MIGU") && q.isBlank()) {
+                                            } else if (selectedPlaylistGroup == "QQ" && q.isBlank()) {
+                                                Spacer(modifier = Modifier.height(16.dp))
+                                                if (isQqLoggedIn) {
+                                                    Column(
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = "已登录 QQ 音乐账号：${qqAccount?.nickname ?: "QQ 用户"}",
+                                                            fontSize = 12.5.sp,
+                                                            fontWeight = FontWeight.Medium,
+                                                            color = OrbitTheme.colors.textSecondary
+                                                        )
+                                                        Row(
+                                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Button(
+                                                                onClick = { syncQqPlaylists() },
+                                                                enabled = !isSyncingQqPlaylists,
+                                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1ECF96)),
+                                                                shape = RoundedCornerShape(12.dp)
+                                                            ) {
+                                                                if (isSyncingQqPlaylists) {
+                                                                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.White)
+                                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                                } else {
+                                                                    Icon(imageVector = Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                                }
+                                                                Text(if (isSyncingQqPlaylists) "正在同步中..." else "一键同步 QQ 歌单", color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                                                            }
+
+                                                            OutlinedButton(
+                                                                onClick = { viewModel.setTab(LibraryTab.QQ_SQUARE) },
+                                                                border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.4f)),
+                                                                shape = RoundedCornerShape(12.dp)
+                                                            ) {
+                                                                Text("前往 QQ 广场", color = OrbitTheme.colors.primary, fontSize = 12.5.sp)
+                                                            }
+                                                        }
+                                                    }
+                                                } else {
+                                                    Column(
+                                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = "登录 QQ 音乐即可在此无缝同步个人自建歌单与收藏",
+                                                            fontSize = 12.sp,
+                                                            color = OrbitTheme.colors.textSecondary
+                                                        )
+                                                        Row(
+                                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Button(
+                                                                onClick = { showQqLoginDialog = true },
+                                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1ECF96)),
+                                                                shape = RoundedCornerShape(12.dp)
+                                                            ) {
+                                                                Icon(imageVector = Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
+                                                                Spacer(modifier = Modifier.width(6.dp))
+                                                                Text("登录 QQ 音乐", color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                                                            }
+
+                                                            OutlinedButton(
+                                                                onClick = { viewModel.setTab(LibraryTab.QQ_SQUARE) },
+                                                                border = BorderStroke(1.dp, OrbitTheme.colors.primary.copy(alpha = 0.4f)),
+                                                                shape = RoundedCornerShape(12.dp)
+                                                            ) {
+                                                                Text("前往 QQ 广场", color = OrbitTheme.colors.primary, fontSize = 12.5.sp)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            } else if (selectedPlaylistGroup in listOf("NETEASE", "KUGOU", "KUWO", "MIGU") && q.isBlank()) {
                                                 Spacer(modifier = Modifier.height(16.dp))
                                                 val targetTab = when (selectedPlaylistGroup) {
                                                     "NETEASE" -> LibraryTab.NETEASE_SQUARE
-                                                    "QQ" -> LibraryTab.QQ_SQUARE
                                                     "KUGOU" -> LibraryTab.KUGOU_SQUARE
                                                     "KUWO" -> LibraryTab.KUWO_SQUARE
                                                     "MIGU" -> LibraryTab.MIGU_SQUARE
@@ -3794,7 +4010,6 @@ fun MusicLibraryScreen(
                                                 }
                                                 val platformName = when (selectedPlaylistGroup) {
                                                     "NETEASE" -> "网易云音乐"
-                                                    "QQ" -> "QQ 音乐"
                                                     "KUGOU" -> "酷狗音乐"
                                                     "KUWO" -> "酷我音乐"
                                                     "MIGU" -> "咪咕音乐"
@@ -4590,6 +4805,18 @@ fun MusicLibraryScreen(
                                         }
                                     }
                                 }
+                            }
+
+                            // 歌单页面快捷调起 QQ 音乐授权/扫码登录弹窗
+                            if (showQqLoginDialog) {
+                                com.orbit.music.ui.components.auth.PlatformLoginDialog(
+                                    platform = OnlinePlatform.QQ,
+                                    onDismiss = { showQqLoginDialog = false },
+                                    onLoginSuccess = {
+                                        showQqLoginDialog = false
+                                        syncQqPlaylists()
+                                    }
+                                )
                             }
                         }
                     }

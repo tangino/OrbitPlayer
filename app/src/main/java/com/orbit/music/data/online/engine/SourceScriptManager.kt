@@ -18,6 +18,20 @@ import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
 /**
+ * 在线音频寻源策略
+ */
+enum class ResolveStrategy(val id: String, val title: String, val desc: String) {
+    CLASSIC_POLLING("classic", "经典多源轮询", "多平台与多音源按序逐一轮询，严格流长验证，抗试听与偶发播放异常"),
+    MODERN_CONCURRENT("concurrent", "并发智能寻源 (默认)", "多平台并发探活与竞速搜救，寻源响应迅速");
+
+    companion object {
+        fun fromId(id: String?): ResolveStrategy {
+            return values().firstOrNull { it.id == id } ?: CLASSIC_POLLING
+        }
+    }
+}
+
+/**
  * 在线音源脚本持久化与生命周期管理器
  */
 class SourceScriptManager private constructor(private val context: Context) {
@@ -43,6 +57,9 @@ class SourceScriptManager private constructor(private val context: Context) {
     private val _preferredQuality = MutableStateFlow("flac")
     val preferredQuality: StateFlow<String> = _preferredQuality.asStateFlow()
 
+    private val _resolveStrategy = MutableStateFlow(ResolveStrategy.CLASSIC_POLLING)
+    val resolveStrategy: StateFlow<ResolveStrategy> = _resolveStrategy.asStateFlow()
+
     init {
         loadSavedConfig()
     }
@@ -50,6 +67,9 @@ class SourceScriptManager private constructor(private val context: Context) {
     private fun loadSavedConfig() {
         val quality = prefs.getString("preferred_quality", "flac") ?: "flac"
         _preferredQuality.value = quality
+
+        val strategyId = prefs.getString("resolve_strategy", ResolveStrategy.CLASSIC_POLLING.id)
+        _resolveStrategy.value = ResolveStrategy.fromId(strategyId)
 
         val rawJson = prefs.getString("scripts_list_json", null)
         val loadedList = mutableListOf<SourceScriptItem>()
@@ -86,6 +106,7 @@ class SourceScriptManager private constructor(private val context: Context) {
         prefs.edit()
             .putString("scripts_list_json", array.toString())
             .putString("preferred_quality", _preferredQuality.value)
+            .putString("resolve_strategy", _resolveStrategy.value.id)
             .apply()
         updateActiveAndEnabledFlows(_scripts.value)
     }
@@ -93,6 +114,11 @@ class SourceScriptManager private constructor(private val context: Context) {
     fun setPreferredQuality(quality: String) {
         _preferredQuality.value = quality
         prefs.edit().putString("preferred_quality", quality).apply()
+    }
+
+    fun setResolveStrategy(strategy: ResolveStrategy) {
+        _resolveStrategy.value = strategy
+        prefs.edit().putString("resolve_strategy", strategy.id).apply()
     }
 
     /**

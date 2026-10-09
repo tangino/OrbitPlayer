@@ -161,6 +161,45 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
 
     fun getActiveEnginesCount(): Int = engineHolders.size
 
+    /**
+     * 主动驱逐指定单曲的内存 URL 缓存 (当播放异常/403/过期时调用)
+     */
+    fun evictUrlCache(platform: OnlinePlatform, songId: String) {
+        val baseKey = "${platform.id}:$songId"
+        memoryUrlCache.remove(baseKey)
+        listOf("128k", "320k", "flac", "flac24bit").forEach { q ->
+            memoryUrlCache.remove("$baseKey:$q")
+        }
+        Log.d(TAG, "Evicted URL cache for ${platform.displayName}:$songId")
+    }
+
+    /**
+     * 预热与预加载音频流 (后台提前建立连接与首块数据缓冲)
+     */
+    suspend fun preloadAudioStream(url: String, platform: OnlinePlatform? = null): Boolean = withContext(Dispatchers.IO) {
+        if (url.isBlank() || !url.startsWith("http", ignoreCase = true)) return@withContext false
+        try {
+            val reqBuilder = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+                .header("Range", "bytes=0-65536") // 预读前 64KB
+            if (platform != null) {
+                when (platform) {
+                    OnlinePlatform.QQ -> reqBuilder.header("Referer", "https://y.qq.com/")
+                    OnlinePlatform.NETEASE -> reqBuilder.header("Referer", "https://music.163.com/")
+                    OnlinePlatform.KUGOU -> reqBuilder.header("Referer", "https://www.kugou.com/")
+                    OnlinePlatform.KUWO -> reqBuilder.header("Referer", "https://www.kuwo.cn/")
+                    OnlinePlatform.MIGU -> reqBuilder.header("Referer", "https://m.music.migu.cn/")
+                }
+            }
+            okHttpClient.newCall(reqBuilder.build()).execute().use { resp ->
+                resp.isSuccessful || resp.code == 206
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
@@ -177,7 +216,8 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
     private object SongMatcher {
         private val SPECIAL_TAGS = listOf(
             "live", "伴奏", "instrumental", "inst", "remix", "cover", "翻唱", "dj", "纯音乐",
-            "demo", "片段", "铃声", "ringtone", "慢摇", "变奏", "钢琴版", "吉他版", "八音盒"
+            "demo", "片段", "铃声", "ringtone", "慢摇", "变奏", "钢琴版", "吉他版", "八音盒",
+            "试听", "试听版", "试听片段", "截取", "audition", "preview", "trial", "sample"
         )
 
         private val HTML_TAG_REGEX = Regex("<[^>]+>")
@@ -660,23 +700,44 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
 
     /**
      * 针对音频直链进行快速探活、流长度与实际时间长度完整性校验
+     * 严格杜绝试听截断短流 (30s/45s 试听片段)、网页报错流及无效防盗链响应
      */
     private suspend fun probeAndValidateAudioUrl(
         rawUrl: String,
-        expectedDurationMs: Long = 0L
+        expectedDurationMs: Long = 0L,
+        targetPlatform: OnlinePlatform? = null
     ): Pair<String, Long>? = withContext(Dispatchers.IO) {
         if (rawUrl.isBlank()) return@withContext null
         if (!rawUrl.startsWith("http://", ignoreCase = true) && !rawUrl.startsWith("https://", ignoreCase = true)) {
             return@withContext null
         }
+
+        // 1. URL 关键字检测：识别各大平台试听/预览标记
+        val lowerUrl = rawUrl.lowercase()
+        if (lowerUrl.contains("audition") || lowerUrl.contains("preview") || lowerUrl.contains("trial") ||
+            lowerUrl.contains("sample") || lowerUrl.contains("listen_part") || lowerUrl.contains("/short/")
+        ) {
+            Log.w(TAG, "Audio probe rejected URL: URL contains preview/audition keyword for $rawUrl")
+            return@withContext null
+        }
+
         try {
-            // 1. 使用 Range 请求探测前 8KB 数据与响应头 (快速、低流量)
-            val req = Request.Builder()
+            // 2. 使用 Range 请求探测前 8KB 数据与响应头 (附加各平台合规防盗链 Header)
+            val reqBuilder = Request.Builder()
                 .url(rawUrl)
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
                 .header("Range", "bytes=0-8192")
                 .header("Accept", "*/*")
-                .build()
+
+            if (targetPlatform != null) {
+                when (targetPlatform) {
+                    OnlinePlatform.QQ -> reqBuilder.header("Referer", "https://y.qq.com/")
+                    OnlinePlatform.NETEASE -> reqBuilder.header("Referer", "https://music.163.com/")
+                    OnlinePlatform.KUGOU -> reqBuilder.header("Referer", "https://www.kugou.com/")
+                    OnlinePlatform.KUWO -> reqBuilder.header("Referer", "https://www.kuwo.cn/")
+                    OnlinePlatform.MIGU -> reqBuilder.header("Referer", "https://m.music.migu.cn/")
+                }
+            }
 
             var finalUrl: String? = null
             var totalContentLength = -1L
@@ -684,7 +745,7 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
             var httpSuccess = false
 
             try {
-                okHttpClient.newCall(req).execute().use { resp ->
+                okHttpClient.newCall(reqBuilder.build()).execute().use { resp ->
                     val code = resp.code
                     finalUrl = resp.request.url.toString()
                     contentType = resp.header("Content-Type", "")?.lowercase() ?: ""
@@ -706,8 +767,8 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
                             totalContentLength = resp.header("Content-Length")?.toLongOrNull() ?: -1L
                         }
 
-                        // 文件太小（如小于 1KB 的错误响应体）
-                        if (code == 200 && totalContentLength in 0..1024) {
+                        // 文件过小 (如小于 2KB 的假响应体)
+                        if (code == 200 && totalContentLength in 0..2048) {
                             return@withContext null
                         }
                     }
@@ -719,12 +780,20 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
             // 若 Range 请求因 CDN 限制返回非成功，尝试轻量 HEAD 确认连通性
             if (!httpSuccess) {
                 try {
-                    val headReq = Request.Builder()
+                    val headReqBuilder = Request.Builder()
                         .url(rawUrl)
                         .header("User-Agent", "Mozilla/5.0 (Linux; Android 13; Mobile)")
                         .head()
-                        .build()
-                    okHttpClient.newCall(headReq).execute().use { resp ->
+                    if (targetPlatform != null) {
+                        when (targetPlatform) {
+                            OnlinePlatform.QQ -> headReqBuilder.header("Referer", "https://y.qq.com/")
+                            OnlinePlatform.NETEASE -> headReqBuilder.header("Referer", "https://music.163.com/")
+                            OnlinePlatform.KUGOU -> headReqBuilder.header("Referer", "https://www.kugou.com/")
+                            OnlinePlatform.KUWO -> headReqBuilder.header("Referer", "https://www.kuwo.cn/")
+                            OnlinePlatform.MIGU -> headReqBuilder.header("Referer", "https://m.music.migu.cn/")
+                        }
+                    }
+                    okHttpClient.newCall(headReqBuilder.build()).execute().use { resp ->
                         if (resp.isSuccessful) {
                             finalUrl = resp.request.url.toString()
                             contentType = resp.header("Content-Type", "")?.lowercase() ?: ""
@@ -737,20 +806,31 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
 
             val validUrl = finalUrl ?: rawUrl
 
-            // 2. 🚀 高速放行通道：已知完整大文件（>=500KB 或达到预期时长基准）直接放行
-            val isKnownLargeCompleteFile = totalContentLength >= 500_000L ||
-                    (expectedDurationMs >= 45000L && totalContentLength >= (expectedDurationMs / 1000L) * 8_000L)
-            if (isKnownLargeCompleteFile) {
-                return@withContext Pair(validUrl, expectedDurationMs)
+            // 3. 严格流长度比对检验：根据预期时间推算合法最小流字节数 (按 64kbps 极限低码率，每秒至少 8KB)
+            if (expectedDurationMs >= 30_000L && totalContentLength > 0L) {
+                val minExpectedBytes = (expectedDurationMs / 1000L) * 8_000L
+                if (totalContentLength < minExpectedBytes) {
+                    Log.w(TAG, "Audio probe rejected URL: stream length too short ($totalContentLength bytes, min required $minExpectedBytes bytes for ${expectedDurationMs}ms) for $validUrl")
+                    return@withContext null
+                }
             }
 
-            // 3. 针对可疑较小文件，启动 MediaMetadataRetriever 时长检验 (超时设为 2500ms，保障网络稳定性)
+            // 4. 启动 MediaMetadataRetriever 探测真实时间长度 (超时设为 2500ms)
             var detectedDurationMs = 0L
             try {
                 kotlinx.coroutines.withTimeoutOrNull(2500L) {
                     val retriever = android.media.MediaMetadataRetriever()
                     try {
-                        val headers = mapOf("User-Agent" to "Mozilla/5.0 (Linux; Android 13; Mobile)")
+                        val headers = mutableMapOf("User-Agent" to "Mozilla/5.0 (Linux; Android 13; Mobile)")
+                        if (targetPlatform != null) {
+                            when (targetPlatform) {
+                                OnlinePlatform.QQ -> headers["Referer"] = "https://y.qq.com/"
+                                OnlinePlatform.NETEASE -> headers["Referer"] = "https://music.163.com/"
+                                OnlinePlatform.KUGOU -> headers["Referer"] = "https://www.kugou.com/"
+                                OnlinePlatform.KUWO -> headers["Referer"] = "https://www.kuwo.cn/"
+                                OnlinePlatform.MIGU -> headers["Referer"] = "https://m.music.migu.cn/"
+                            }
+                        }
                         retriever.setDataSource(validUrl, headers)
                         val durStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
                         detectedDurationMs = durStr?.toLongOrNull() ?: 0L
@@ -764,19 +844,33 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
                 Log.d(TAG, "MediaMetadataRetriever probe skipped for $validUrl: ${e.message}")
             }
 
-            // 4. 杜绝 30 秒试听截断短流
-            if (expectedDurationMs >= 45000L && detectedDurationMs > 0L) {
-                if (detectedDurationMs < 45000L && expectedDurationMs >= 60000L) {
+            // 5. 严格拦截 30秒/45秒 试听短流与严重残缺截断音频
+            if (detectedDurationMs > 0L) {
+                // 若实际探测时长小于等于 45 秒，但预期时长大于等于 60 秒或时长未知，判定为试听截断短流
+                if (detectedDurationMs <= 45_000L && (expectedDurationMs >= 60_000L || expectedDurationMs <= 0L)) {
+                    Log.w(TAG, "Audio probe rejected URL: preview snippet detected ($detectedDurationMs ms) for $validUrl")
+                    return@withContext null
+                }
+                // 若实际探测时长小于 60 秒，而预期歌曲大于 90 秒
+                if (detectedDurationMs < 60_000L && expectedDurationMs >= 90_000L) {
                     Log.w(TAG, "Audio probe rejected URL: preview duration too short ($detectedDurationMs ms vs expected $expectedDurationMs ms) for $validUrl")
                     return@withContext null
                 }
-                if (detectedDurationMs < (expectedDurationMs * 0.60f).toLong()) {
-                    Log.w(TAG, "Audio probe rejected URL: actual duration incomplete ($detectedDurationMs ms vs expected $expectedDurationMs ms) for $validUrl")
+                // 若实际时长短于预期时长的 70%，判定为不完整流
+                if (expectedDurationMs >= 45_000L && detectedDurationMs < (expectedDurationMs * 0.70f).toLong()) {
+                    Log.w(TAG, "Audio probe rejected URL: incomplete audio duration ($detectedDurationMs ms vs expected $expectedDurationMs ms) for $validUrl")
+                    return@withContext null
+                }
+            } else {
+                // 若 MediaMetadataRetriever 超时或未解析出时长，且已知文件流偏小 (如未知时长但流小于 1MB)，杜绝试听音频混入
+                if (expectedDurationMs <= 0L && totalContentLength in 1..1_000_000L) {
+                    Log.w(TAG, "Audio probe rejected suspicious small stream without duration verification ($totalContentLength bytes) for $validUrl")
                     return@withContext null
                 }
             }
 
-            Pair(validUrl, if (detectedDurationMs > 0L) detectedDurationMs else expectedDurationMs)
+            val finalDuration = if (detectedDurationMs > 0L) detectedDurationMs else expectedDurationMs
+            Pair(validUrl, finalDuration)
         } catch (e: Exception) {
             Log.d(TAG, "Audio probe exception for $rawUrl: ${e.message}")
             null
@@ -850,7 +944,7 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
                     val timeout = if (q == qualityTryList.first()) 3500L else 2500L
                     val url = engine.resolveMusicUrl(sourceKey, musicInfo, q, timeoutMs = timeout)
                     if (!url.isNullOrBlank() && url.startsWith("http", ignoreCase = true)) {
-                        val probePair = probeAndValidateAudioUrl(url, expectedDurationMs)
+                        val probePair = probeAndValidateAudioUrl(url, expectedDurationMs, targetPlatform)
                         if (probePair != null) {
                             val (validUrl, detectedDur) = probePair
                             val finalDur = if (detectedDur > 0L) detectedDur else if (cand.durationMs > 0L) cand.durationMs else expectedDurationMs
@@ -874,7 +968,7 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
             if (targetPlatform == OnlinePlatform.NETEASE) {
                 if (effectiveId.isNotEmpty() && effectiveId.matches(Regex("^\\d+$"))) {
                     val outerUrl = "https://music.163.com/song/media/outer/url?id=$effectiveId.mp3"
-                    val probePair = probeAndValidateAudioUrl(outerUrl, expectedDurationMs)
+                    val probePair = probeAndValidateAudioUrl(outerUrl, expectedDurationMs, targetPlatform)
                     if (probePair != null) {
                         val (validUrl, detectedDur) = probePair
                         val finalDur = if (detectedDur > 0L) detectedDur else if (cand.durationMs > 0L) cand.durationMs else expectedDurationMs
@@ -898,7 +992,7 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
                 if (effectiveId.isNotEmpty()) {
                     val miguUrl = resolveMiguDirectPlayUrl(effectiveId)
                     if (!miguUrl.isNullOrBlank()) {
-                        val probePair = probeAndValidateAudioUrl(miguUrl, expectedDurationMs)
+                        val probePair = probeAndValidateAudioUrl(miguUrl, expectedDurationMs, targetPlatform)
                         if (probePair != null) {
                             val (validUrl, detectedDur) = probePair
                             val finalDur = if (detectedDur > 0L) detectedDur else if (cand.durationMs > 0L) cand.durationMs else expectedDurationMs
@@ -923,7 +1017,194 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
     }
 
     /**
-     * 异步解析在线单曲的真实音频直链与音源信息 (支持流长度/时间完整性校验与跨平台多源自动降级寻址)
+     * 0.3.0 经典多源轮询模式 (可选项)
+     * 特性：
+     * 1. 严格保留 0.3.0 版本的平台顺序遍历 (原平台优先 -> 其余平台依次轮询)
+     * 2. 在每个平台上，对所有已启用的音源脚本池 (主源 -> 备用源1 -> 备用源2) 依次轮询尝试
+     * 3. 严格流长度与时长比对防试听、防截断短流
+     * 4. 平台官方兜底直链兜底
+     * 5. 无乱序并发抢占，稳定性极佳
+     */
+    suspend fun resolvePlayableSourceClassicPolling(
+        platform: OnlinePlatform,
+        songId: String,
+        title: String,
+        artist: String,
+        album: String,
+        expectedDurationMs: Long = 0L,
+        explicitQuality: String? = null
+    ): ResolvedAudioSource? = withContext(Dispatchers.IO) {
+        val cacheKey = if (explicitQuality != null) "${platform.id}:$songId:$explicitQuality" else "${platform.id}:$songId"
+        val now = System.currentTimeMillis()
+
+        // 1. 查内存缓存 (15分钟有效期)
+        val cached = memoryUrlCache.get(cacheKey)
+        if (cached != null && cached.expireAtMs > now) {
+            Log.d(TAG, "[ClassicPolling] Hit memory cache for $title: ${cached.url}")
+            return@withContext ResolvedAudioSource(
+                url = cached.url,
+                platform = platform,
+                sourceName = platform.displayName,
+                durationMs = expectedDurationMs,
+                quality = explicitQuality
+            )
+        }
+
+        val prefQuality = explicitQuality ?: SourceScriptManager.getInstance(context).preferredQuality.value
+        val qualityTryList = when (prefQuality) {
+            "flac24bit" -> listOf("flac24bit", "flac", "320k", "128k")
+            "flac" -> listOf("flac", "320k", "128k")
+            "320k" -> listOf("320k", "128k")
+            else -> listOf("128k", "320k", "flac")
+        }
+
+        // 2. 候选平台列表：当前平台优先，其余平台按序轮询
+        val candidatePlatforms = listOf(platform) + OnlinePlatform.values().filter { it != platform }
+
+        // 3. 所有可用音源列表：主音源优先，备用音源依次轮询
+        val primaryHolder = engineHolders.firstOrNull { it.isPrimary } ?: engineHolders.firstOrNull()
+        val orderedEngines = if (primaryHolder != null) {
+            listOf(primaryHolder) + engineHolders.filter { it != primaryHolder }
+        } else {
+            engineHolders.toList()
+        }
+
+        var resolvedResult: ResolvedAudioSource? = null
+
+        for (targetPlatform in candidatePlatforms) {
+            val isOriginal = (targetPlatform == platform)
+            var targetSongId = if (isOriginal) songId else ""
+            var targetHash = if (isOriginal) songId else ""
+
+            if (!isOriginal) {
+                val match = searchMatchedSongsOnPlatform(targetPlatform, title, artist, expectedDurationMs).firstOrNull()
+                if (match != null) {
+                    targetSongId = match.songId
+                    targetHash = match.hash ?: match.songId
+                } else {
+                    // 该平台无匹配歌曲，跳到下一平台
+                    continue
+                }
+            }
+
+            val sourceKey = when (targetPlatform) {
+                OnlinePlatform.NETEASE -> "wy"
+                OnlinePlatform.QQ -> "tx"
+                OnlinePlatform.KUGOU -> "kg"
+                OnlinePlatform.KUWO -> "kw"
+                OnlinePlatform.MIGU -> "mg"
+            }
+
+            val effectiveId = targetSongId.ifEmpty { songId }
+            val effectiveHash = targetHash.ifEmpty { songId }
+
+            // 4. 在当前平台上依次轮询各个音源脚本
+            for (holder in orderedEngines) {
+                val musicInfo = JSONObject().apply {
+                    put("name", title)
+                    put("singer", artist)
+                    put("albumName", album)
+                    put("songmid", effectiveId)
+                    put("id", effectiveId)
+                    put("hash", effectiveHash)
+                    put("copyrightId", effectiveId)
+                    put("source", sourceKey)
+                    put("types", JSONArray().apply {
+                        put(JSONObject().put("type", "128k"))
+                        put(JSONObject().put("type", "320k"))
+                        put(JSONObject().put("type", "flac"))
+                        put(JSONObject().put("type", "flac24bit"))
+                    })
+                }
+
+                for (q in qualityTryList) {
+                    val url = holder.engine.resolveMusicUrl(sourceKey, musicInfo, q, timeoutMs = 3500L)
+                    if (!url.isNullOrBlank() && url.startsWith("http", ignoreCase = true)) {
+                        val probePair = probeAndValidateAudioUrl(url, expectedDurationMs, targetPlatform)
+                        if (probePair != null) {
+                            val (validUrl, detectedDur) = probePair
+                            val finalDur = if (detectedDur > 0L) detectedDur else expectedDurationMs
+                            resolvedResult = ResolvedAudioSource(
+                                url = validUrl,
+                                platform = targetPlatform,
+                                sourceName = "${targetPlatform.displayName} (${holder.name})",
+                                quality = q,
+                                durationMs = finalDur,
+                                isFallback = !isOriginal || !holder.isPrimary,
+                                fallbackReason = if (!isOriginal) "原平台音频缺失，由「${holder.name}」切换至 ${targetPlatform.displayName}" else null
+                            )
+                            Log.i(TAG, "[ClassicPolling] Successfully resolved $title ($q) via ${holder.name} on ${targetPlatform.displayName}: $validUrl (duration: ${finalDur}ms)")
+                            break
+                        }
+                    }
+                }
+                if (resolvedResult != null) break
+            }
+
+            // 5. 针对网易云官方 outer 兜底直链
+            if (resolvedResult == null && targetPlatform == OnlinePlatform.NETEASE) {
+                val neteaseId = targetSongId.ifEmpty { if (isOriginal) songId else "" }
+                if (neteaseId.isNotEmpty() && neteaseId.matches(Regex("^\\d+$"))) {
+                    val outerUrl = "https://music.163.com/song/media/outer/url?id=$neteaseId.mp3"
+                    val probePair = probeAndValidateAudioUrl(outerUrl, expectedDurationMs, targetPlatform)
+                    if (probePair != null) {
+                        val (validUrl, detectedDur) = probePair
+                        val finalDur = if (detectedDur > 0L) detectedDur else expectedDurationMs
+                        resolvedResult = ResolvedAudioSource(
+                            url = validUrl,
+                            platform = targetPlatform,
+                            sourceName = "网易云官方",
+                            quality = "128k",
+                            durationMs = finalDur,
+                            isFallback = !isOriginal,
+                            fallbackReason = if (!isOriginal) "原音源未匹配，自动降级至网易云官方音频" else null
+                        )
+                        Log.i(TAG, "[ClassicPolling] Fallback to verified Netease outer URL for $title: $validUrl")
+                    }
+                }
+            }
+
+            // 6. 针对咪咕音乐官方免费直链兜底
+            if (resolvedResult == null && targetPlatform == OnlinePlatform.MIGU) {
+                val miguId = targetSongId.ifEmpty { if (isOriginal) songId else "" }
+                if (miguId.isNotEmpty()) {
+                    val miguUrl = resolveMiguDirectPlayUrl(miguId)
+                    if (!miguUrl.isNullOrBlank()) {
+                        val probePair = probeAndValidateAudioUrl(miguUrl, expectedDurationMs, targetPlatform)
+                        if (probePair != null) {
+                            val (validUrl, detectedDur) = probePair
+                            val finalDur = if (detectedDur > 0L) detectedDur else expectedDurationMs
+                            resolvedResult = ResolvedAudioSource(
+                                url = validUrl,
+                                platform = targetPlatform,
+                                sourceName = "咪咕官方",
+                                quality = "HQ",
+                                durationMs = finalDur,
+                                isFallback = !isOriginal,
+                                fallbackReason = if (!isOriginal) "原音源未匹配，自动降级至咪咕官方直链" else null
+                            )
+                            Log.i(TAG, "[ClassicPolling] Fallback to verified Migu official direct URL for $title: $validUrl")
+                        }
+                    }
+                }
+            }
+
+            // 一旦成功获取并通过流长度与时长检验的有效直链，立即结束遍历
+            if (resolvedResult != null) {
+                break
+            }
+        }
+
+        if (resolvedResult != null) {
+            val expireAt = now + 15 * 60 * 1000L // 15分钟有效期，防止过期防盗链
+            memoryUrlCache.put(cacheKey, CachedUrl(resolvedResult.url, expireAt))
+        }
+
+        resolvedResult
+    }
+
+    /**
+     * 异步解析在线单曲的真实音频直链与音源信息 (支持多寻源策略分发、流长度/时间完整性校验与跨平台多源降级)
      */
     suspend fun resolvePlayableSource(
         platform: OnlinePlatform,
@@ -934,6 +1215,19 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
         expectedDurationMs: Long = 0L,
         explicitQuality: String? = null
     ): ResolvedAudioSource? = withContext(Dispatchers.IO) {
+        val currentStrategy = SourceScriptManager.getInstance(context).resolveStrategy.value
+        if (currentStrategy == ResolveStrategy.CLASSIC_POLLING) {
+            return@withContext resolvePlayableSourceClassicPolling(
+                platform = platform,
+                songId = songId,
+                title = title,
+                artist = artist,
+                album = album,
+                expectedDurationMs = expectedDurationMs,
+                explicitQuality = explicitQuality
+            )
+        }
+
         val cacheKey = if (explicitQuality != null) "${platform.id}:$songId:$explicitQuality" else "${platform.id}:$songId"
         val now = System.currentTimeMillis()
 
@@ -1072,8 +1366,8 @@ class OnlineAudioSourceManager private constructor(private val context: Context)
                 Log.w(TAG, "All active ${engineHolders.size} source engines failed to resolve valid complete audio for $title across all platforms")
             }
         } else {
-            // 写入缓存 (有效期 1 小时)
-            val expireAt = now + 3600_000L
+            // 写入缓存 (有效期 15 分钟，防止防盗链 token 过期导致 403 播放失败)
+            val expireAt = now + 15 * 60 * 1000L
             memoryUrlCache.put(cacheKey, CachedUrl(finalResult.url, expireAt))
         }
 
