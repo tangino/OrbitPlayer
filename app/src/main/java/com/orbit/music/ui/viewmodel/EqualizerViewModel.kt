@@ -576,7 +576,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun toggleLimiter(enabled: Boolean) {
-        _uiState.update { it.copy(isLimiterEnabled = enabled) }
+        _uiState.update { it.copy(isLimiterEnabled = enabled, isCompressorEnabled = enabled) }
         effectManager.setLimiterEnabled(enabled)
         saveEqualizerUiState()
     }

@@ -417,20 +417,21 @@ class AudioEffectManager private constructor(private val context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             try {
                 val userLimiterActive = this.isEnabled && this.isLimiterEnabled
-                val targetThreshold = if (userLimiterActive) -2.5f else -0.5f
-                val targetRatio = if (userLimiterActive) 20.0f else 100.0f
-                val targetAttack = if (userLimiterActive) 1.0f else 0.5f
-                val targetRelease = if (userLimiterActive) 50.0f else 30.0f
+                // 开启时：-1.0dBFS 实用安全防削波门限 + 12:1 砖墙；关闭时：0dBFS 且 1:1 比率，完全透明旁路直通
+                val targetThreshold = if (userLimiterActive) -1.0f else 0.0f
+                val targetRatio = if (userLimiterActive) 12.0f else 1.0f
+                val targetAttack = if (userLimiterActive) 1.5f else 10.0f
+                val targetRelease = if (userLimiterActive) 60.0f else 100.0f
 
                 val limiter = DynamicsProcessing.Limiter(
-                    true,            // inUse
-                    this.isEnabled,  // 只要总音效开启即全程守护数字输出天花板
-                    0,               // linkGroup
-                    targetAttack,    // 快速拦截
-                    targetRelease,   // 平滑释放
-                    targetRatio,     // 砖墙拦截比率
-                    targetThreshold, // 门限
-                    0.0f             // postGain
+                    true,              // inUse
+                    userLimiterActive, // 真正由用户压限器开关控制！关闭时彻底 bypass 旁路
+                    0,                 // linkGroup
+                    targetAttack,      // 快速瞬态起控
+                    targetRelease,     // 平滑释放
+                    targetRatio,       // 限幅比率
+                    targetThreshold,   // 门限
+                    0.0f               // postGain
                 )
                 dp.setLimiterAllChannelsTo(limiter)
             } catch (e: Exception) {
@@ -501,19 +502,23 @@ class AudioEffectManager private constructor(private val context: Context) {
     fun setLimiterEnabled(enabled: Boolean, thresholdDb: Float = -2.5f) {
         this.isLimiterEnabled = enabled
         this.limiterThresholdDb = thresholdDb
+        // 核心联动：压限器（Dynamics Processor）开关开启时，同时激活动态压缩器与防削波限幅器；关闭时完全旁路
+        this.isCompressorEnabled = enabled
 
         // 同步给 Native C++ DSP
         nativeDSP.setLimiter(enabled, thresholdDb)
+        nativeDSP.setCompressor(enabled, compressorThresholdDb, compressorRatio, compressorAttackMs, compressorReleaseMs, compressorMakeupGainDb)
 
         // 核心：立即同步给所有活跃的系统 AudioSession
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             activeSessions.values.forEach { session ->
                 session.dynamicsProcessing?.let { dp ->
                     syncLimiterToDynamicsProcessing(dp)
+                    syncCompressorToDynamicsProcessing(dp)
                 }
             }
         }
-        Log.i(TAG, "Limiter updated: enabled=$enabled, threshold=$thresholdDb dB")
+        Log.i(TAG, "Limiter & Compressor updated: enabled=$enabled, threshold=$thresholdDb dB")
     }
 
     @Synchronized
