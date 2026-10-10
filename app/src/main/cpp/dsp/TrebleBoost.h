@@ -12,8 +12,8 @@ public:
     ~TrebleBoost() = default;
 
     void setSampleRate(float sampleRate);
-    void setStrength(float strength); // 0.0f ~ 1.0f (对应 0dB ~ +12dB)
-    void setCenterFrequency(float freq); // 默认 5000Hz (5kHz)
+    void setStrength(float strength); // 0.0f ~ 1.0f (Poweramp 规格：映射至 0dB ~ +15.0dB)
+    void setCenterFrequency(float freq); // Poweramp 规格默认 10000Hz
     void setEnabled(bool enabled) { enabled_ = enabled; }
 
     bool isEnabled() const { return enabled_; }
@@ -29,7 +29,7 @@ private:
     bool enabled_ = false;
     float sampleRate_ = 44100.0f;
     float strength_ = 0.0f;       // 0.0 ~ 1.0
-    float frequency_ = 5000.0f;   // Hz
+    float frequency_ = 10000.0f;  // Poweramp 原版标准高音中心频点 10kHz
 
     BiquadFilter highShelfL_;
     BiquadFilter highShelfR_;

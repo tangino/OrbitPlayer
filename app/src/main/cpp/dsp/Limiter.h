@@ -25,10 +25,10 @@ private:
 
     bool enabled_ = true;
     float sampleRate_ = 44100.0f;
-    float thresholdDb_ = -2.5f;          // 实用防削波门限 -2.5dB
-    float thresholdLinear_ = 0.74989f;
-    float attackMs_ = 0.5f;              // 快速平滑瞬态响应
-    float releaseMs_ = 80.0f;            // 柔和自然释放
+    float thresholdDb_ = -1.0f;          // Poweramp 规格 -1.0dBFS 砖墙安全裕量
+    float thresholdLinear_ = 0.89125f;
+    float attackMs_ = 0.001f;            // 1 微秒级超高速瞬态峰值拦截
+    float releaseMs_ = 75.0f;            // Poweramp 原版标准 75ms 释放时间常数
 
     float attackCoeff_ = 0.0f;
     float releaseCoeff_ = 0.0f;

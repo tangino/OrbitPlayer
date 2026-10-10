@@ -2,20 +2,19 @@ package com.orbit.music.ui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -24,13 +23,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.orbit.music.ui.theme.OrbitTheme
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
- * 纯粹平滑的 2D 拖拽手势旋转旋钮 (Pure 2D Directional Drag Rotary Knob)
- * 1. 向上/向右滑动增加，向下/向左滑动减少
- * 2. 彻底移除点击瞬跳与误触，全卡片大范围跟手滑动
+ * 1:1 还原 Poweramp 旗舰级丝滑手感与声学质感的专业圆盘旋钮 (Rotary Knob)
+ * 1. 极致丝滑手感架构：
+ *    - 本地瞬态无缝驱动 (Local Fast-path State)：手势帧内即时重绘，杜绝 Compose 重组掉帧；
+ *    - 稳定持久手势信道 (Stable pointerInput)：永不因数值改变重启手势协程，杜绝手势断触；
+ *    - 绕圈旋转 (Rotary Tracking)：手指沿圆周转动，按极坐标角度 1:1 丝滑跟随；
+ *    - 垂直推拉 (Vertical Dragging)：单指垂直上下轻推，自然线性平滑调节；
+ *    - 点击上下部微调 (Tap Micro-stepping)：点击旋钮上方 +2%，点击下方 -2%；
+ *    - 双击重置 (Double-tap to Reset)：快速双击恢复 50% 默认平衡位置。
+ * 2. 视觉表现：
+ *    - 纯净金属质感微凸圆盘底座；
+ *    - 270度外缘环形声学刻度轨 (135° ~ 405°)；
+ *    - 内嵌高精度指向指针。
  */
 @Composable
 fun DspRotaryKnob(
@@ -38,160 +48,190 @@ fun DspRotaryKnob(
     strength: Float, // 0.0f ~ 1.0f
     enabled: Boolean,
     onStrengthChanged: (Float) -> Unit,
-    onToggleEnabled: (Boolean) -> Unit,
+    onToggleEnabled: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val colors = OrbitTheme.colors
-    val percentage = (strength * 100).toInt()
-    val gainDb = strength * 12.0f // 0 ~ +12dB
-    val gainLabel = if (strength > 0.01f) "+%.1f dB".format(gainDb) else "0.0 dB"
 
-    // 270 度行程 (从 135度 左下 到 405度 右下)
+    // 本地即时响应状态 (避免跨层级 Recomposition 导致掉帧与卡顿)
+    var localStrength by remember { mutableFloatStateOf(strength) }
+
+    // 当外部由于预设改变等传入新值时，同步给本地状态
+    LaunchedEffect(strength) {
+        if (kotlin.math.abs(localStrength - strength) > 0.001f) {
+            localStrength = strength
+        }
+    }
+
+    // 稳定引用回调，避免 pointerInput 协程因外部状态改变而意外销毁重启
+    val currentOnStrengthChanged by rememberUpdatedState(onStrengthChanged)
+    val currentEnabled by rememberUpdatedState(enabled)
+
+    val percentage = (localStrength * 100).toInt()
     val startAngle = 135f
     val sweepAngle = 270f
+    val currentAngle = startAngle + localStrength * sweepAngle
+    val currentAngleRad = Math.toRadians(currentAngle.toDouble())
+
+    // 记录双击时间戳
+    var lastTapTime by remember { mutableLongStateOf(0L) }
 
     Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(colors.surfaceCard)
-            // 整个卡片区域均支持手势拖动：向上/向右增加，向下/向左减少
-            .pointerInput(enabled, strength) {
-                if (!enabled) return@pointerInput
-                detectDragGestures { change, dragAmount ->
-                    change.consume()
-                    val delta = (-dragAmount.y + dragAmount.x) / 140f
-                    val newStrength = (strength + delta).coerceIn(0f, 1f)
-                    onStrengthChanged(newStrength)
-                }
-            }
-            .padding(vertical = 10.dp, horizontal = 8.dp),
+        modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // 1. 顶部标题与开启/关闭轻触状态
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .clickable { onToggleEnabled(!enabled) }
-                .padding(horizontal = 8.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text(
-                text = title,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (enabled) colors.primary else colors.textSecondary
-            )
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(if (enabled) colors.primary else colors.textSecondary.copy(alpha = 0.5f))
-            )
-        }
+        // 顶部两行：第一行标题（低音/高音），第二行实时数值（50%）
+        Text(
+            text = title,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            color = colors.textPrimary
+        )
 
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(2.dp))
 
-        // 2. 核心大尺寸拟物旋钮盘
+        Text(
+            text = "$percentage%",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (percentage > 0) colors.primary else colors.textSecondary
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 旋钮主体：支持 Poweramp 1:1 极坐标旋转、垂直拖动、点击微调与双击重置
         Box(
-            modifier = Modifier.size(84.dp),
+            modifier = Modifier
+                .size(76.dp)
+                .shadow(elevation = 6.dp, shape = CircleShape, spotColor = Color.Black)
+                .clip(CircleShape)
+                .background(colors.surfaceCard)
+                .border(1.dp, colors.surfaceBorder, CircleShape)
+                .pointerInput(Unit) { // 关键：key 必须为 Unit，手势过程中绝对不重启协程！
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        if (!currentEnabled) return@awaitEachGesture
+
+                        val cx = size.width / 2f
+                        val cy = size.height / 2f
+                        val downPos = down.position
+                        var totalMovedDistance = 0f
+                        var prevPos = downPos
+                        val pointer = down
+
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.find { it.id == pointer.id } ?: break
+
+                            if (change.pressed) {
+                                val newPos = change.position
+                                val dist = (newPos - prevPos).getDistance()
+                                totalMovedDistance += dist
+
+                                if (totalMovedDistance > 6f) {
+                                    change.consume()
+
+                                    // 计算角位移
+                                    val anglePrev = Math.toDegrees(atan2((prevPos.y - cy).toDouble(), (prevPos.x - cx).toDouble())).toFloat()
+                                    val angleNow = Math.toDegrees(atan2((newPos.y - cy).toDouble(), (newPos.x - cx).toDouble())).toFloat()
+                                    var deltaAngle = angleNow - anglePrev
+                                    if (deltaAngle > 180f) deltaAngle -= 360f
+                                    if (deltaAngle < -180f) deltaAngle += 360f
+
+                                    // 垂直位移增量 (向上为正)
+                                    val deltaY = -(newPos.y - prevPos.y)
+
+                                    // 距离圆心的径向距离
+                                    val radiusFromCenter = sqrt((newPos.x - cx) * (newPos.x - cx) + (newPos.y - cy) * (newPos.y - cy))
+
+                                    // 手势融合：圆周拖动优先，中心上下推拉次之
+                                    val delta = if (radiusFromCenter > 15f && kotlin.math.abs(deltaAngle) > 0.3f) {
+                                        deltaAngle / 270f
+                                    } else {
+                                        deltaY / 220f
+                                    }
+
+                                    val newStrength = (localStrength + delta).coerceIn(0f, 1f)
+                                    if (newStrength != localStrength) {
+                                        localStrength = newStrength
+                                        currentOnStrengthChanged(newStrength)
+                                    }
+                                }
+                                prevPos = newPos
+                            } else {
+                                // 手指抬起
+                                change.consume()
+                                val now = System.currentTimeMillis()
+
+                                // 若移动距离很小，判定为点击事件
+                                if (totalMovedDistance <= 6f) {
+                                    if (now - lastTapTime < 320L) {
+                                        // 连续双击：1:1 还原 Poweramp 恢复默认 50%
+                                        localStrength = 0.5f
+                                        currentOnStrengthChanged(0.5f)
+                                        lastTapTime = 0L
+                                    } else {
+                                        lastTapTime = now
+                                        // 单击微调：点击圆心上方 +2%，点击下方 -2%
+                                        val isUpperHalf = downPos.y < cy
+                                        val microStep = if (isUpperHalf) 0.02f else -0.02f
+                                        val newS = (localStrength + microStep).coerceIn(0f, 1f)
+                                        localStrength = newS
+                                        currentOnStrengthChanged(newS)
+                                    }
+                                }
+                                break
+                            }
+                        }
+                    }
+                },
             contentAlignment = Alignment.Center
         ) {
-            // 背景圆弧刻度绘制
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val strokeWidth = 6.dp.toPx()
-                val radius = (size.minDimension - strokeWidth - 4.dp.toPx()) / 2
-                val center = Offset(size.width / 2, size.height / 2)
+            Canvas(modifier = Modifier.fillMaxSize().padding(6.dp)) {
+                val radius = size.minDimension / 2f
+                val center = Offset(size.width / 2f, size.height / 2f)
 
-                // 背景弧形轨道槽
+                // 1. 270度外缘底轨弧线 (底色)
                 drawArc(
-                    color = if (colors.isDark) Color(0xFF282B38) else Color(0xFFCBD5E1),
+                    color = colors.surfaceBorder.copy(alpha = 0.5f),
                     startAngle = startAngle,
                     sweepAngle = sweepAngle,
                     useCenter = false,
-                    topLeft = Offset(center.x - radius, center.y - radius),
-                    size = Size(radius * 2, radius * 2),
-                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                    topLeft = Offset(center.x - radius + 2.dp.toPx(), center.y - radius + 2.dp.toPx()),
+                    size = Size((radius - 2.dp.toPx()) * 2, (radius - 2.dp.toPx()) * 2),
+                    style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
                 )
 
-                // 活跃发光渐变进度弧
-                if (enabled && strength > 0.005f) {
+                // 2. 激活高亮弧线 (从 135° 顺时针延伸至当前角度)
+                if (localStrength > 0.005f) {
                     drawArc(
-                        brush = Brush.sweepGradient(
-                            listOf(
-                                colors.primary.copy(alpha = 0.70f),
-                                colors.primary
-                            )
-                        ),
+                        color = colors.primary,
                         startAngle = startAngle,
-                        sweepAngle = (sweepAngle * strength).coerceAtLeast(2f),
+                        sweepAngle = localStrength * sweepAngle,
                         useCenter = false,
-                        topLeft = Offset(center.x - radius, center.y - radius),
-                        size = Size(radius * 2, radius * 2),
-                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                        topLeft = Offset(center.x - radius + 2.dp.toPx(), center.y - radius + 2.dp.toPx()),
+                        size = Size((radius - 2.dp.toPx()) * 2, (radius - 2.dp.toPx()) * 2),
+                        style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
                     )
                 }
 
-                // 刻度指针发光指示小圆点
-                val currentRad = Math.toRadians((startAngle + sweepAngle * strength).toDouble())
-                val dotRadius = radius - 8.dp.toPx()
-                val dotX = center.x + dotRadius * cos(currentRad).toFloat()
-                val dotY = center.y + dotRadius * sin(currentRad).toFloat()
+                // 3. 旋钮内缘指针指示条 (中心到边缘)
+                val pointerLength = radius * 0.38f
+                val startDist = radius * 0.35f
+                val endDist = startDist + pointerLength
 
-                drawCircle(
-                    color = if (enabled) colors.primary else colors.textSecondary.copy(alpha = 0.5f),
-                    radius = 3.5.dp.toPx(),
-                    center = Offset(dotX, dotY)
+                val startX = center.x + startDist * cos(currentAngleRad).toFloat()
+                val startY = center.y + startDist * sin(currentAngleRad).toFloat()
+                val endX = center.x + endDist * cos(currentAngleRad).toFloat()
+                val endY = center.y + endDist * sin(currentAngleRad).toFloat()
+
+                drawLine(
+                    color = if (percentage > 0) colors.primary else colors.textPrimary,
+                    start = Offset(startX, startY),
+                    end = Offset(endX, endY),
+                    strokeWidth = 3.2.dp.toPx(),
+                    cap = StrokeCap.Round
                 )
-            }
-
-            // 中心立体金属旋钮圆盘
-            Box(
-                modifier = Modifier
-                    .size(54.dp)
-                    .shadow(
-                        elevation = 8.dp,
-                        shape = CircleShape,
-                        spotColor = if (enabled) colors.primary.copy(alpha = 0.35f) else Color.Black
-                    )
-                    .clip(CircleShape)
-                    .background(
-                        if (colors.isDark) {
-                            Brush.radialGradient(
-                                listOf(
-                                    Color(0xFF2E323A),
-                                    Color(0xFF1E2127),
-                                    Color(0xFF14161A)
-                                )
-                            )
-                        } else {
-                            Brush.radialGradient(
-                                listOf(
-                                    Color(0xFFFFFFFF),
-                                    Color(0xFFF1F5F9),
-                                    Color(0xFFE2E8F0)
-                                )
-                            )
-                        }
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = if (enabled) "$percentage%" else "OFF",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (enabled) colors.primary else colors.textSecondary
-                    )
-                    if (enabled && strength > 0.01f) {
-                        Text(
-                            text = gainLabel,
-                            fontSize = 8.5.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = colors.textPrimary
-                        )
-                    }
-                }
             }
         }
     }

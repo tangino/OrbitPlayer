@@ -3,7 +3,7 @@
 namespace dsp {
 
 BassBoost::BassBoost(float sampleRate) : sampleRate_(sampleRate) {
-    frequency_ = 110.0f; // 黄金低频浑厚温暖中枢 (60Hz ~ 160Hz 能量辐射，深沉浑厚且有弹性)
+    frequency_ = 90.0f; // Poweramp 原版低音中心频点 90Hz
     updateFilter();
 }
 
@@ -18,15 +18,15 @@ void BassBoost::setStrength(float strength) {
 }
 
 void BassBoost::setCenterFrequency(float freq) {
-    frequency_ = std::clamp(freq, 60.0f, 220.0f);
+    frequency_ = std::clamp(freq, 20.0f, 400.0f);
     updateFilter();
 }
 
 void BassBoost::updateFilter() {
-    // 丰满深沉的低音能量辐射：0 ~ +10dB 纯净低架增益，Q 值为 0.707 临界阻尼 (饱满浑厚不轰头)
-    float gainDb = strength_ * 10.0f;
-    lowShelfL_.configure(FilterType::LOW_SHELF, frequency_, gainDb, 0.707f, sampleRate_);
-    lowShelfR_.configure(FilterType::LOW_SHELF, frequency_, gainDb, 0.707f, sampleRate_);
+    // Poweramp 原版规格：Low Shelf，Q 值为 0.8f，最大增益 +22.5dB
+    float gainDb = strength_ * 22.5f;
+    lowShelfL_.configure(FilterType::LOW_SHELF, frequency_, gainDb, 0.80f, sampleRate_);
+    lowShelfR_.configure(FilterType::LOW_SHELF, frequency_, gainDb, 0.80f, sampleRate_);
 }
 
 void BassBoost::processStereo(float* buffer, int numFrames) {

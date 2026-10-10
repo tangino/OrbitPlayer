@@ -3,7 +3,9 @@
 namespace dsp {
 
 Limiter::Limiter(float sampleRate) : sampleRate_(sampleRate) {
-    setThresholdDb(-2.5f);
+    setThresholdDb(-1.0f); // Poweramp 砖墙限制安全阈值 -1.0dBFS
+    attackMs_ = 0.001f;    // 1 微秒级超高速瞬态峰值拦截，消灭削波毛刺
+    releaseMs_ = 75.0f;    // Poweramp 原版标准 75ms 释放时间常数
     updateCoefficients();
 }
 
@@ -18,7 +20,7 @@ void Limiter::setThresholdDb(float thresholdDb) {
 }
 
 void Limiter::setAttackTimeMs(float attackMs) {
-    attackMs_ = std::max(0.05f, attackMs);
+    attackMs_ = std::max(0.0005f, attackMs);
     updateCoefficients();
 }
 

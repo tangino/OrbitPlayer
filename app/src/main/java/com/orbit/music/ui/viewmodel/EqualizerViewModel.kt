@@ -7,12 +7,15 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.orbit.music.audio.AudioEffectManager
+import com.orbit.music.audio.AudioVisualizerManager
 import com.orbit.music.data.model.*
 import java.io.File
 import java.io.FileOutputStream
 import com.orbit.music.data.repository.DeviceProfileRepository
 import com.orbit.music.data.repository.PresetRepository
 import com.orbit.music.native.NativeDSP
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,6 +54,7 @@ data class EqualizerUiState(
     val selectedPresetId: String = "flat",
     val presets: List<Preset> = emptyList(),
     val spectrumBars: FloatArray = FloatArray(32) { 0f },
+    val spectrumPeaks: FloatArray = FloatArray(32) { 0f },
     val peakLeftDb: Float = -60f,
     val peakRightDb: Float = -60f,
     val activeDeviceName: String = "Phone Speaker",
@@ -114,6 +118,7 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
     private val presetRepository = PresetRepository.getInstance(application)
     private val deviceProfileRepository = DeviceProfileRepository.instance
     private val prefs: SharedPreferences = application.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val visualizerManager = AudioVisualizerManager.getInstance(application)
 
     private val _uiState = MutableStateFlow(EqualizerUiState())
     val uiState: StateFlow<EqualizerUiState> = _uiState.asStateFlow()
@@ -248,25 +253,43 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
 
-        // 4. 启动频谱与电平高频采样轮询 (约 30~60 FPS)
+        // 4. 实时音频频谱与物理律动同步 (接入原生 Visualizer 监听引擎与保底物理发生器)
         viewModelScope.launch {
-            val bars = FloatArray(32)
-            while (isActive) {
+            visualizerManager.visualizerFlow.collect { frame ->
                 if (_uiState.value.isEnabled) {
-                    nativeDSP.getSpectrum(bars)
+                    val rawBars = frame.rawMagnitudes
+                    val hasVisualizerData = rawBars.any { it > 0.005f }
+
+                    val finalBars = if (hasVisualizerData) {
+                        rawBars
+                    } else {
+                        val nativeBars = FloatArray(32)
+                        nativeDSP.getSpectrum(nativeBars)
+                        nativeBars
+                    }
+
                     val (l, r) = nativeDSP.getPeakLevels()
                     val clipping = nativeDSP.isClipping()
 
                     _uiState.update { current ->
                         current.copy(
-                            spectrumBars = bars.clone(),
+                            spectrumBars = finalBars.clone(),
+                            spectrumPeaks = frame.peakCaps.clone(),
                             peakLeftDb = l,
                             peakRightDb = r,
                             isClipping = clipping
                         )
                     }
+                } else {
+                    if (_uiState.value.spectrumBars.any { it > 0f }) {
+                        _uiState.update { current ->
+                            current.copy(
+                                spectrumBars = FloatArray(32) { 0f },
+                                spectrumPeaks = FloatArray(32) { 0f }
+                            )
+                        }
+                    }
                 }
-                delay(33) // ~30 FPS 平滑刷新
             }
         }
     }
@@ -332,26 +355,32 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         effectManager.setCompressorEnabled(compressorEnabled)
     }
 
+    private var saveStateJob: Job? = null
+
     /**
-     * 持久化保存当前均衡器全部状态
+     * 异步防抖持久化保存当前均衡器全部状态 (避免手势高频触发 I/O 阻塞主线程)
      */
     private fun saveEqualizerUiState() {
-        val s = _uiState.value
-        val gainsArray = JSONArray()
-        s.bandGains.forEach { gainsArray.put(it.toDouble()) }
+        saveStateJob?.cancel()
+        saveStateJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(350L)
+            val s = _uiState.value
+            val gainsArray = JSONArray()
+            s.bandGains.forEach { gainsArray.put(it.toDouble()) }
 
-        prefs.edit()
-            .putBoolean(KEY_EQ_ENABLED, s.isEnabled)
-            .putString(KEY_SELECTED_PRESET_ID, s.selectedPresetId)
-            .putFloat(KEY_PREAMP_GAIN, s.preampGainDb)
-            .putString(KEY_BAND_GAINS, gainsArray.toString())
-            .putBoolean(KEY_BASS_BOOST_ENABLED, s.isBassBoostEnabled)
-            .putFloat(KEY_BASS_BOOST_STRENGTH, s.bassBoostStrength)
-            .putBoolean(KEY_TREBLE_BOOST_ENABLED, s.isTrebleBoostEnabled)
-            .putFloat(KEY_TREBLE_BOOST_STRENGTH, s.trebleBoostStrength)
-            .putBoolean(KEY_COMPRESSOR_ENABLED, s.isCompressorEnabled)
-            .putBoolean(KEY_LIMITER_ENABLED, s.isLimiterEnabled)
-            .apply()
+            prefs.edit()
+                .putBoolean(KEY_EQ_ENABLED, s.isEnabled)
+                .putString(KEY_SELECTED_PRESET_ID, s.selectedPresetId)
+                .putFloat(KEY_PREAMP_GAIN, s.preampGainDb)
+                .putString(KEY_BAND_GAINS, gainsArray.toString())
+                .putBoolean(KEY_BASS_BOOST_ENABLED, s.isBassBoostEnabled)
+                .putFloat(KEY_BASS_BOOST_STRENGTH, s.bassBoostStrength)
+                .putBoolean(KEY_TREBLE_BOOST_ENABLED, s.isTrebleBoostEnabled)
+                .putFloat(KEY_TREBLE_BOOST_STRENGTH, s.trebleBoostStrength)
+                .putBoolean(KEY_COMPRESSOR_ENABLED, s.isCompressorEnabled)
+                .putBoolean(KEY_LIMITER_ENABLED, s.isLimiterEnabled)
+                .apply()
+        }
     }
 
     fun toggleEnabled(enabled: Boolean) {

@@ -3,7 +3,7 @@
 namespace dsp {
 
 TrebleBoost::TrebleBoost(float sampleRate) : sampleRate_(sampleRate) {
-    frequency_ = 8000.0f; // 黄金超高频空气感截止点 (避开 3kHz-6kHz 刺耳齿音区)
+    frequency_ = 10000.0f; // Poweramp 原版高音中心频点 10kHz
     updateFilter();
 }
 
@@ -18,15 +18,15 @@ void TrebleBoost::setStrength(float strength) {
 }
 
 void TrebleBoost::setCenterFrequency(float freq) {
-    frequency_ = std::clamp(freq, 6000.0f, 14000.0f);
+    frequency_ = std::clamp(freq, 4000.0f, 20000.0f);
     updateFilter();
 }
 
 void TrebleBoost::updateFilter() {
-    // 柔和顺滑的超高频延伸 (0 ~ +8dB)，Q 值为 0.65 (更平滑开阔的高频倾斜，杜绝尖锐毛刺)
-    float gainDb = strength_ * 8.0f;
-    highShelfL_.configure(FilterType::HIGH_SHELF, frequency_, gainDb, 0.65f, sampleRate_);
-    highShelfR_.configure(FilterType::HIGH_SHELF, frequency_, gainDb, 0.65f, sampleRate_);
+    // Poweramp 原版规格：High Shelf，Q 值为 0.8f，最大增益 +15.0dB
+    float gainDb = strength_ * 15.0f;
+    highShelfL_.configure(FilterType::HIGH_SHELF, frequency_, gainDb, 0.80f, sampleRate_);
+    highShelfR_.configure(FilterType::HIGH_SHELF, frequency_, gainDb, 0.80f, sampleRate_);
 }
 
 void TrebleBoost::processStereo(float* buffer, int numFrames) {

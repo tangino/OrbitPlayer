@@ -2,21 +2,24 @@ package com.orbit.music.ui.screens
 
 import android.content.res.Configuration
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoGraph
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,24 +27,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.orbit.music.R
-import com.orbit.music.ui.components.*
 import com.orbit.music.data.model.AppScreen
 import com.orbit.music.data.model.Preset
-import com.orbit.music.ui.theme.*
+import com.orbit.music.ui.components.*
+import com.orbit.music.ui.theme.OrbitTheme
 import com.orbit.music.ui.viewmodel.EqualizerViewModel
 
 /**
- * 混音台风格全高均衡器主界面
- * 1. 预设栏支持「+ 保存自定义配置」与删除用户预设
- * 2. 10 频段全高推子 (-6dB ~ +6dB 工业黄金行程)
- * 3. Preamp 前级独立增益
- * 4. Bass Boost (低音增强) 与 Treble Boost (高音增强) 拟物双旋转旋钮
+ * 融入 OrbitPlayer 全局设计语言的沉浸式硬件控制台均衡器
+ * 1. 顶部：最左侧独立「增益 (Preamp)」推子卡片 + 10 频段全高推子
+ * 2. 中间：高保真频响曲线与频谱分析面板 (移除中间繁冗标签)
+ * 3. 底部：整洁对称的结构化控制栏 (均衡器/压限器/预设/更多) 与拟物低音/高音旋钮
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,12 +52,12 @@ fun MainEqualizerScreen(
     onOpenSettings: () -> Unit = { viewModel.navigateTo(AppScreen.SETTINGS) },
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
+    val colors = OrbitTheme.colors
     val uiState by viewModel.uiState.collectAsState()
     var showSaveDialog by remember { mutableStateOf(false) }
     var presetNameInput by remember { mutableStateOf("") }
     var isPresetDropdownExpanded by remember { mutableStateOf(false) }
-    var presetToDelete by remember { mutableStateOf<Preset?>(null) }
+    var isMoreMenuExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -66,7 +67,7 @@ fun MainEqualizerScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.back),
-                            tint = OrbitTheme.colors.textPrimary
+                            tint = colors.textPrimary
                         )
                     }
                 },
@@ -78,194 +79,457 @@ fun MainEqualizerScreen(
                         Icon(
                             imageVector = Icons.Default.GraphicEq,
                             contentDescription = null,
-                            tint = if (uiState.isEnabled) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                            modifier = Modifier.size(24.dp)
+                            tint = if (uiState.isEnabled) colors.primary else colors.textSecondary,
+                            modifier = Modifier.size(22.dp)
                         )
                         Text(
                             text = stringResource(R.string.app_name),
-                            fontSize = 20.sp,
+                            fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
-                            color = OrbitTheme.colors.textPrimary
+                            color = colors.textPrimary
                         )
                     }
                 },
                 actions = {
-                    // 参数均衡器入口
-                    IconButton(onClick = { viewModel.navigateTo(AppScreen.PARAMETRIC) }) {
-                        Icon(
-                            imageVector = Icons.Default.AutoGraph,
-                            contentDescription = stringResource(R.string.parametric_eq),
-                            tint = OrbitTheme.colors.textPrimary
-                        )
-                    }
-
-                    // 保存配置按钮
-                    IconButton(onClick = {
-                        val count = uiState.presets.count { it.isCustom }
-                        presetNameInput = context.getString(R.string.my_preset_default_name, count + 1)
-                        showSaveDialog = true
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Save,
-                            contentDescription = stringResource(R.string.preset_save_button),
-                            tint = OrbitTheme.colors.primary
-                        )
-                    }
-
-                    // 设置入口 (包含主题切换、导入导出等)
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = stringResource(R.string.settings),
-                            tint = OrbitTheme.colors.textPrimary
-                        )
-                    }
-
                     // 全局电源开关
                     Switch(
                         checked = uiState.isEnabled,
                         onCheckedChange = { viewModel.toggleEnabled(it) },
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = OrbitTheme.colors.surface,
-                            checkedTrackColor = OrbitTheme.colors.primary,
-                            uncheckedThumbColor = OrbitTheme.colors.textSecondary,
-                            uncheckedTrackColor = OrbitTheme.colors.surface
+                            checkedThumbColor = colors.surfaceCard,
+                            checkedTrackColor = colors.primary,
+                            uncheckedThumbColor = colors.textSecondary,
+                            uncheckedTrackColor = colors.surface
                         ),
                         modifier = Modifier.padding(end = 8.dp)
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = OrbitTheme.colors.background
+                    containerColor = colors.background
                 )
             )
         },
-        containerColor = OrbitTheme.colors.background
+        containerColor = colors.background
     ) { innerPadding ->
         val configuration = LocalConfiguration.current
         val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE ||
                 configuration.screenWidthDp > configuration.screenHeightDp
 
         if (isLandscape) {
-            // ========== 专业硬件混音台横屏分栏布局 (Studio Console Split Layout) ==========
+            // 横屏布局
             Row(
                 modifier = modifier
                     .fillMaxSize()
                     .padding(innerPadding)
                     .padding(horizontal = 14.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalAlignment = Alignment.CenterVertically
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // 左侧控制面板：预设选择、前级控制、低音与高音增强旋钮、动态压缩器
-                val leftScrollState = rememberScrollState()
+                // 左侧控制区
                 Column(
                     modifier = Modifier
                         .weight(0.40f)
                         .fillMaxHeight()
-                        .verticalScroll(leftScrollState),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    PresetSelectorRow(
-                        uiState = uiState,
-                        isPresetDropdownExpanded = isPresetDropdownExpanded,
-                        onDropdownExpandChange = { isPresetDropdownExpanded = it },
-                        onSelectPreset = { viewModel.selectPreset(it) },
-                        onDeletePreset = { presetToDelete = it },
-                        onOpenSaveDialog = {
-                            val count = uiState.presets.count { it.isCustom }
-                            presetNameInput = context.getString(R.string.my_preset_default_name, count + 1)
-                            showSaveDialog = true
-                        }
+                    PowerampVisualizerBar(
+                        frequencies = uiState.frequencies,
+                        gainsDb = uiState.bandGains,
+                        spectrumBars = uiState.spectrumBars,
+                        spectrumPeaks = uiState.spectrumPeaks,
+                        visualizerEnabled = uiState.visualizerEnabled
                     )
 
-                    PreampAndLimiterControl(
-                        preampGainDb = uiState.preampGainDb,
-                        onPreampGainChanged = { viewModel.setPreampGain(it) },
-                        limiterEnabled = uiState.isLimiterEnabled,
-                        onLimiterToggle = { viewModel.toggleLimiter(it) },
-                        isClipping = uiState.isClipping,
-                        isEnabled = uiState.isEnabled
-                    )
+                    // 旋钮区域
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        DspRotaryKnob(
+                            title = "低音",
+                            strength = uiState.bassBoostStrength,
+                            enabled = uiState.isEnabled,
+                            onStrengthChanged = {
+                                viewModel.toggleBassBoost(it > 0.001f)
+                                viewModel.setBassBoostStrength(it)
+                            }
+                        )
 
-                    AdvancedDspControls(
-                        bassBoostEnabled = uiState.isBassBoostEnabled,
-                        bassBoostStrength = uiState.bassBoostStrength,
-                        onBassBoostToggle = { viewModel.toggleBassBoost(it) },
-                        onBassBoostStrengthChange = { viewModel.setBassBoostStrength(it) },
-                        trebleBoostEnabled = uiState.isTrebleBoostEnabled,
-                        trebleBoostStrength = uiState.trebleBoostStrength,
-                        onTrebleBoostToggle = { viewModel.toggleTrebleBoost(it) },
-                        onTrebleBoostStrengthChange = { viewModel.setTrebleBoostStrength(it) },
-                        compressorEnabled = uiState.isCompressorEnabled,
-                        onCompressorToggle = { viewModel.toggleCompressor(it) },
-                        isEnabled = uiState.isEnabled
-                    )
+                        DspRotaryKnob(
+                            title = "高音",
+                            strength = uiState.trebleBoostStrength,
+                            enabled = uiState.isEnabled,
+                            onStrengthChanged = {
+                                viewModel.toggleTrebleBoost(it > 0.001f)
+                                viewModel.setTrebleBoostStrength(it)
+                            }
+                        )
+                    }
                 }
 
-                // 右侧：全高 10 频段全景长行程推子区
-                EqualizerFadersArea(
-                    uiState = uiState,
-                    onGainChanged = { index, gain -> viewModel.setBandGain(index, gain) },
+                // 右侧推子区
+                Row(
                     modifier = Modifier
                         .weight(0.60f)
-                        .fillMaxHeight()
-                )
+                        .fillMaxHeight(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    PreampFader(
+                        preampGainDb = uiState.preampGainDb,
+                        isEnabled = uiState.isEnabled,
+                        onGainChanged = { viewModel.setPreampGain(it) }
+                    )
+
+                    EqualizerFadersRow(
+                        uiState = uiState,
+                        onGainChanged = { index, gain -> viewModel.setBandGain(index, gain) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
         } else {
-            // ========== 标准竖屏布局 ==========
+            // 优雅整洁的竖屏控制台界面
             Column(
                 modifier = modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                    .padding(horizontal = 14.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
-                // 1. 预设选择器
-                PresetSelectorRow(
-                    uiState = uiState,
-                    isPresetDropdownExpanded = isPresetDropdownExpanded,
-                    onDropdownExpandChange = { isPresetDropdownExpanded = it },
-                    onSelectPreset = { viewModel.selectPreset(it) },
-                    onDeletePreset = { presetToDelete = it },
-                    onOpenSaveDialog = {
-                        val count = uiState.presets.count { it.isCustom }
-                        presetNameInput = context.getString(R.string.my_preset_default_name, count + 1)
-                        showSaveDialog = true
-                    }
-                )
-
-                // 2. 核心大空间：全高推子区域
-                EqualizerFadersArea(
-                    uiState = uiState,
-                    onGainChanged = { index, gain -> viewModel.setBandGain(index, gain) },
+                // 1. 顶部推子区域：最左侧「增益」+ 右侧 10 频段全景推子
+                Row(
                     modifier = Modifier
-                        .weight(1f)
                         .fillMaxWidth()
+                        .weight(1f)
+                        .padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    PreampFader(
+                        preampGainDb = uiState.preampGainDb,
+                        isEnabled = uiState.isEnabled,
+                        onGainChanged = { viewModel.setPreampGain(it) }
+                    )
+
+                    EqualizerFadersRow(
+                        uiState = uiState,
+                        onGainChanged = { index, gain -> viewModel.setBandGain(index, gain) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                // 2. 中间纯净频响可视化卡片 (带跳动频谱与幅频曲线)
+                PowerampVisualizerBar(
+                    frequencies = uiState.frequencies,
+                    gainsDb = uiState.bandGains,
+                    spectrumBars = uiState.spectrumBars,
+                    spectrumPeaks = uiState.spectrumPeaks,
+                    visualizerEnabled = uiState.visualizerEnabled,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
                 )
 
-                // 3. 前级增益 (Preamp) 与 Limiter
-                PreampAndLimiterControl(
-                    preampGainDb = uiState.preampGainDb,
-                    onPreampGainChanged = { viewModel.setPreampGain(it) },
-                    limiterEnabled = uiState.isLimiterEnabled,
-                    onLimiterToggle = { viewModel.toggleLimiter(it) },
-                    isClipping = uiState.isClipping,
-                    isEnabled = uiState.isEnabled
-                )
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // 4. Dynamic Bass Boost 与 Treble Boost 旋钮 + Compressor
-                AdvancedDspControls(
-                    bassBoostEnabled = uiState.isBassBoostEnabled,
-                    bassBoostStrength = uiState.bassBoostStrength,
-                    onBassBoostToggle = { viewModel.toggleBassBoost(it) },
-                    onBassBoostStrengthChange = { viewModel.setBassBoostStrength(it) },
-                    trebleBoostEnabled = uiState.isTrebleBoostEnabled,
-                    trebleBoostStrength = uiState.trebleBoostStrength,
-                    onTrebleBoostToggle = { viewModel.toggleTrebleBoost(it) },
-                    onTrebleBoostStrengthChange = { viewModel.setTrebleBoostStrength(it) },
-                    compressorEnabled = uiState.isCompressorEnabled,
-                    onCompressorToggle = { viewModel.toggleCompressor(it) },
-                    isEnabled = uiState.isEnabled
-                )
+                // 3. 底部结构化操作栏 (对齐、对称、统一高度的秩序感布局)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(40.dp)
+                        .padding(bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    // 左侧：均衡器与压限器独立控制按钮 (各自拥有完整圆角与边框，彻底消除中间缝隙暗线)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 【均衡器】独立胶囊按钮
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (uiState.isEnabled) colors.primary.copy(alpha = 0.16f) else colors.surfaceCard)
+                                .border(
+                                    0.8.dp,
+                                    if (uiState.isEnabled) colors.primary.copy(alpha = 0.40f) else colors.surfaceBorder,
+                                    RoundedCornerShape(12.dp)
+                                )
+                                .clickable { viewModel.toggleEnabled(!uiState.isEnabled) }
+                                .padding(horizontal = 10.dp, vertical = 7.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(if (uiState.isEnabled) colors.primary else colors.textSecondary.copy(alpha = 0.4f))
+                                )
+                                Text(
+                                    text = "均衡器",
+                                    fontSize = 12.sp,
+                                    fontWeight = if (uiState.isEnabled) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (uiState.isEnabled) colors.primary else colors.textSecondary
+                                )
+                            }
+                        }
+
+                        // 【压限器】独立胶囊按钮
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (uiState.isLimiterEnabled) colors.primary.copy(alpha = 0.16f) else colors.surfaceCard)
+                                .border(
+                                    0.8.dp,
+                                    if (uiState.isLimiterEnabled) colors.primary.copy(alpha = 0.40f) else colors.surfaceBorder,
+                                    RoundedCornerShape(12.dp)
+                                )
+                                .clickable { viewModel.toggleLimiter(!uiState.isLimiterEnabled) }
+                                .padding(horizontal = 10.dp, vertical = 7.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(if (uiState.isLimiterEnabled) colors.primary else colors.textSecondary.copy(alpha = 0.4f))
+                                )
+                                Text(
+                                    text = "压限器",
+                                    fontSize = 12.sp,
+                                    fontWeight = if (uiState.isLimiterEnabled) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (uiState.isLimiterEnabled) colors.primary else colors.textSecondary
+                                )
+                            }
+                        }
+                    }
+
+                    // 中间：当前预设选择胶囊卡片
+                    val currentPreset = uiState.presets.find { it.id == uiState.selectedPresetId }
+                    val currentName = currentPreset?.name ?: "平直"
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(colors.surfaceCard)
+                            .border(0.8.dp, colors.surfaceBorder, RoundedCornerShape(12.dp))
+                            .clickable { isPresetDropdownExpanded = true }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = null,
+                                tint = colors.primary,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Text(
+                                text = currentName,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.textPrimary,
+                                maxLines = 1
+                            )
+                        }
+
+                        // 预设选择菜单
+                        DropdownMenu(
+                            expanded = isPresetDropdownExpanded,
+                            onDismissRequest = { isPresetDropdownExpanded = false },
+                            modifier = Modifier
+                                .widthIn(min = 220.dp, max = 280.dp)
+                                .background(colors.surfaceCard)
+                        ) {
+                            val builtinPresets = uiState.presets.filter { !it.isCustom }
+                            Text(
+                                text = "系统预设",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = colors.primary,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                            )
+
+                            builtinPresets.forEach { preset ->
+                                val isSelected = preset.id == uiState.selectedPresetId
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = preset.name,
+                                            color = if (isSelected) colors.primary else colors.textPrimary,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    },
+                                    trailingIcon = {
+                                        if (isSelected) {
+                                            Icon(Icons.Default.Check, null, tint = colors.primary, modifier = Modifier.size(16.dp))
+                                        }
+                                    },
+                                    onClick = {
+                                        viewModel.selectPreset(preset.id)
+                                        isPresetDropdownExpanded = false
+                                    }
+                                )
+                            }
+
+                            val customPresets = uiState.presets.filter { it.isCustom }
+                            if (customPresets.isNotEmpty()) {
+                                HorizontalDivider(color = colors.surfaceBorder)
+                                Text(
+                                    text = "自定义预设",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.secondary,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                                )
+                                customPresets.forEach { preset ->
+                                    val isSelected = preset.id == uiState.selectedPresetId
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = preset.name,
+                                                color = if (isSelected) colors.secondary else colors.textPrimary
+                                            )
+                                        },
+                                        onClick = {
+                                            viewModel.selectPreset(preset.id)
+                                            isPresetDropdownExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // 右侧：辅助功能按钮 (声波动效切换 + 更多菜单)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 动效频谱按钮
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (uiState.visualizerEnabled) colors.primary.copy(alpha = 0.18f) else colors.surfaceCard)
+                                .border(0.8.dp, colors.surfaceBorder, RoundedCornerShape(10.dp))
+                                .clickable { viewModel.toggleVisualizerEnabled(!uiState.visualizerEnabled) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.GraphicEq,
+                                contentDescription = null,
+                                tint = if (uiState.visualizerEnabled) colors.primary else colors.textSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        // 更多功能菜单
+                        Box(contentAlignment = Alignment.Center) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(colors.surfaceCard)
+                                    .border(0.8.dp, colors.surfaceBorder, RoundedCornerShape(10.dp))
+                                    .clickable { isMoreMenuExpanded = true },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = null,
+                                    tint = colors.textPrimary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = isMoreMenuExpanded,
+                                onDismissRequest = { isMoreMenuExpanded = false },
+                                modifier = Modifier.background(colors.surfaceCard)
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("保存当前配置为预设", color = colors.textPrimary) },
+                                    leadingIcon = { Icon(Icons.Default.Save, null, tint = colors.primary) },
+                                    onClick = {
+                                        val count = uiState.presets.count { it.isCustom }
+                                        presetNameInput = "我的调音 ${count + 1}"
+                                        showSaveDialog = true
+                                        isMoreMenuExpanded = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("参数均衡器 (PEQ)", color = colors.textPrimary) },
+                                    leadingIcon = { Icon(Icons.Default.AutoGraph, null, tint = colors.secondary) },
+                                    onClick = {
+                                        viewModel.navigateTo(AppScreen.PARAMETRIC)
+                                        isMoreMenuExpanded = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("重置当前增益", color = colors.textPrimary) },
+                                    leadingIcon = { Icon(Icons.Default.Refresh, null, tint = colors.textPrimary) },
+                                    onClick = {
+                                        for (i in uiState.bandGains.indices) {
+                                            viewModel.setBandGain(i, 0f)
+                                        }
+                                        viewModel.setPreampGain(0f)
+                                        isMoreMenuExpanded = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("音效与系统设置", color = colors.textPrimary) },
+                                    leadingIcon = { Icon(Icons.Default.Settings, null, tint = colors.textSecondary) },
+                                    onClick = {
+                                        onOpenSettings()
+                                        isMoreMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // 4. 最底部：整洁对称的双旋钮音调调谐区 (低音 / 高音)，留足 MiniPlayer 避让间距
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp, bottom = 86.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    DspRotaryKnob(
+                        title = "低音",
+                        strength = uiState.bassBoostStrength,
+                        enabled = uiState.isEnabled,
+                        onStrengthChanged = {
+                            viewModel.toggleBassBoost(it > 0.001f)
+                            viewModel.setBassBoostStrength(it)
+                        }
+                    )
+
+                    DspRotaryKnob(
+                        title = "高音",
+                        strength = uiState.trebleBoostStrength,
+                        enabled = uiState.isEnabled,
+                        onStrengthChanged = {
+                            viewModel.toggleTrebleBoost(it > 0.001f)
+                            viewModel.setTrebleBoostStrength(it)
+                        }
+                    )
+                }
             }
         }
 
@@ -276,7 +540,7 @@ fun MainEqualizerScreen(
                 title = {
                     Text(
                         text = stringResource(R.string.preset_save_dialog_title),
-                        color = OrbitTheme.colors.textPrimary,
+                        color = colors.textPrimary,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
                     )
@@ -285,18 +549,18 @@ fun MainEqualizerScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
                             text = stringResource(R.string.preset_save_dialog_desc),
-                            color = OrbitTheme.colors.textSecondary,
+                            color = colors.textSecondary,
                             fontSize = 13.sp
                         )
                         OutlinedTextField(
                             value = presetNameInput,
                             onValueChange = { presetNameInput = it },
-                            label = { Text(stringResource(R.string.preset_name_label)) },
+                            label = { Text("预设名称") },
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = OrbitTheme.colors.primary,
-                                focusedLabelColor = OrbitTheme.colors.primary,
-                                cursorColor = OrbitTheme.colors.primary
+                                focusedBorderColor = colors.primary,
+                                focusedLabelColor = colors.primary,
+                                cursorColor = colors.primary
                             ),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -308,358 +572,51 @@ fun MainEqualizerScreen(
                             viewModel.saveCurrentAsCustomPreset(presetNameInput)
                             showSaveDialog = false
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary)
+                        colors = ButtonDefaults.buttonColors(containerColor = colors.primary)
                     ) {
-                        Text(text = stringResource(R.string.btn_save), color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White, fontWeight = FontWeight.Bold)
+                        Text(text = "保存", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showSaveDialog = false }) {
-                        Text(text = stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
+                        Text(text = "取消", color = colors.textSecondary)
                     }
                 },
-                containerColor = OrbitTheme.colors.surfaceDialog,
-                shape = RoundedCornerShape(16.dp)
-            )
-        }
-
-        // 删除自定义配置确认弹窗
-        if (presetToDelete != null) {
-            val deletingPreset = presetToDelete!!
-            AlertDialog(
-                onDismissRequest = { presetToDelete = null },
-                title = {
-                    Text(
-                        text = stringResource(R.string.preset_delete_dialog_title),
-                        color = OrbitTheme.colors.textPrimary,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
-                    )
-                },
-                text = {
-                    Text(
-                        text = stringResource(R.string.preset_delete_dialog_desc, deletingPreset.name),
-                        color = OrbitTheme.colors.textSecondary,
-                        fontSize = 14.sp
-                    )
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            viewModel.deleteCustomPreset(deletingPreset.id)
-                            presetToDelete = null
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.danger)
-                    ) {
-                        Text(text = stringResource(R.string.btn_delete), color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { presetToDelete = null }) {
-                        Text(text = stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
-                    }
-                },
-                containerColor = OrbitTheme.colors.surfaceDialog,
+                containerColor = colors.surfaceDialog,
                 shape = RoundedCornerShape(16.dp)
             )
         }
     }
 }
 
+/**
+ * 10 频段全景推子横向滚动列
+ */
 @Composable
-private fun getLocalizedPresetName(presetId: String, defaultName: String): String {
-    return when (presetId) {
-        "flat" -> stringResource(R.string.preset_flat)
-        "rock" -> stringResource(R.string.preset_rock)
-        "pop" -> stringResource(R.string.preset_pop)
-        "classical" -> stringResource(R.string.preset_classical)
-        "jazz" -> stringResource(R.string.preset_jazz)
-        "vocal" -> stringResource(R.string.preset_vocal)
-        "bass_boost" -> stringResource(R.string.preset_bass_boost)
-        "treble_boost" -> stringResource(R.string.preset_treble_boost)
-        else -> defaultName
-    }
-}
-
-@Composable
-private fun PresetSelectorRow(
-    uiState: com.orbit.music.ui.viewmodel.EqualizerUiState,
-    isPresetDropdownExpanded: Boolean,
-    onDropdownExpandChange: (Boolean) -> Unit,
-    onSelectPreset: (String) -> Unit,
-    onDeletePreset: (Preset) -> Unit,
-    onOpenSaveDialog: () -> Unit
-) {
-    val currentPreset = uiState.presets.find { it.id == uiState.selectedPresetId }
-    val currentDisplayName = currentPreset?.let { getLocalizedPresetName(it.id, it.name) }
-        ?: stringResource(R.string.preset_flat)
-    val isCurrentCustom = currentPreset?.isCustom == true
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // 下拉选择卡片
-        Box(modifier = Modifier.weight(1f)) {
-            Surface(
-                onClick = { onDropdownExpandChange(true) },
-                shape = RoundedCornerShape(12.dp),
-                color = OrbitTheme.colors.surfaceCard,
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    if (isPresetDropdownExpanded) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary.copy(alpha = 0.2f)
-                ),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.weight(1f, fill = false)
-                    ) {
-                        Icon(
-                            imageVector = if (isCurrentCustom) Icons.Default.Person else Icons.Default.Tune,
-                            contentDescription = null,
-                            tint = if (isCurrentCustom) OrbitTheme.colors.secondary else OrbitTheme.colors.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = currentDisplayName,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = OrbitTheme.colors.textPrimary,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                        )
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = if (isCurrentCustom) OrbitTheme.colors.secondary.copy(alpha = 0.15f) else OrbitTheme.colors.primary.copy(alpha = 0.15f)
-                        ) {
-                            Text(
-                                text = if (isCurrentCustom) stringResource(R.string.preset_group_custom) else stringResource(R.string.preset_group_builtin),
-                                fontSize = 10.sp,
-                                color = if (isCurrentCustom) OrbitTheme.colors.secondary else OrbitTheme.colors.primary,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = null,
-                        tint = OrbitTheme.colors.textSecondary,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
-            }
-
-            // 分组下拉菜单
-            DropdownMenu(
-                expanded = isPresetDropdownExpanded,
-                onDismissRequest = { onDropdownExpandChange(false) },
-                modifier = Modifier
-                    .widthIn(min = 240.dp, max = 320.dp)
-                    .background(OrbitTheme.colors.surfaceCard)
-            ) {
-                // 第 1 组：内置预设
-                val builtinPresets = uiState.presets.filter { !it.isCustom }
-                Text(
-                    text = stringResource(R.string.preset_group_builtin),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = OrbitTheme.colors.primary,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                )
-
-                builtinPresets.forEach { preset ->
-                    val isSelected = preset.id == uiState.selectedPresetId
-                    val localizedName = getLocalizedPresetName(preset.id, preset.name)
-                    DropdownMenuItem(
-                        text = {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = localizedName,
-                                    fontSize = 14.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textPrimary
-                                )
-                                if (isSelected) {
-                                    Icon(
-                                        imageVector = Icons.Default.Check,
-                                        contentDescription = null,
-                                        tint = OrbitTheme.colors.primary,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-                            }
-                        },
-                        leadingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Tune,
-                                contentDescription = null,
-                                tint = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        },
-                        onClick = {
-                            onSelectPreset(preset.id)
-                            onDropdownExpandChange(false)
-                        }
-                    )
-                }
-
-                HorizontalDivider(
-                    color = OrbitTheme.colors.textSecondary.copy(alpha = 0.15f),
-                    modifier = Modifier.padding(vertical = 4.dp)
-                )
-
-                // 第 2 组：用户保存配置
-                val customPresets = uiState.presets.filter { it.isCustom }
-                Text(
-                    text = stringResource(R.string.preset_group_custom),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = OrbitTheme.colors.secondary,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                )
-
-                if (customPresets.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.no_custom_presets_hint),
-                        fontSize = 12.sp,
-                        color = OrbitTheme.colors.textSecondary,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                    )
-                } else {
-                    customPresets.forEach { preset ->
-                        val isSelected = preset.id == uiState.selectedPresetId
-                        DropdownMenuItem(
-                            text = {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = preset.name,
-                                        fontSize = 14.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isSelected) OrbitTheme.colors.secondary else OrbitTheme.colors.textPrimary,
-                                        modifier = Modifier.weight(1f, fill = false),
-                                        maxLines = 1,
-                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                    )
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        if (isSelected) {
-                                            Icon(
-                                                imageVector = Icons.Default.Check,
-                                                contentDescription = null,
-                                                tint = OrbitTheme.colors.secondary,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                        }
-                                        IconButton(
-                                            onClick = {
-                                                onDeletePreset(preset)
-                                                onDropdownExpandChange(false)
-                                            },
-                                            modifier = Modifier.size(24.dp)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Delete,
-                                                contentDescription = stringResource(R.string.btn_delete),
-                                                tint = OrbitTheme.colors.danger.copy(alpha = 0.8f),
-                                                modifier = Modifier.size(16.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                            },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Person,
-                                    contentDescription = null,
-                                    tint = if (isSelected) OrbitTheme.colors.secondary else OrbitTheme.colors.textSecondary,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                            },
-                            onClick = {
-                                onSelectPreset(preset.id)
-                                onDropdownExpandChange(false)
-                            }
-                        )
-                    }
-                }
-            }
-        }
-
-        // "+ 保存" 快捷按钮
-        Button(
-            onClick = onOpenSaveDialog,
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = OrbitTheme.colors.primary
-            ),
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = null,
-                tint = if (OrbitTheme.colors.isDark) DarkBackground else Color.White,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(modifier = Modifier.width(4.dp))
-            Text(
-                text = stringResource(R.string.btn_save),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White
-            )
-        }
-    }
-}
-
-@Composable
-private fun EqualizerFadersArea(
+private fun EqualizerFadersRow(
     uiState: com.orbit.music.ui.viewmodel.EqualizerUiState,
     onGainChanged: (Int, Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(
+    val count = minOf(uiState.frequencies.size, uiState.bandGains.size)
+    val scrollState = rememberScrollState()
+
+    Row(
         modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(OrbitTheme.colors.surfaceCard)
-            .padding(vertical = 12.dp, horizontal = 8.dp)
+            .fillMaxHeight()
+            .horizontalScroll(scrollState),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        LazyRow(
-            modifier = Modifier.fillMaxSize(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val count = minOf(uiState.frequencies.size, uiState.bandGains.size)
-            items(count) { index ->
-                BandSlider(
-                    frequencyHz = uiState.frequencies[index],
-                    gainDb = uiState.bandGains[index],
-                    isEnabled = uiState.isEnabled,
-                    onGainChanged = { newGain ->
-                        onGainChanged(index, newGain)
-                    }
-                )
-            }
+        for (index in 0 until count) {
+            BandSlider(
+                frequencyHz = uiState.frequencies[index],
+                gainDb = uiState.bandGains[index],
+                isEnabled = uiState.isEnabled,
+                onGainChanged = { newGain ->
+                    onGainChanged(index, newGain)
+                }
+            )
         }
     }
 }
-
