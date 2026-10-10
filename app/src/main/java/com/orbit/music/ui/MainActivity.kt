@@ -90,8 +90,8 @@ class MainActivity : ComponentActivity() {
         configurationState.value = Configuration(newConfig)
         val savedMode = getSharedPreferences("equalizer_ui_state_prefs", Context.MODE_PRIVATE)
             .getString(EqualizerViewModel.KEY_UI_SCALE_MODE, "auto") ?: "auto"
-        val metrics = UiScaleHelper.getRealDisplayMetrics(this)
-        val factor = UiScaleHelper.calculateScaleFactor(savedMode, metrics.widthPixels, metrics.heightPixels, metrics.densityDpi)
+        val rawMetrics = UiScaleHelper.getRawDisplayMetrics(this)
+        val factor = UiScaleHelper.calculateScaleFactor(savedMode, rawMetrics.widthPixels, rawMetrics.heightPixels, rawMetrics.densityDpi)
         UiScaleHelper.applyActivityDensity(this, factor)
     }
 
@@ -101,8 +101,8 @@ class MainActivity : ComponentActivity() {
         // 优先应用车机与界面缩放配置，确保后续所有子 Window / Dialog / Popup 采用缩放后的 Density
         val savedMode = getSharedPreferences("equalizer_ui_state_prefs", Context.MODE_PRIVATE)
             .getString(EqualizerViewModel.KEY_UI_SCALE_MODE, "auto") ?: "auto"
-        val initMetrics = UiScaleHelper.getRealDisplayMetrics(this)
-        val initFactor = UiScaleHelper.calculateScaleFactor(savedMode, initMetrics.widthPixels, initMetrics.heightPixels, initMetrics.densityDpi)
+        val initRawMetrics = UiScaleHelper.getRawDisplayMetrics(this)
+        val initFactor = UiScaleHelper.calculateScaleFactor(savedMode, initRawMetrics.widthPixels, initRawMetrics.heightPixels, initRawMetrics.densityDpi)
         UiScaleHelper.applyActivityDensity(this, initFactor)
 
         // 开启全屏沉浸式状态栏与导航栏 (Edge-to-Edge)
@@ -150,16 +150,16 @@ class MainActivity : ComponentActivity() {
             }
 
             val currentContext = LocalContext.current
-            val realMetrics = remember(configurationState.value, currentContext) {
-                UiScaleHelper.getRealDisplayMetrics(currentContext)
+            val rawMetrics = remember(currentContext) {
+                UiScaleHelper.getRawDisplayMetrics(currentContext)
             }
 
-            val scaleFactor = remember(uiState.uiScaleMode, realMetrics.widthPixels, realMetrics.heightPixels, realMetrics.densityDpi) {
+            val scaleFactor = remember(uiState.uiScaleMode, rawMetrics.widthPixels, rawMetrics.heightPixels, rawMetrics.densityDpi) {
                 UiScaleHelper.calculateScaleFactor(
                     mode = uiState.uiScaleMode,
-                    widthPixels = realMetrics.widthPixels,
-                    heightPixels = realMetrics.heightPixels,
-                    systemDensityDpi = realMetrics.densityDpi
+                    widthPixels = rawMetrics.widthPixels,
+                    heightPixels = rawMetrics.heightPixels,
+                    systemDensityDpi = rawMetrics.densityDpi
                 )
             }
 
@@ -168,9 +168,9 @@ class MainActivity : ComponentActivity() {
             }
 
             val baseDensity = LocalDensity.current
-            val effectiveDensity = remember(baseDensity, scaleFactor) {
+            val effectiveDensity = remember(rawMetrics.density, scaleFactor, baseDensity.fontScale) {
                 Density(
-                    density = baseDensity.density * scaleFactor,
+                    density = rawMetrics.density * scaleFactor,
                     fontScale = baseDensity.fontScale
                 )
             }
@@ -178,29 +178,28 @@ class MainActivity : ComponentActivity() {
             val systemConfig = configurationState.value ?: LocalConfiguration.current
             val updatedConfig = remember(
                 systemConfig.orientation,
-                systemConfig.screenWidthDp,
-                systemConfig.screenHeightDp,
-                systemConfig.densityDpi,
+                rawMetrics.widthPixels,
+                rawMetrics.heightPixels,
+                rawMetrics.densityDpi,
                 targetLocale,
                 scaleFactor
             ) {
+                val targetDensityDpi = (rawMetrics.densityDpi * scaleFactor).toInt()
+                val targetDensity = rawMetrics.density * scaleFactor
+                val isPortrait = systemConfig.orientation == Configuration.ORIENTATION_PORTRAIT
+                val wPx = if (isPortrait) minOf(rawMetrics.widthPixels, rawMetrics.heightPixels) else maxOf(rawMetrics.widthPixels, rawMetrics.heightPixels)
+                val hPx = if (isPortrait) maxOf(rawMetrics.widthPixels, rawMetrics.heightPixels) else minOf(rawMetrics.widthPixels, rawMetrics.heightPixels)
+
                 Configuration(systemConfig).apply {
                     setLocale(targetLocale)
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                         setLocales(LocaleList(targetLocale))
                     }
-                    if (scaleFactor != 1.0f) {
-                        val targetDensityDpi = (systemConfig.densityDpi * scaleFactor).toInt()
-                        densityDpi = targetDensityDpi
-                        val targetDensity = (systemConfig.densityDpi / 160f) * scaleFactor
-                        if (targetDensity > 0f) {
-                            val isPortrait = orientation == Configuration.ORIENTATION_PORTRAIT
-                            val wPx = if (isPortrait) minOf(realMetrics.widthPixels, realMetrics.heightPixels) else maxOf(realMetrics.widthPixels, realMetrics.heightPixels)
-                            val hPx = if (isPortrait) maxOf(realMetrics.widthPixels, realMetrics.heightPixels) else minOf(realMetrics.widthPixels, realMetrics.heightPixels)
-                            screenWidthDp = (wPx / targetDensity).toInt()
-                            screenHeightDp = (hPx / targetDensity).toInt()
-                            smallestScreenWidthDp = minOf(screenWidthDp, screenHeightDp)
-                        }
+                    densityDpi = targetDensityDpi
+                    if (targetDensity > 0f) {
+                        screenWidthDp = (wPx / targetDensity).toInt()
+                        screenHeightDp = (hPx / targetDensity).toInt()
+                        smallestScreenWidthDp = minOf(screenWidthDp, screenHeightDp)
                     }
                 }
             }

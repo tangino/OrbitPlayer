@@ -847,6 +847,44 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun setCustomBackgroundFromFile(file: File, context: Context): Boolean {
+        return try {
+            if (!file.exists() || !file.canRead()) return false
+            val oldPath = _uiState.value.customBackgroundPath
+            val newFileName = "custom_app_background_${System.currentTimeMillis()}.jpg"
+            val destFile = File(context.filesDir, newFileName)
+            file.inputStream().use { input ->
+                FileOutputStream(destFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            if (oldPath != null && oldPath != destFile.absolutePath) {
+                try { File(oldPath).delete() } catch (_: Exception) {}
+            }
+            try { File(context.filesDir, "custom_app_background.jpg").delete() } catch (_: Exception) {}
+
+            val absPath = destFile.absolutePath
+            _uiState.update { 
+                it.copy(
+                    customBackgroundPath = absPath,
+                    customSolidBackgroundColor = null,
+                    isGradientEnabled = false
+                ) 
+            }
+            prefs.edit()
+                .putString(KEY_CUSTOM_BG_PATH, absPath)
+                .remove(KEY_CUSTOM_SOLID_BG_COLOR)
+                .putBoolean(KEY_CUSTOM_GRADIENT_ENABLED, false)
+                .apply()
+
+            extractAndApplyBackgroundColors(absPath)
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+
     fun clearCustomBackground(context: Context) {
         try {
             val oldPath = _uiState.value.customBackgroundPath

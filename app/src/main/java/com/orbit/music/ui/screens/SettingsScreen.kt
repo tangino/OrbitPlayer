@@ -90,6 +90,7 @@ fun SettingsScreen(
     var showGradientColorPickerDialog by remember { mutableStateOf(false) }
     var editingGradientColorIndex by remember { mutableIntStateOf(0) }
     var isAddingNewGradientColor by remember { mutableStateOf(false) }
+    var showImageFilePickerDialog by remember { mutableStateOf(false) }
 
     // 折叠展开状态管理 (支持记住状态与一键全部展开/折叠)
     var isThemeExpanded by rememberSaveable { mutableStateOf(true) }
@@ -105,17 +106,6 @@ fun SettingsScreen(
     val includedFolders by musicViewModel?.includedFolders?.collectAsState() ?: remember { mutableStateOf(emptySet()) }
     val excludedFolders by musicViewModel?.excludedFolders?.collectAsState() ?: remember { mutableStateOf(emptySet()) }
     val isScanning by musicViewModel?.isScanning?.collectAsState() ?: remember { mutableStateOf(false) }
-
-    val backgroundPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            val success = viewModel.setCustomBackgroundFromUri(uri, context)
-            if (success) {
-                Toast.makeText(context, context.getString(R.string.background_select_success), Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
 
     Scaffold(
         topBar = {
@@ -891,7 +881,7 @@ fun SettingsScreen(
                             }
                             Spacer(modifier = Modifier.width(8.dp))
                             Button(
-                                onClick = { backgroundPickerLauncher.launch("image/*") },
+                                onClick = { showImageFilePickerDialog = true },
                                 shape = RoundedCornerShape(8.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                             ) {
@@ -2381,6 +2371,22 @@ fun SettingsScreen(
         )
     }
 
+    // 本地磁盘图片文件浏览器弹窗 (编程列出磁盘目录，脱离系统DocumentPicker)
+    if (showImageFilePickerDialog) {
+        com.orbit.music.ui.components.ImageFilePickerDialog(
+            onDismissRequest = { showImageFilePickerDialog = false },
+            onImageSelected = { selectedImageFile ->
+                val success = viewModel.setCustomBackgroundFromFile(selectedImageFile, context)
+                if (success) {
+                    Toast.makeText(context, context.getString(R.string.background_select_success), Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "无法读取该背景图片文件，请检查存储权限", Toast.LENGTH_SHORT).show()
+                }
+                showImageFilePickerDialog = false
+            }
+        )
+    }
+
     // 移除自选颜色确认弹窗
     if (solidColorToDelete != null) {
         AlertDialog(
@@ -2405,97 +2411,28 @@ fun SettingsScreen(
         )
     }
 
-    // 添加扫描/排除文件夹弹窗
+    // 添加扫描特定目录 / 排除目录弹窗 (编程列出磁盘目录，支持层级浏览与外置U盘选择)
     if (showAddFolderDialog && musicViewModel != null) {
-        val discoveredFolders by musicViewModel.folders.collectAsState()
-        AlertDialog(
-            onDismissRequest = { showAddFolderDialog = false },
-            title = {
-                Text(
-                    text = if (isAddingIncludedFolder) stringResource(R.string.add_included_folder) else stringResource(R.string.add_excluded_folder),
-                    fontWeight = FontWeight.Bold,
-                    color = OrbitTheme.colors.textPrimary
-                )
-            },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = stringResource(R.string.folder_path_hint),
-                        fontSize = 12.sp,
-                        color = OrbitTheme.colors.textSecondary
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = customFolderPath,
-                        onValueChange = { customFolderPath = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("/storage/emulated/0/Music...", fontSize = 12.sp, color = OrbitTheme.colors.textSecondary) },
-                        singleLine = true
-                    )
+        val dialogTitle = if (isAddingIncludedFolder) {
+            stringResource(R.string.add_included_folder)
+        } else {
+            stringResource(R.string.add_excluded_folder)
+        }
 
-                    if (discoveredFolders.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Text(
-                            text = stringResource(R.string.quick_select_discovered_folder),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = OrbitTheme.colors.textPrimary
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        LazyColumn(modifier = Modifier.heightIn(max = 160.dp)) {
-                            items(discoveredFolders) { f ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .clickable { customFolderPath = f.folderPath }
-                                        .padding(vertical = 6.dp, horizontal = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Folder,
-                                        contentDescription = null,
-                                        tint = OrbitTheme.colors.primary,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "${f.folderName} (${f.songCount})",
-                                        fontSize = 12.sp,
-                                        color = OrbitTheme.colors.textPrimary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
-                        }
-                    }
+        com.orbit.music.ui.components.DirectoryPickerDialog(
+            title = dialogTitle,
+            onDismissRequest = { showAddFolderDialog = false },
+            onDirectorySelected = { selectedDir ->
+                val path = selectedDir.absolutePath
+                if (isAddingIncludedFolder) {
+                    musicViewModel.addIncludedFolder(path)
+                    Toast.makeText(context, "已添加扫描特定目录: ${selectedDir.name}", Toast.LENGTH_SHORT).show()
+                } else {
+                    musicViewModel.addExcludedFolder(path)
+                    Toast.makeText(context, "已添加排除扫描目录: ${selectedDir.name}", Toast.LENGTH_SHORT).show()
                 }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val path = customFolderPath.trim()
-                        if (path.isNotEmpty()) {
-                            if (isAddingIncludedFolder) {
-                                musicViewModel.addIncludedFolder(path)
-                            } else {
-                                musicViewModel.addExcludedFolder(path)
-                            }
-                        }
-                        showAddFolderDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = OrbitTheme.colors.primary)
-                ) {
-                    Text(stringResource(R.string.done), color = if (OrbitTheme.colors.isDark) DarkBackground else Color.White)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAddFolderDialog = false }) {
-                    Text(stringResource(R.string.cancel), color = OrbitTheme.colors.textSecondary)
-                }
-            },
-            containerColor = OrbitTheme.colors.surfaceDialog
+                showAddFolderDialog = false
+            }
         )
     }
 
