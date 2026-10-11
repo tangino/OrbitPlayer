@@ -36,5 +36,12 @@ class EqualizerApp : Application() {
         } catch (e: Throwable) {
             Log.w("EqualizerApp", "初始化车载媒体中心桥接失败: ${e.message}")
         }
+
+        // 预初始化桌面悬浮窗生命周期感知管理器
+        try {
+            com.orbit.music.ui.floating.FloatingWindowManager.getInstance(this)
+        } catch (e: Throwable) {
+            Log.w("EqualizerApp", "初始化悬浮窗管理器失败: ${e.message}")
+        }
     }
 }

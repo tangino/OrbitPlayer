@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
+import android.os.Build
 import android.util.Log
 import android.util.LruCache
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -177,10 +178,15 @@ object CoverHelper {
         val file = getOrExtractCoverFile(context, songId, path, album) ?: return null
         return try {
             val bitmap = BitmapFactory.decodeFile(file.absolutePath)
-            if (bitmap != null) {
-                memoryCache.put(songId, bitmap)
+            val safeBitmap = if (bitmap != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && bitmap.config == Bitmap.Config.HARDWARE) {
+                bitmap.copy(Bitmap.Config.ARGB_8888, false) ?: bitmap
+            } else {
+                bitmap
             }
-            bitmap
+            if (safeBitmap != null) {
+                memoryCache.put(songId, safeBitmap)
+            }
+            safeBitmap
         } catch (e: Exception) {
             Log.e(TAG, "Decode cover bitmap error: ${file.absolutePath}", e)
             null

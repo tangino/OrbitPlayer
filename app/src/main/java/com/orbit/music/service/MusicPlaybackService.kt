@@ -344,6 +344,9 @@ class MusicPlaybackService : MediaLibraryService() {
                 }
             }
         }
+
+        // 悬浮窗自动感知与展示：若开启且已获悬浮窗权限则自动显示，无权限则静默跳过
+        com.orbit.music.ui.floating.FloatingWindowManager.getInstance(this).checkAndAutoShow()
     }
 
     private fun safeStartForeground(notification: Notification) {
@@ -409,21 +412,30 @@ class MusicPlaybackService : MediaLibraryService() {
         processedBitmap
     }
 
+    private fun ensureSoftwareBitmap(src: Bitmap): Bitmap {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && src.config == Bitmap.Config.HARDWARE) {
+            src.copy(Bitmap.Config.ARGB_8888, false) ?: src
+        } else {
+            src
+        }
+    }
+
     /**
      * 为封面图添加精致防狗牙平滑圆角
      */
     private fun createRoundedBitmap(src: Bitmap, cornerRadiusPx: Float): Bitmap {
         return try {
-            val output = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
+            val safeSrc = ensureSoftwareBitmap(src)
+            val output = Bitmap.createBitmap(safeSrc.width, safeSrc.height, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(output)
             val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-            val rect = RectF(0f, 0f, src.width.toFloat(), src.height.toFloat())
+            val rect = RectF(0f, 0f, safeSrc.width.toFloat(), safeSrc.height.toFloat())
             canvas.drawRoundRect(rect, cornerRadiusPx, cornerRadiusPx, paint)
             paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
-            canvas.drawBitmap(src, 0f, 0f, paint)
+            canvas.drawBitmap(safeSrc, 0f, 0f, paint)
             output
         } catch (e: Exception) {
-            src
+            ensureSoftwareBitmap(src)
         }
     }
 
@@ -512,7 +524,7 @@ class MusicPlaybackService : MediaLibraryService() {
         } else ""
 
         val playPauseIcon = if (isPlaying) R.drawable.ic_notif_pause else R.drawable.ic_notif_play
-        val effectiveCover = coverBitmap ?: getDefaultAlbumArt()
+        val effectiveCover = ensureSoftwareBitmap(coverBitmap ?: getDefaultAlbumArt())
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_transparent) // 纯透明小图标，不显示任何多余白色角标

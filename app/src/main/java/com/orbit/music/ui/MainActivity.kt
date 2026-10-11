@@ -445,6 +445,9 @@ class MainActivity : ComponentActivity() {
         if (hasAudioPermission) {
             musicPlayerViewModel.scanMedia()
         }
+
+        // 程序处于前台时，自动隐藏悬浮窗避免遮挡主界面；退至后台时由生命周期监听自动弹出
+        com.orbit.music.ui.floating.FloatingWindowManager.getInstance(this).hide()
     }
 
     private fun checkAndRequestPermissions() {

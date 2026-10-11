@@ -439,50 +439,126 @@ fun MusicLibraryScreen(
         if (libraryState.searchQuery.isNotBlank()) {
             viewModel.setSearchQuery("")
         }
+        if (isDetailSearching) {
+            isDetailSearching = false
+            detailSearchQuery = ""
+        }
+
+        // 匹配辅助函数：支持多维度全等匹配，杜绝单依靠 ID 造成的失配
+        fun Song.matchesCurrent(): Boolean {
+            if (this.id > 0 && currentSong.id > 0 && this.id == currentSong.id) return true
+            if (this.path.isNotBlank() && currentSong.path.isNotBlank() && this.path == currentSong.path) return true
+            val t1 = this.title.trim()
+            val t2 = currentSong.title.trim()
+            if (t1.equals(t2, ignoreCase = true)) {
+                val a1 = this.artist.trim()
+                val a2 = currentSong.artist.trim()
+                if (a1.isBlank() || a2.isBlank() || a1.equals(a2, ignoreCase = true)) return true
+            }
+            return false
+        }
+
+        // 带布局等待重试的平滑滚动定位
+        fun scrollToGridTarget(holder: SynchronizedGridStateHolder, targetIndex: Int, pageKey: String) {
+            holder.lastKnownIndex = targetIndex
+            holder.lastKnownOffset = 0
+            coverFlowLocateTrigger = System.currentTimeMillis()
+            coroutineScope.launch {
+                val mode = libraryState.getViewModeFor(pageKey)
+                var retry = 0
+                while (retry < 20) {
+                    val state = holder.stateMap[mode]
+                    if (state != null && state.layoutInfo.totalItemsCount > targetIndex) {
+                        state.animateScrollToItem(targetIndex)
+                        break
+                    }
+                    kotlinx.coroutines.delay(50)
+                    retry++
+                }
+            }
+        }
 
         // ════════════════════════════════════════════════════════════════
         // 🛡️ 严格隔离：网络歌曲 与 本地歌曲
         // ════════════════════════════════════════════════════════════════
-        if (currentSong.isOnlineSong) {
-            // ── 网络歌曲定位逻辑（绝不跳转本地 Tab，绝不在本地歌曲列表中匹配） ──
-            when (origin) {
-                is PlaybackOrigin.OnlinePlaylistOrigin -> {
-                    val targetPlaylist = origin.onlinePlaylist
-                    val targetTab = when (targetPlaylist.platform) {
-                        com.orbit.music.data.online.model.OnlinePlatform.NETEASE -> LibraryTab.NETEASE_SQUARE
-                        com.orbit.music.data.online.model.OnlinePlatform.QQ -> LibraryTab.QQ_SQUARE
-                        com.orbit.music.data.online.model.OnlinePlatform.KUGOU -> LibraryTab.KUGOU_SQUARE
-                        com.orbit.music.data.online.model.OnlinePlatform.KUWO -> LibraryTab.KUWO_SQUARE
-                        com.orbit.music.data.online.model.OnlinePlatform.MIGU -> LibraryTab.MIGU_SQUARE
-                    }
+        val isOnlineSong = currentSong.isOnlineSong ||
+                currentSong.path.startsWith("online://") ||
+                currentSong.path.startsWith("http") ||
+                com.orbit.music.data.online.engine.OnlineAudioSourceManager.isOnlineSong(currentSong) ||
+                origin is PlaybackOrigin.OnlinePlaylistOrigin ||
+                origin is PlaybackOrigin.OnlineArtistOrigin ||
+                origin is PlaybackOrigin.OnlineAlbumOrigin ||
+                origin is PlaybackOrigin.OnlineSearchOrigin ||
+                origin is PlaybackOrigin.OnlineSquareOrigin
 
-                    // 判断是否已经打开了目标网络歌单
-                    val isAlreadyInTarget = openedOnlinePlaylist?.id == targetPlaylist.id &&
-                            openedOnlinePlaylist?.platform == targetPlaylist.platform
+        val playedPlaylistManager = com.orbit.music.data.repository.PlayedPlaylistManager.getInstance(context)
 
-                    if (!isAlreadyInTarget) {
-                        // 原子切换 Tab 并直接打开目标歌单，避免先切换 Tab 显示广场再打开歌单的跳跃和闪烁
-                        viewModel.navigateToOnlinePlaylist(targetPlaylist, targetTab)
-                    }
+        if (isOnlineSong) {
+            // ── 网络歌曲定位逻辑 ──
+            // 场景 A：当前正处于网络歌单详情内，且该歌单包含当前歌曲 -> 直接在当前歌单内定位
+            if (openedOnlinePlaylist != null) {
+                val targetIndex = onlinePlaylistSongs.indexOfFirst {
+                    it.title.equals(currentSong.title, ignoreCase = true) &&
+                    (currentSong.artist.isBlank() || it.artist.isBlank() || it.artist.equals(currentSong.artist, ignoreCase = true))
+                }
+                if (targetIndex >= 0) {
+                    onlineSongsLocateIndex = targetIndex
+                    onlineSongsLocateTrigger = System.currentTimeMillis()
+                    return
+                }
+            }
 
-                    coroutineScope.launch {
-                        var retry = 0
-                        while (retry < 30) {
-                            val currentList = onlinePlaylistSongs
-                            val targetIndex = currentList.indexOfFirst {
-                                it.title == currentSong.title && (currentSong.artist.isBlank() || it.artist == currentSong.artist)
-                            }
-                            if (targetIndex >= 0) {
-                                onlineSongsLocateIndex = targetIndex
-                                onlineSongsLocateTrigger = System.currentTimeMillis()
-                                break
-                            }
-                            kotlinx.coroutines.delay(60)
-                            retry++
-                        }
-                    }
+            // 场景 B：来源为明确的网络歌单 (优先取 origin，未取到时从播放记录兜底恢复)
+            val targetPlaylist = (origin as? PlaybackOrigin.OnlinePlaylistOrigin)?.onlinePlaylist
+                ?: (playedPlaylistManager.currentPlaylist.value?.takeIf { it.category == com.orbit.music.data.repository.PlaylistCategory.ONLINE && it.platform != null }?.let { entry ->
+                    com.orbit.music.data.online.model.OnlinePlaylist(
+                        id = entry.id,
+                        title = entry.title,
+                        platform = entry.platform!!,
+                        coverUrl = entry.coverUrl ?: "",
+                        creatorName = entry.creatorName,
+                        trackCount = entry.songCount
+                    )
+                })
+
+            if (targetPlaylist != null) {
+                val targetTab = when (targetPlaylist.platform) {
+                    com.orbit.music.data.online.model.OnlinePlatform.NETEASE -> LibraryTab.NETEASE_SQUARE
+                    com.orbit.music.data.online.model.OnlinePlatform.QQ -> LibraryTab.QQ_SQUARE
+                    com.orbit.music.data.online.model.OnlinePlatform.KUGOU -> LibraryTab.KUGOU_SQUARE
+                    com.orbit.music.data.online.model.OnlinePlatform.KUWO -> LibraryTab.KUWO_SQUARE
+                    com.orbit.music.data.online.model.OnlinePlatform.MIGU -> LibraryTab.MIGU_SQUARE
                 }
 
+                val isAlreadyInTarget = openedOnlinePlaylist?.id == targetPlaylist.id &&
+                        openedOnlinePlaylist?.platform == targetPlaylist.platform
+
+                if (!isAlreadyInTarget) {
+                    viewModel.navigateToOnlinePlaylist(targetPlaylist, targetTab)
+                }
+
+                coroutineScope.launch {
+                    var retry = 0
+                    while (retry < 35) {
+                        val currentList = onlinePlaylistSongs
+                        val targetIndex = currentList.indexOfFirst {
+                            it.title.equals(currentSong.title, ignoreCase = true) &&
+                            (currentSong.artist.isBlank() || it.artist.isBlank() || it.artist.equals(currentSong.artist, ignoreCase = true))
+                        }
+                        if (targetIndex >= 0) {
+                            onlineSongsLocateIndex = targetIndex
+                            onlineSongsLocateTrigger = System.currentTimeMillis()
+                            break
+                        }
+                        kotlinx.coroutines.delay(60)
+                        retry++
+                    }
+                }
+                return
+            }
+
+            // 场景 C：其他网络来源 (歌手/专辑/搜索/广场)
+            when (origin) {
                 is PlaybackOrigin.OnlineArtistOrigin -> {
                     viewModel.clearAllDrillDown()
                     if (libraryState.currentTab != LibraryTab.ONLINE_ARTISTS) {
@@ -490,6 +566,7 @@ fun MusicLibraryScreen(
                     }
                     openedOnlineArtist = origin.onlineArtist
                     openedOnlineAlbum = null
+                    return
                 }
 
                 is PlaybackOrigin.OnlineAlbumOrigin -> {
@@ -498,6 +575,7 @@ fun MusicLibraryScreen(
                         viewModel.setTab(LibraryTab.ONLINE_ARTISTS)
                     }
                     openedOnlineAlbum = origin.onlineAlbum
+                    return
                 }
 
                 is PlaybackOrigin.OnlineSearchOrigin -> {
@@ -505,6 +583,7 @@ fun MusicLibraryScreen(
                     if (libraryState.currentTab != LibraryTab.ONLINE_SEARCH) {
                         viewModel.setTab(LibraryTab.ONLINE_SEARCH)
                     }
+                    return
                 }
 
                 is PlaybackOrigin.OnlineSquareOrigin -> {
@@ -519,25 +598,78 @@ fun MusicLibraryScreen(
                     if (libraryState.currentTab != targetTab) {
                         viewModel.setTab(targetTab)
                     }
+                    return
                 }
 
                 else -> {
-                    // 若当前正处于网络歌单下钻并且包含该歌曲，则在当前歌单内定位
-                    if (openedOnlinePlaylist != null) {
-                        val targetIndex = onlinePlaylistSongs.indexOfFirst {
-                            it.title == currentSong.title && (currentSong.artist.isBlank() || it.artist == currentSong.artist)
+                    // 最终兜底：若能识别歌曲所属平台，跳转至该平台广场 Tab
+                    val platform = currentSong.resolvedPlatform
+                    if (platform != null) {
+                        val targetTab = when (platform) {
+                            com.orbit.music.data.online.model.OnlinePlatform.NETEASE -> LibraryTab.NETEASE_SQUARE
+                            com.orbit.music.data.online.model.OnlinePlatform.QQ -> LibraryTab.QQ_SQUARE
+                            com.orbit.music.data.online.model.OnlinePlatform.KUGOU -> LibraryTab.KUGOU_SQUARE
+                            com.orbit.music.data.online.model.OnlinePlatform.KUWO -> LibraryTab.KUWO_SQUARE
+                            com.orbit.music.data.online.model.OnlinePlatform.MIGU -> LibraryTab.MIGU_SQUARE
                         }
-                        if (targetIndex >= 0) {
-                            onlineSongsLocateIndex = targetIndex
-                            onlineSongsLocateTrigger = System.currentTimeMillis()
+                        viewModel.clearAllDrillDown()
+                        if (libraryState.currentTab != targetTab) {
+                            viewModel.setTab(targetTab)
                         }
+                        return
                     }
                 }
             }
             return
         }
 
-        // ── 本地歌曲定位逻辑（绝不匹配网络歌曲，只使用严格的本地 ID / 路径匹配） ──
+        // ════════════════════════════════════════════════════════════════
+        // ── 本地歌曲定位逻辑 ──
+        // ════════════════════════════════════════════════════════════════
+
+        // 优先检查当前是否正处于某一个包含该歌曲的下钻页面，直接在当前页面定位
+        if (openedFolderPath != null && currentSong.folderPath == openedFolderPath) {
+            val folderSongs = allSongs.filter { it.folderPath == openedFolderPath }
+            val targetIndex = folderSongs.indexOfFirst { it.matchesCurrent() }
+            if (targetIndex >= 0) {
+                scrollToGridTarget(folderSongsGridHolder, targetIndex, "detail_folder")
+                return
+            }
+        }
+
+        if (openedAlbum != null) {
+            val targetTitle = openedAlbum!!.title.trim()
+            if (currentSong.album.trim().equals(targetTitle, ignoreCase = true)) {
+                val albumSongs = allSongs.filter { it.album.trim().equals(targetTitle, ignoreCase = true) }
+                val targetIndex = albumSongs.indexOfFirst { it.matchesCurrent() }
+                if (targetIndex >= 0) {
+                    scrollToGridTarget(albumSongsGridHolder, targetIndex, "detail_album")
+                    return
+                }
+            }
+        }
+
+        if (openedArtist != null) {
+            val targetName = openedArtist!!.name.trim()
+            if (currentSong.artist.contains(targetName, ignoreCase = true)) {
+                val artistSongs = allSongs.filter { it.artist.contains(targetName, ignoreCase = true) }
+                val targetIndex = artistSongs.indexOfFirst { it.matchesCurrent() }
+                if (targetIndex >= 0) {
+                    scrollToGridTarget(artistSongsGridHolder, targetIndex, "detail_artist")
+                    return
+                }
+            }
+        }
+
+        if (openedPlaylist != null) {
+            val targetIndex = playlistSongs.indexOfFirst { it.matchesCurrent() }
+            if (targetIndex >= 0) {
+                scrollToGridTarget(playlistSongsGridHolder, targetIndex, "detail_playlist")
+                return
+            }
+        }
+
+        // 依据 origin 精确恢复跳转定位
         when (origin) {
             is PlaybackOrigin.Folder -> {
                 val targetPath = origin.folderPath.ifBlank { currentSong.folderPath }
@@ -548,16 +680,9 @@ fun MusicLibraryScreen(
                 }
 
                 val folderSongs = allSongs.filter { it.folderPath == targetPath }
-                val targetIndex = folderSongs.indexOfFirst { it.id == currentSong.id }
+                val targetIndex = folderSongs.indexOfFirst { it.matchesCurrent() }
                 if (targetIndex >= 0) {
-                    val mode = libraryState.getViewModeFor("detail_folder")
-                    folderSongsGridHolder.lastKnownIndex = targetIndex
-                    folderSongsGridHolder.lastKnownOffset = 0
-                    coverFlowLocateTrigger = System.currentTimeMillis()
-                    coroutineScope.launch {
-                        kotlinx.coroutines.delay(60)
-                        folderSongsGridHolder.animateScrollToItem(targetIndex, mode)
-                    }
+                    scrollToGridTarget(folderSongsGridHolder, targetIndex, "detail_folder")
                 }
             }
 
@@ -576,16 +701,9 @@ fun MusicLibraryScreen(
                     sAlbum.equals(targetTitle, ignoreCase = true) ||
                     (isUnknown && (sAlbum.isBlank() || sAlbum.equals("Unknown Album", ignoreCase = true)))
                 }
-                val targetIndex = albumSongs.indexOfFirst { it.id == currentSong.id }
+                val targetIndex = albumSongs.indexOfFirst { it.matchesCurrent() }
                 if (targetIndex >= 0) {
-                    val mode = libraryState.getViewModeFor("detail_album")
-                    albumSongsGridHolder.lastKnownIndex = targetIndex
-                    albumSongsGridHolder.lastKnownOffset = 0
-                    coverFlowLocateTrigger = System.currentTimeMillis()
-                    coroutineScope.launch {
-                        kotlinx.coroutines.delay(60)
-                        albumSongsGridHolder.animateScrollToItem(targetIndex, mode)
-                    }
+                    scrollToGridTarget(albumSongsGridHolder, targetIndex, "detail_album")
                 }
             }
 
@@ -604,16 +722,9 @@ fun MusicLibraryScreen(
                     (targetName == "未知艺术家" && sArtist.isBlank()) ||
                     sArtist.split('/', ',', '&', '、', ';').any { it.trim().equals(targetName, ignoreCase = true) }
                 }
-                val targetIndex = artistSongs.indexOfFirst { it.id == currentSong.id }
+                val targetIndex = artistSongs.indexOfFirst { it.matchesCurrent() }
                 if (targetIndex >= 0) {
-                    val mode = libraryState.getViewModeFor("detail_artist")
-                    artistSongsGridHolder.lastKnownIndex = targetIndex
-                    artistSongsGridHolder.lastKnownOffset = 0
-                    coverFlowLocateTrigger = System.currentTimeMillis()
-                    coroutineScope.launch {
-                        kotlinx.coroutines.delay(60)
-                        artistSongsGridHolder.animateScrollToItem(targetIndex, mode)
-                    }
+                    scrollToGridTarget(artistSongsGridHolder, targetIndex, "detail_artist")
                 }
             }
 
@@ -634,34 +745,22 @@ fun MusicLibraryScreen(
                         withContext(Dispatchers.IO) { viewModel.getSongsInPlaylist(targetPlaylist.id) }
                     }
                     playlistSongs = pSongs
-                    val targetIndex = pSongs.indexOfFirst { it.id == currentSong.id }
+                    val targetIndex = pSongs.indexOfFirst { it.matchesCurrent() }
                     if (targetIndex >= 0) {
-                        val mode = libraryState.getViewModeFor("detail_playlist")
-                        playlistSongsGridHolder.lastKnownIndex = targetIndex
-                        playlistSongsGridHolder.lastKnownOffset = 0
-                        coverFlowLocateTrigger = System.currentTimeMillis()
-                        kotlinx.coroutines.delay(60)
-                        playlistSongsGridHolder.animateScrollToItem(targetIndex, mode)
+                        scrollToGridTarget(playlistSongsGridHolder, targetIndex, "detail_playlist")
                     }
                 }
             }
 
             else -> {
-                // 本地全部歌曲列表
+                // 本地全部歌曲列表 (或来源恢复兜底)
                 viewModel.clearAllDrillDown()
                 if (libraryState.currentTab != LibraryTab.SONGS) {
                     viewModel.setTab(LibraryTab.SONGS)
                 }
-                val targetIndex = allSongs.indexOfFirst { it.id == currentSong.id }
+                val targetIndex = allSongs.indexOfFirst { it.matchesCurrent() }
                 if (targetIndex >= 0) {
-                    val mode = libraryState.getViewModeFor("tab_songs")
-                    songsGridHolder.lastKnownIndex = targetIndex
-                    songsGridHolder.lastKnownOffset = 0
-                    coverFlowLocateTrigger = System.currentTimeMillis()
-                    coroutineScope.launch {
-                        kotlinx.coroutines.delay(60)
-                        songsGridHolder.animateScrollToItem(targetIndex, mode)
-                    }
+                    scrollToGridTarget(songsGridHolder, targetIndex, "tab_songs")
                 }
             }
         }

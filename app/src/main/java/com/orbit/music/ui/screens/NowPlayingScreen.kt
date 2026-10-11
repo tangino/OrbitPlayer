@@ -5479,7 +5479,15 @@ fun NowPlayingLibraryMiddleColumn(
                                     isCurrentPlaying = isCurrentPlaying,
                                     onClick = {
                                         val origin = if (selectedTab == NowPlayingMiddleTab.ONLINE_PLAYLIST) playbackOrigin else null
-                                        viewModel.playSong(filteredSongs, index, origin)
+                                        if (selectedTab == NowPlayingMiddleTab.ONLINE_PLAYLIST) {
+                                            val queue = playbackState.currentPlaylist
+                                            val realIdx = queue.indexOfFirst {
+                                                (it.id > 0 && it.id == s.id) || (it.title == s.title && (it.artist.isBlank() || s.artist.isBlank() || it.artist == s.artist))
+                                            }
+                                            viewModel.playSong(queue, if (realIdx >= 0) realIdx else index, origin)
+                                        } else {
+                                            viewModel.playSong(filteredSongs, index, origin)
+                                        }
                                     }
                                 )
                             }

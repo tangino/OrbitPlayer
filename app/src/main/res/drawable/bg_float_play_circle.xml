@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#4DFFFFFF">
+    <item>
+        <shape android:shape="oval">
+            <!-- 居中晶莹半透黑曜磨砂底座，无论任何浅色或深色封面均清晰醒目 -->
+            <solid android:color="#8A10141D" />
+            <!-- 微光高亮玻璃描边 -->
+            <stroke
+                android:width="1dp"
+                android:color="#66FFFFFF" />
+        </shape>
+    </item>
+</ripple>

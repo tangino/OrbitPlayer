@@ -52,6 +52,11 @@ import com.orbit.music.ui.components.MeshGradientBackground
 import com.orbit.music.ui.theme.*
 import com.orbit.music.ui.viewmodel.EqualizerViewModel
 import com.orbit.music.ui.viewmodel.MusicPlayerViewModel
+import com.orbit.music.ui.floating.FloatingWindowManager
+import com.orbit.music.utils.PermissionHelper
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -98,6 +103,7 @@ fun SettingsScreen(
     var isBgExpanded by rememberSaveable { mutableStateOf(true) }
     var isTrailExpanded by rememberSaveable { mutableStateOf(false) }
     var isVisualizerExpanded by rememberSaveable { mutableStateOf(true) }
+    var isFloatingExpanded by rememberSaveable { mutableStateOf(true) }
     var isLangStartupExpanded by rememberSaveable { mutableStateOf(false) }
     var isAudioLibExpanded by rememberSaveable { mutableStateOf(true) }
     var isBackupExpanded by rememberSaveable { mutableStateOf(false) }
@@ -117,7 +123,7 @@ fun SettingsScreen(
                     }
                 },
                 actions = {
-                    val anyExpanded = isThemeExpanded || isOnlineExpanded || isBgExpanded || isTrailExpanded || isVisualizerExpanded || isLangStartupExpanded || isAudioLibExpanded || isBackupExpanded || isDeviceInfoExpanded
+                    val anyExpanded = isThemeExpanded || isOnlineExpanded || isBgExpanded || isTrailExpanded || isVisualizerExpanded || isFloatingExpanded || isLangStartupExpanded || isAudioLibExpanded || isBackupExpanded || isDeviceInfoExpanded
                     TextButton(
                         onClick = {
                             val target = !anyExpanded
@@ -126,6 +132,7 @@ fun SettingsScreen(
                             isBgExpanded = target
                             isTrailExpanded = target
                             isVisualizerExpanded = target
+                            isFloatingExpanded = target
                             isLangStartupExpanded = target
                             isAudioLibExpanded = target
                             isBackupExpanded = target
@@ -1591,6 +1598,120 @@ fun SettingsScreen(
                             valueRange = 0.1f..1.0f,
                             onValueChange = { viewModel.setMaximizedCoverAlpha(it) }
                         )
+                    }
+                }
+            }
+
+            // 桌面悬浮窗与快捷播控
+            item {
+                var hasOverlayPerm by remember { mutableStateOf(PermissionHelper.hasOverlayPermission(context)) }
+
+                val lifecycleOwner = LocalLifecycleOwner.current
+                DisposableEffect(lifecycleOwner) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME) {
+                            hasOverlayPerm = PermissionHelper.hasOverlayPermission(context)
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose {
+                        lifecycleOwner.lifecycle.removeObserver(observer)
+                    }
+                }
+
+                val permStatusDesc = if (hasOverlayPerm) "已获得权限 (后台自动出现)" else "未授权 (点击去授权)"
+                val floatingSummary = "${if (uiState.floatingWindowEnabled) "功能已开启" else "功能已关闭"} · 权限状态: $permStatusDesc"
+
+                CollapsibleSettingsCard(
+                    icon = Icons.Default.PictureInPicture,
+                    title = "桌面悬浮窗",
+                    subtitle = floatingSummary,
+                    badgeText = if (uiState.floatingWindowEnabled && !hasOverlayPerm) "未授权" else null,
+                    isExpanded = isFloatingExpanded,
+                    onToggleExpand = { isFloatingExpanded = !isFloatingExpanded }
+                ) {
+                    SettingsSwitchItem(
+                        icon = Icons.Default.PictureInPictureAlt,
+                        title = "启用桌面悬浮窗",
+                        subtitle = "程序退至后台或桌面时悬浮显示歌曲信息、实时歌词及快捷切歌播控 (在前台时自动隐藏)",
+                        checked = uiState.floatingWindowEnabled,
+                        onCheckedChange = { isChecked ->
+                            viewModel.setFloatingWindowEnabled(isChecked)
+                            if (isChecked) {
+                                if (PermissionHelper.hasOverlayPermission(context)) {
+                                    Toast.makeText(context, "桌面悬浮窗已开启，程序退至后台时将自动出现", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "请先授予悬浮窗权限", Toast.LENGTH_SHORT).show()
+                                    PermissionHelper.openOverlayPermissionSettings(context)
+                                }
+                            } else {
+                                FloatingWindowManager.getInstance(context).hide()
+                            }
+                        }
+                    )
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                    )
+
+                    // 权限状态与授权入口
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (!hasOverlayPerm) {
+                                    PermissionHelper.openOverlayPermissionSettings(context)
+                                }
+                            }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (hasOverlayPerm) Icons.Default.CheckCircle else Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = if (hasOverlayPerm) Color(0xFF10B981) else Color(0xFFF59E0B),
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "悬浮窗权限状态",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = OrbitTheme.colors.textPrimary
+                            )
+                            Text(
+                                text = if (hasOverlayPerm) "已获得系统悬浮窗显示权限，可正常自动展示" else "未获得权限，点击前往系统设置开启悬浮窗权限",
+                                fontSize = 12.sp,
+                                color = if (hasOverlayPerm) OrbitTheme.colors.textSecondary else Color(0xFFF59E0B)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        if (!hasOverlayPerm) {
+                            FilledTonalButton(
+                                onClick = {
+                                    PermissionHelper.openOverlayPermissionSettings(context)
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text("去授权", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            Surface(
+                                color = Color(0xFF10B981).copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = "已授权",
+                                    color = Color(0xFF10B981),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
