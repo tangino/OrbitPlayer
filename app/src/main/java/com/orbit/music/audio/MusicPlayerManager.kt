@@ -10,6 +10,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import com.orbit.music.audio.NativeDspAudioProcessor
 import com.orbit.music.data.model.Song
 import com.orbit.music.data.online.engine.OnlineAudioSourceManager
 import com.orbit.music.data.online.engine.SourceScriptManager
@@ -90,10 +94,27 @@ class MusicPlayerManager private constructor(private val context: Context) {
     private var consecutiveResolveFailures = 0
     private var currentSongRefreshRetryCount = 0
 
-    // 采用具备本地磁盘边播边缓存能力的数据源工厂，断网或原直链失效依然可从本地分片离线读取
+    // 具备本地磁盘边播边缓存能力的数据源工厂，断网或原直链失效依然可从本地分片离线读取
     private val cachedDataSourceFactory = audioCacheManager.createCacheDataSourceFactory()
 
-    private val player: ExoPlayer = ExoPlayer.Builder(context)
+    private val nativeDspAudioProcessor = NativeDspAudioProcessor()
+
+    private val renderersFactory = object : DefaultRenderersFactory(context) {
+        override fun buildAudioSink(
+            context: Context,
+            enableFloatOutput: Boolean,
+            enableAudioTrackPlaybackParams: Boolean
+        ): AudioSink {
+            return DefaultAudioSink.Builder(context)
+                .setEnableFloatOutput(true)
+                .setAudioProcessors(arrayOf(nativeDspAudioProcessor))
+                .build()
+        }
+    }.apply {
+        setEnableAudioFloatOutput(true)
+    }
+
+    private val player: ExoPlayer = ExoPlayer.Builder(context, renderersFactory)
         .setMediaSourceFactory(DefaultMediaSourceFactory(cachedDataSourceFactory))
         .setAudioAttributes(
             AudioAttributes.Builder()
@@ -465,6 +486,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
                     val audioSessionId = player.audioSessionId
                     if (audioSessionId != C.AUDIO_SESSION_ID_UNSET && audioSessionId != 0) {
                         Log.i(TAG, "ExoPlayer AudioSession ID: $audioSessionId. Attaching to Equalizer DSP Chain...")
+                        effectManager.registerInternalSession(audioSessionId)
                         effectManager.attachSession(audioSessionId)
                         if (player.isPlaying) {
                             visualizerManager.attachSession(audioSessionId)
@@ -673,6 +695,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
                 if (audioSessionId != C.AUDIO_SESSION_ID_UNSET && audioSessionId != 0) {
                     Log.i(TAG, "ExoPlayer onAudioSessionIdChanged: $audioSessionId")
+                    effectManager.registerInternalSession(audioSessionId)
                     effectManager.attachSession(audioSessionId)
                     if (player.isPlaying) {
                         visualizerManager.attachSession(audioSessionId, force = true)

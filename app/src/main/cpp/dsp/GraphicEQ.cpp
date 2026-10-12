@@ -15,8 +15,17 @@ void GraphicEQ::setMode(GraphicEQMode mode) {
 }
 
 void GraphicEQ::setSampleRate(float sampleRate) {
+    if (sampleRate <= 0.0f || std::abs(sampleRate_ - sampleRate) < 0.5f) {
+        return;
+    }
     sampleRate_ = sampleRate;
-    initializeBands();
+    // 关键修复：采样率变化时，保留所有已设置的增益，重新计算滤波器系数，严禁清零！
+    size_t count = frequencies_.size();
+    for (size_t i = 0; i < count; ++i) {
+        float gain = (i < gains_.size()) ? gains_[i] : 0.0f;
+        filtersLeft_[i].configure(FilterType::PEAKING, frequencies_[i], gain, q_, sampleRate_);
+        filtersRight_[i].configure(FilterType::PEAKING, frequencies_[i], gain, q_, sampleRate_);
+    }
 }
 
 void GraphicEQ::initializeBands() {
@@ -44,13 +53,16 @@ void GraphicEQ::initializeBands() {
     }
 
     size_t count = frequencies_.size();
-    gains_.assign(count, 0.0f);
+    std::vector<float> oldGains = gains_;
+    gains_.resize(count, 0.0f);
     filtersLeft_.resize(count);
     filtersRight_.resize(count);
 
     for (size_t i = 0; i < count; ++i) {
-        filtersLeft_[i].configure(FilterType::PEAKING, frequencies_[i], 0.0f, q_, sampleRate_);
-        filtersRight_[i].configure(FilterType::PEAKING, frequencies_[i], 0.0f, q_, sampleRate_);
+        float gain = (i < oldGains.size()) ? oldGains[i] : 0.0f;
+        gains_[i] = gain;
+        filtersLeft_[i].configure(FilterType::PEAKING, frequencies_[i], gain, q_, sampleRate_);
+        filtersRight_[i].configure(FilterType::PEAKING, frequencies_[i], gain, q_, sampleRate_);
     }
 }
 

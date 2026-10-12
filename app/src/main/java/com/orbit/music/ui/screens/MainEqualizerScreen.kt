@@ -148,7 +148,7 @@ fun MainEqualizerScreen(
                         DspRotaryKnob(
                             title = "低音",
                             strength = uiState.bassBoostStrength,
-                            enabled = uiState.isEnabled,
+                            enabled = true,
                             onStrengthChanged = {
                                 viewModel.toggleBassBoost(it > 0.001f)
                                 viewModel.setBassBoostStrength(it)
@@ -158,7 +158,7 @@ fun MainEqualizerScreen(
                         DspRotaryKnob(
                             title = "高音",
                             strength = uiState.trebleBoostStrength,
-                            enabled = uiState.isEnabled,
+                            enabled = true,
                             onStrengthChanged = {
                                 viewModel.toggleTrebleBoost(it > 0.001f)
                                 viewModel.setTrebleBoostStrength(it)
@@ -513,7 +513,7 @@ fun MainEqualizerScreen(
                     DspRotaryKnob(
                         title = "低音",
                         strength = uiState.bassBoostStrength,
-                        enabled = uiState.isEnabled,
+                        enabled = true,
                         onStrengthChanged = {
                             viewModel.toggleBassBoost(it > 0.001f)
                             viewModel.setBassBoostStrength(it)
@@ -523,7 +523,7 @@ fun MainEqualizerScreen(
                     DspRotaryKnob(
                         title = "高音",
                         strength = uiState.trebleBoostStrength,
-                        enabled = uiState.isEnabled,
+                        enabled = true,
                         onStrengthChanged = {
                             viewModel.toggleTrebleBoost(it > 0.001f)
                             viewModel.setTrebleBoostStrength(it)

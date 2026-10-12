@@ -25,9 +25,14 @@ class NativeDSP private constructor() {
         if (nativeHandle != 0L) nativeSetSampleRate(nativeHandle, sampleRate)
     }
 
+    private var isEnabledInternal = true
+
     fun setEnabled(enabled: Boolean) {
+        isEnabledInternal = enabled
         if (nativeHandle != 0L) nativeSetEnabled(nativeHandle, enabled)
     }
+
+    fun isEnabled(): Boolean = isEnabledInternal
 
     fun setEngineMode(mode: Int) {
         if (nativeHandle != 0L) nativeSetEngineMode(nativeHandle, mode)
@@ -115,6 +120,18 @@ class NativeDSP private constructor() {
         release()
     }
 
+    fun processDirectFloatBuffer(buffer: java.nio.ByteBuffer, positionBytes: Int, numFrames: Int) {
+        if (nativeHandle != 0L) {
+            nativeProcessDirectFloatBuffer(nativeHandle, buffer, positionBytes, numFrames)
+        }
+    }
+
+    fun processDirectInt16Buffer(buffer: java.nio.ByteBuffer, positionBytes: Int, numFrames: Int) {
+        if (nativeHandle != 0L) {
+            nativeProcessDirectInt16Buffer(nativeHandle, buffer, positionBytes, numFrames)
+        }
+    }
+
     // --- Native 函数声明 ---
     private external fun nativeCreateEngine(): Long
     private external fun nativeDestroyEngine(handle: Long)
@@ -140,6 +157,8 @@ class NativeDSP private constructor() {
     private external fun nativeIsClipping(handle: Long): Boolean
     private external fun nativeSetLimiter(handle: Long, enabled: Boolean, thresholdDb: Float)
     private external fun nativeProcessBuffer(handle: Long, buffer: FloatArray, numFrames: Int)
+    private external fun nativeProcessDirectFloatBuffer(handle: Long, buffer: java.nio.ByteBuffer, positionBytes: Int, numFrames: Int)
+    private external fun nativeProcessDirectInt16Buffer(handle: Long, buffer: java.nio.ByteBuffer, positionBytes: Int, numFrames: Int)
     private external fun nativeGetCurve(handle: Long, freqPoints: FloatArray, outMagnitudes: FloatArray)
     private external fun nativeGetSpectrum(handle: Long, outBands: FloatArray)
     private external fun nativeGetPeakLevels(handle: Long): FloatArray?

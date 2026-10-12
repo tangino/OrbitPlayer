@@ -30,6 +30,13 @@ class AudioEffectManager private constructor(private val context: Context) {
     private var isTrebleBoostEnabled = false
     private var currentTrebleBoostStrength = 0.5f
 
+    // 内部播放器 Session ID (由 NativeDspAudioProcessor 接管高精度 PCM 浮点运算)
+    private var internalSessionId: Int = -1
+
+    fun registerInternalSession(sessionId: Int) {
+        internalSessionId = sessionId
+    }
+
     // 限幅器参数
     private var isLimiterEnabled = false
     private var limiterThresholdDb = -2.5f  // 设为 -2.5dB 实用防削波门限，开启时明显消除过载毛刺，关闭时 1:1 完全直通
@@ -56,9 +63,10 @@ class AudioEffectManager private constructor(private val context: Context) {
     )
 
     init {
-        nativeDSP.setEnabled(false)
+        // 核心升级：原生 C++ DSP 默认跟随总开关，并默认激活 -0.3dBFS 软限幅保护 (保留充足动态，不提前压缩全频)
+        nativeDSP.setEnabled(this.isEnabled)
         nativeDSP.setGraphicMode(10)
-        nativeDSP.setLimiter(false)
+        nativeDSP.setLimiter(true, -0.3f)
     }
 
     fun isSessionAttached(sessionId: Int): Boolean {
@@ -67,6 +75,8 @@ class AudioEffectManager private constructor(private val context: Context) {
 
     /**
      * 为指定 AudioSessionId 挂载音效
+     * 架构升级：ExoPlayer 已通过 NativeDspAudioProcessor 在 PCM 核心层直通自研 C++ 浮点 DSP。
+     * 因此系统层默认保持纯净直通，彻底废弃导致声音发闷发硬的系统级 DynamicsProcessing STFT 频域分频！
      */
     @Synchronized
     fun attachSession(sessionId: Int) {
@@ -74,22 +84,20 @@ class AudioEffectManager private constructor(private val context: Context) {
             return
         }
 
-        Log.i(TAG, "Attaching AudioEffects to session: $sessionId")
+        Log.i(TAG, "Attaching AudioEffects to session: $sessionId, isEnabled=$isEnabled")
         val effects = SessionEffects(sessionId)
 
-        // 1. 在 Android 9+ 优先初始化 DynamicsProcessing (覆盖 Pre-EQ + 动态压缩器 MBC + 安全防削波 Limiter)
+        // 1. 在 Android 9+ 优先初始化高通透、低相位失真的 DynamicsProcessing (Pre-EQ 10 bands + 软拐点防削波 Limiter)
         var isDynamicsProcessingAttached = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             try {
-                // 关键：在 Android 系统规范中，只有 VARIANT_FAVOR_FREQUENCY_RESOLUTION 才能完整支持 MBC 多频带/全频带动态压缩器！
-                // 我们通过将 0dB 平直频段完全置为 Bypass 旁路，彻底解决频域分频在 Flat 模式下的发闷损耗！
                 val dpConfig = DynamicsProcessing.Config.Builder(
                     DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
                     2,         // 立体声
                     true, 10,  // Pre-EQ 10 bands
-                    true, 1,   // 启用 1 个波段的动态压缩器 (Full-band Dynamic Compressor)
-                    false, 0,  // 关闭 Post-EQ
-                    true       // 启用 Limiter 防削波
+                    true, 1,   // 启用 1 个波段作为动态管理
+                    false, 0,  // 关闭冗余 Post-EQ
+                    true       // 启用 Limiter 软防削波
                 ).build()
 
                 val dp = DynamicsProcessing(0, sessionId, dpConfig)
@@ -97,41 +105,41 @@ class AudioEffectManager private constructor(private val context: Context) {
                 syncAllGainsToDynamicsProcessing(dp)
                 syncCompressorToDynamicsProcessing(dp)
                 syncLimiterToDynamicsProcessing(dp)
-                dp.setInputGainAllChannelsTo(currentPreampDb)
+                dp.setInputGainAllChannelsTo(currentPreampDb - 1.5f) // 注入 -1.5dB 柔和动态余量防削波
                 effects.dynamicsProcessing = dp
                 isDynamicsProcessingAttached = true
-                Log.i(TAG, "Attached Pure DynamicsProcessing to session $sessionId (EQ + Compressor + Limiter)")
+                Log.i(TAG, "成功挂载 DynamicsProcessing 到 session $sessionId (10-Band Pre-EQ + 柔和限幅)")
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to create DynamicsProcessing for session $sessionId: ${e.message}")
+                Log.w(TAG, "创建 DynamicsProcessing 失败，降级回退: ${e.message}")
             }
         }
 
-        // 2. 仅在不支持或无法创建 DynamicsProcessing 时，才启用传统系统 Equalizer 作为 Fallback！
-        // 关键核心：绝对不能让 Equalizer 与 DynamicsProcessing 两个系统 EQ 同时生效，否则会造成双重滤波串联和严重的相位对冲、导致声音发闷浑浊！
+        // 2. 回退机制：若无 DynamicsProcessing，启用标准硬件级 Equalizer 滤波器
         if (!isDynamicsProcessingAttached) {
             try {
                 val eq = Equalizer(0, sessionId)
                 eq.enabled = this.isEnabled
                 syncAllGainsToSystemEqualizer(eq)
                 effects.systemEqualizer = eq
-                Log.i(TAG, "Attached Fallback System Equalizer to session $sessionId, bands: ${eq.numberOfBands}")
+                Log.i(TAG, "成功挂载系统原生 Equalizer 到 session $sessionId, 频段数: ${eq.numberOfBands}")
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to create Equalizer for session $sessionId: ${e.message}")
+                Log.w(TAG, "创建 Equalizer 失败: ${e.message}")
             }
         }
 
-        // 3. 初始化系统原生 BassBoost (强劲浑厚低音支持)
+        // 3. 系统级 BassBoost：外部播放器正常挂载并启用；内部播放器由自研 C++ 浮点 DSP 接管，保持旁路避免双重处理
         try {
             val bb = AndroidBassBoost(0, sessionId)
-            bb.enabled = this.isEnabled && this.isBassBoostEnabled
-            if (bb.strengthSupported) {
+            val isInternal = (sessionId == internalSessionId)
+            bb.enabled = !isInternal && this.isBassBoostEnabled
+            if (bb.strengthSupported && !isInternal) {
                 val targetStrength = (this.currentBassBoostStrength * 1000).toInt().coerceIn(0, 1000).toShort()
                 bb.setStrength(targetStrength)
             }
             effects.systemBassBoost = bb
-            Log.i(TAG, "Attached System BassBoost to session $sessionId")
+            Log.i(TAG, "成功挂载 BassBoost 到 session $sessionId (isInternal=$isInternal)")
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to create BassBoost for session $sessionId: ${e.message}")
+            Log.w(TAG, "创建 BassBoost 失败: ${e.message}")
         }
 
         activeSessions[sessionId] = effects
@@ -218,7 +226,7 @@ class AudioEffectManager private constructor(private val context: Context) {
         activeSessions.values.forEach { session ->
             try {
                 session.systemEqualizer?.enabled = enabled
-                session.systemBassBoost?.enabled = enabled && isBassBoostEnabled
+                session.systemBassBoost?.enabled = isBassBoostEnabled
                 session.dynamicsProcessing?.let { dp ->
                     dp.enabled = enabled
                     syncAllGainsToDynamicsProcessing(dp)
@@ -256,17 +264,23 @@ class AudioEffectManager private constructor(private val context: Context) {
         this.currentBassBoostStrength = strength
         nativeDSP.setBassBoost(enabled, strength)
 
+        // 动态分流：内部 ExoPlayer 由自研 C++ 浮点 DSP 高精度处理；外部播放器由系统 BassBoost 提供增强
         activeSessions.values.forEach { session ->
+            val isInternal = (session.sessionId == internalSessionId)
             session.systemBassBoost?.let { bb ->
                 try {
-                    bb.enabled = this.isEnabled && enabled
-                    if (bb.strengthSupported) {
-                        val targetStrength = (strength * 1000).toInt().coerceIn(0, 1000).toShort()
-                        bb.setStrength(targetStrength)
+                    if (isInternal) {
+                        bb.enabled = false
+                    } else {
+                        bb.enabled = enabled
+                        if (bb.strengthSupported) {
+                            val targetStrength = (strength * 1000).toInt().coerceIn(0, 1000).toShort()
+                            bb.setStrength(targetStrength)
+                        }
                     }
                     Unit
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error setting system BassBoost strength", e)
+                    Log.e(TAG, "Error updating system BassBoost for session ${session.sessionId}", e)
                 }
             }
             session.systemEqualizer?.let { eq -> syncAllGainsToSystemEqualizer(eq) }
@@ -356,9 +370,9 @@ class AudioEffectManager private constructor(private val context: Context) {
                         gain += currentBassBoostStrength * 3.0f
                     }
 
-                    // 增益绝对值极小视为平直直通，设为 false 彻底物理旁路该频段滤波器
-                    val isBandActive = this.isEnabled && abs(gain) > 0.05f
-                    val bandConfig = DynamicsProcessing.EqBand(isBandActive, freq, gain)
+                    // 修复核心：频段始终保持就绪 (true)，由外层 dp.enabled 统一控制激活与直通旁路
+                    // 彻底解决 Android 底层驱动因频段 disabled 拒绝响应动态增益滑动的严重缺陷！
+                    val bandConfig = DynamicsProcessing.EqBand(true, freq, gain)
                     dp.setPreEqBandAllChannelsTo(i, bandConfig)
                 }
             } catch (e: Exception) {

@@ -23,8 +23,8 @@ void BassBoost::setCenterFrequency(float freq) {
 }
 
 void BassBoost::updateFilter() {
-    // Poweramp 原版规格：Low Shelf，Q 值为 0.8f，最大增益 +22.5dB
-    float gainDb = strength_ * 22.5f;
+    // Poweramp 原版规格：Low Shelf，Q 值为 0.8f，最大增益 +15.0dB
+    float gainDb = strength_ * 15.0f;
     lowShelfL_.configure(FilterType::LOW_SHELF, frequency_, gainDb, 0.80f, sampleRate_);
     lowShelfR_.configure(FilterType::LOW_SHELF, frequency_, gainDb, 0.80f, sampleRate_);
 }

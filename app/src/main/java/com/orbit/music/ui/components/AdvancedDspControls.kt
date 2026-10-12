@@ -54,8 +54,11 @@ fun AdvancedDspControls(
         DspRotaryKnob(
             title = stringResource(R.string.bass_boost),
             strength = bassBoostStrength,
-            enabled = isEnabled && bassBoostEnabled,
-            onStrengthChanged = onBassBoostStrengthChange,
+            enabled = true,
+            onStrengthChanged = {
+                onBassBoostToggle(it > 0.001f)
+                onBassBoostStrengthChange(it)
+            },
             onToggleEnabled = onBassBoostToggle,
             modifier = Modifier.weight(1f)
         )
@@ -64,8 +67,11 @@ fun AdvancedDspControls(
         DspRotaryKnob(
             title = stringResource(R.string.treble_boost),
             strength = trebleBoostStrength,
-            enabled = isEnabled && trebleBoostEnabled,
-            onStrengthChanged = onTrebleBoostStrengthChange,
+            enabled = true,
+            onStrengthChanged = {
+                onTrebleBoostToggle(it > 0.001f)
+                onTrebleBoostStrengthChange(it)
+            },
             onToggleEnabled = onTrebleBoostToggle,
             modifier = Modifier.weight(1f)
         )

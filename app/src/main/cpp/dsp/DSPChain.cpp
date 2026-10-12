@@ -23,7 +23,7 @@ void DSPChain::setEngineMode(EQEngineMode mode) {
 }
 
 void DSPChain::setEnabled(bool enabled) {
-    enabled_ = enabled;
+    equalizerEnabled_ = enabled;
 }
 
 void DSPChain::setGraphicMode(GraphicEQMode mode) {
@@ -139,40 +139,41 @@ void DSPChain::setLimiterThresholdDb(float thresholdDb) {
 }
 
 void DSPChain::process(float* buffer, int numFrames) {
-    if (enabled_) {
-        // 1. Equalizer (Graphic or Parametric)
+    // 1. Equalizer (Graphic or Parametric) - 独立受均衡器开关控制
+    if (equalizerEnabled_) {
         if (engineMode_ == EQEngineMode::GRAPHIC) {
             graphicEQ_.processStereo(buffer, numFrames);
         } else {
             parametricEQ_.processStereo(buffer, numFrames);
         }
-
-        // 2. Bass Boost & Treble Boost
-        bassBoost_.processStereo(buffer, numFrames);
-        trebleBoost_.processStereo(buffer, numFrames);
-
-        // 3. Preamp
-        preamp_.processStereo(buffer, numFrames);
-
-        // 4. Dynamic Compressor
-        compressor_.processStereo(buffer, numFrames);
-
-        // 5. Lookahead / Peak Limiter
-        limiter_.processStereo(buffer, numFrames);
     }
+
+    // 2. 音调模块 (Bass Boost & Treble Boost) - 独立于 EQ，内部各自管理 enabled_ 与 strength
+    bassBoost_.processStereo(buffer, numFrames);
+    trebleBoost_.processStereo(buffer, numFrames);
+
+    // 3. Preamp 前级增益
+    preamp_.processStereo(buffer, numFrames);
+
+    // 4. Dynamic Compressor 动态压缩器
+    compressor_.processStereo(buffer, numFrames);
+
+    // 5. Lookahead / Peak Limiter 峰值限制器防削波
+    limiter_.processStereo(buffer, numFrames);
 
     // 实时推入 FFT 频谱与 Peak 监测
     fftAnalyzer_.pushSamples(buffer, numFrames);
 }
 
 float DSPChain::getMagnitudeResponse(float frequency) const {
-    if (!enabled_) return 0.0f;
     std::lock_guard<std::mutex> lock(configMutex_);
     float eqDb = 0.0f;
-    if (engineMode_ == EQEngineMode::GRAPHIC) {
-        eqDb = graphicEQ_.getTotalMagnitudeResponse(frequency);
-    } else {
-        eqDb = parametricEQ_.getTotalMagnitudeResponse(frequency);
+    if (equalizerEnabled_) {
+        if (engineMode_ == EQEngineMode::GRAPHIC) {
+            eqDb = graphicEQ_.getTotalMagnitudeResponse(frequency);
+        } else {
+            eqDb = parametricEQ_.getTotalMagnitudeResponse(frequency);
+        }
     }
     return eqDb + preamp_.getGainDb();
 }

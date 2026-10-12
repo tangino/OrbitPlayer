@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include_directories(
     dsp
+    player
     jni
 )
 
@@ -23,7 +24,11 @@ add_library(
     dsp/Limiter.cpp
     dsp/ParametricEQ.cpp
     dsp/Preamp.cpp
+    player/AudioDecoder.cpp
+    player/AAudioOutput.cpp
+    player/NativeAudioPipeline.cpp
     jni/native_lib.cpp
+    jni/native_player_jni.cpp
 )
 
 find_library(
@@ -36,10 +41,17 @@ find_library(
     android
 )
 
+find_library(
+    mediandk-lib
+    mediandk
+)
+
 target_link_libraries(
     native_dsp
     ${log-lib}
     ${android-lib}
+    ${mediandk-lib}
+    dl
     m
 )
 

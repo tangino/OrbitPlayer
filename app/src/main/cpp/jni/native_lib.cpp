@@ -153,6 +153,39 @@ Java_com_orbit_music_native_NativeDSP_nativeProcessBuffer(JNIEnv* env, jobject /
 }
 
 JNIEXPORT void JNICALL
+Java_com_orbit_music_native_NativeDSP_nativeProcessDirectFloatBuffer(
+    JNIEnv* env, jobject /*thiz*/, jlong handle, jobject byteBuffer, jint positionBytes, jint numFrames) {
+    if (handle != 0 && byteBuffer != nullptr && numFrames > 0) {
+        auto* rawAddress = reinterpret_cast<uint8_t*>(env->GetDirectBufferAddress(byteBuffer));
+        if (rawAddress != nullptr) {
+            float* floatPtr = reinterpret_cast<float*>(rawAddress + positionBytes);
+            reinterpret_cast<DSPChain*>(handle)->process(floatPtr, numFrames);
+        }
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_orbit_music_native_NativeDSP_nativeProcessDirectInt16Buffer(
+    JNIEnv* env, jobject /*thiz*/, jlong handle, jobject byteBuffer, jint positionBytes, jint numFrames) {
+    if (handle != 0 && byteBuffer != nullptr && numFrames > 0) {
+        auto* rawAddress = reinterpret_cast<uint8_t*>(env->GetDirectBufferAddress(byteBuffer));
+        if (rawAddress != nullptr) {
+            int16_t* int16Ptr = reinterpret_cast<int16_t*>(rawAddress + positionBytes);
+            size_t totalSamples = static_cast<size_t>(numFrames) * 2;
+            std::vector<float> floatBuf(totalSamples);
+            for (size_t i = 0; i < totalSamples; ++i) {
+                floatBuf[i] = static_cast<float>(int16Ptr[i]) / 32768.0f;
+            }
+            reinterpret_cast<DSPChain*>(handle)->process(floatBuf.data(), numFrames);
+            for (size_t i = 0; i < totalSamples; ++i) {
+                float val = floatBuf[i] * 32767.0f;
+                int16Ptr[i] = static_cast<int16_t>(std::clamp(std::round(val), -32768.0f, 32767.0f));
+            }
+        }
+    }
+}
+
+JNIEXPORT void JNICALL
 Java_com_orbit_music_native_NativeDSP_nativeGetCurve(
     JNIEnv* env, jobject /*thiz*/, jlong handle, jfloatArray freqPoints, jfloatArray outMagnitudes) {
     if (handle != 0 && freqPoints != nullptr && outMagnitudes != nullptr) {

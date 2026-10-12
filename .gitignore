@@ -32,3 +32,6 @@ app_screenshot.png
 auralis/
 HotDownloader-main/
 *.js
+ghidra_project/
+ghidra_scripts/
+decompiled_dsp.c

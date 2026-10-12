@@ -27,8 +27,9 @@ public:
     void setEngineMode(EQEngineMode mode);
     EQEngineMode getEngineMode() const { return engineMode_; }
 
+    // 均衡器 (Graphic/Parametric EQ) 独立开关
     void setEnabled(bool enabled);
-    bool isEnabled() const { return enabled_; }
+    bool isEnabled() const { return equalizerEnabled_; }
 
     // Graphic EQ 操作
     void setGraphicMode(GraphicEQMode mode);
@@ -82,7 +83,7 @@ public:
 private:
     mutable std::mutex configMutex_;
 
-    bool enabled_ = true;
+    bool equalizerEnabled_ = true;
     float sampleRate_ = 44100.0f;
     EQEngineMode engineMode_ = EQEngineMode::GRAPHIC;
 
