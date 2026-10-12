@@ -45,9 +45,9 @@ data class EqualizerUiState(
     ),
     val preampGainDb: Float = 0f,
     val isBassBoostEnabled: Boolean = false,
-    val bassBoostStrength: Float = 0.5f,
+    val bassBoostStrength: Float = 0f,
     val isTrebleBoostEnabled: Boolean = false,
-    val trebleBoostStrength: Float = 0.5f,
+    val trebleBoostStrength: Float = 0f,
     val isCompressorEnabled: Boolean = false,
     val isLimiterEnabled: Boolean = true,
     val isClipping: Boolean = false,
@@ -305,9 +305,12 @@ class EqualizerViewModel(application: Application) : AndroidViewModel(applicatio
         val selectedPreset = prefs.getString(KEY_SELECTED_PRESET_ID, "flat") ?: "flat"
         val preamp = prefs.getFloat(KEY_PREAMP_GAIN, 0f)
         val bassEnabled = prefs.getBoolean(KEY_BASS_BOOST_ENABLED, false)
-        val bassStrength = prefs.getFloat(KEY_BASS_BOOST_STRENGTH, 0.5f)
+        val bassStrengthRaw = prefs.getFloat(KEY_BASS_BOOST_STRENGTH, 0f)
         val trebleEnabled = prefs.getBoolean(KEY_TREBLE_BOOST_ENABLED, false)
-        val trebleStrength = prefs.getFloat(KEY_TREBLE_BOOST_STRENGTH, 0.5f)
+        val trebleStrengthRaw = prefs.getFloat(KEY_TREBLE_BOOST_STRENGTH, 0f)
+        // 一致性修正：音调关闭时提升量归零，杜绝"旋钮显示 50% 但实际不生效"的状态分裂
+        val bassStrength = if (bassEnabled) bassStrengthRaw else 0f
+        val trebleStrength = if (trebleEnabled) trebleStrengthRaw else 0f
         val compressorEnabled = prefs.getBoolean(KEY_COMPRESSOR_ENABLED, false)
         val limiterEnabled = prefs.getBoolean(KEY_LIMITER_ENABLED, true)
 
