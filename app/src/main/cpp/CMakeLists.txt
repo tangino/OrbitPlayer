@@ -16,6 +16,7 @@ add_library(
     SHARED
     dsp/BassBoost.cpp
     dsp/TrebleBoost.cpp
+    dsp/BassLimiter.cpp
     dsp/BiquadFilter.cpp
     dsp/Compressor.cpp
     dsp/DSPChain.cpp
