@@ -109,9 +109,9 @@ fun PlatformLoginDialog(
         }
     }
 
-    // 每次切换到扫码 Tab 或触发刷新时拉取二维码
+    // 每次切换到扫码 Tab 或触发刷新时拉取二维码（QQ 音乐使用内嵌网页扫码）
     LaunchedEffect(platform, qrRefreshTrigger) {
-        if (selectedTab == 0) {
+        if (selectedTab == 0 && platform != OnlinePlatform.QQ) {
             fetchQrCode()
         }
     }
@@ -452,13 +452,14 @@ fun PlatformLoginDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
+        val isQqWebQr = platform == OnlinePlatform.QQ && selectedTab == 0
         Card(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
-                .widthIn(max = 480.dp)
+                .widthIn(max = if (isQqWebQr) 600.dp else 460.dp)
                 .wrapContentHeight()
-                .padding(16.dp),
-            shape = RoundedCornerShape(24.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
             ),
@@ -467,7 +468,7 @@ fun PlatformLoginDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(22.dp)
+                    .padding(horizontal = 18.dp, vertical = 16.dp)
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -482,12 +483,12 @@ fun PlatformLoginDialog(
                             imageVector = if (selectedTab == 0) Icons.Default.QrCodeScanner else Icons.Default.Key,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(22.dp)
                         )
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "${platform.displayName} 账号登录",
-                            style = MaterialTheme.typography.titleLarge,
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -495,28 +496,31 @@ fun PlatformLoginDialog(
 
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(32.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "关闭",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                // Tab 切换按钮组 (扫码登录 / 填入 Cookie)
+                // Tab 切换按钮组 (居中胶囊设计，避免大屏横向拉伸变形)
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .widthIn(max = 280.dp)
+                        .fillMaxWidth(0.65f)
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(4.dp)
+                            .padding(3.dp)
                     ) {
                         // 扫码登录选项卡
                         Surface(
@@ -593,200 +597,210 @@ fun PlatformLoginDialog(
 
                 // ====== 选项卡 1：扫码登录视图 ======
                 if (selectedTab == 0) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        // 二维码展示容器 (必须保持纯白内衬以便手机镜头识别)
-                        Box(
-                            modifier = Modifier
-                                .size(230.dp)
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(Color.White)
-                                .border(1.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), RoundedCornerShape(20.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (isQrLoading) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(40.dp),
-                                        color = MaterialTheme.colorScheme.primary,
-                                        strokeWidth = 3.dp
-                                    )
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Text(
-                                        text = "获取二维码中...",
-                                        fontSize = 13.sp,
-                                        color = Color.DarkGray
-                                    )
-                                }
-                            } else if (qrErrorMessage != null && qrBitmap == null) {
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier.padding(16.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ErrorOutline,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(36.dp)
-                                    )
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = qrErrorMessage ?: "加载失败",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.error,
-                                        textAlign = TextAlign.Center
-                                    )
-                                    Spacer(modifier = Modifier.height(10.dp))
-                                    TextButton(onClick = { qrRefreshTrigger++ }) {
-                                        Text("点击重试", fontSize = 13.sp)
-                                    }
-                                }
-                            } else if (qrBitmap != null) {
-                                Image(
-                                    bitmap = qrBitmap!!.asImageBitmap(),
-                                    contentDescription = "登录二维码",
-                                    modifier = Modifier
-                                        .size(206.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                )
-
-                                // 二维码过期半透明遮罩
-                                if (qrStatus == QrStatus.EXPIRED) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(Color.Black.copy(alpha = 0.72f))
-                                            .clickable { qrRefreshTrigger++ },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                            Icon(
-                                                imageVector = Icons.Default.Refresh,
-                                                contentDescription = "刷新",
-                                                tint = Color.White,
-                                                modifier = Modifier.size(44.dp)
-                                            )
-                                            Spacer(modifier = Modifier.height(6.dp))
-                                            Text(
-                                                text = "二维码已过期\n点击重新获取",
-                                                color = Color.White,
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                textAlign = TextAlign.Center
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(18.dp))
-
-                        // 状态提示与引导
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = when (qrStatus) {
-                                QrStatus.SUCCESS -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-                                QrStatus.SCANNED -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
-                                QrStatus.EXPIRED -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
-                                else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    if (platform == OnlinePlatform.QQ) {
+                        QQMusicWebQrLoginContent(
+                            onLoginSuccess = { account ->
+                                onLoginSuccess(account)
+                                onDismiss()
                             },
-                            modifier = Modifier.fillMaxWidth()
+                            onCancel = onDismiss
+                        )
+                    } else {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Row(
+                            // 二维码展示容器 (必须保持纯白内衬以便手机镜头识别)
+                            Box(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 12.dp, horizontal = 16.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
+                                    .size(230.dp)
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(Color.White)
+                                    .border(1.5.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), RoundedCornerShape(20.dp)),
+                                contentAlignment = Alignment.Center
                             ) {
-                                when (qrStatus) {
-                                    QrStatus.WAITING -> {
-                                        Icon(
-                                            imageVector = Icons.Default.PhoneAndroid,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(20.dp)
+                                if (isQrLoading) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(40.dp),
+                                            color = MaterialTheme.colorScheme.primary,
+                                            strokeWidth = 3.dp
+                                        )
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Text(
+                                            text = "获取二维码中...",
+                                            fontSize = 13.sp,
+                                            color = Color.DarkGray
                                         )
                                     }
-                                    QrStatus.SCANNED -> {
-                                        Icon(
-                                            imageVector = Icons.Default.CheckCircleOutline,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                    QrStatus.SUCCESS -> {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                    QrStatus.EXPIRED -> {
-                                        Icon(
-                                            imageVector = Icons.Default.Warning,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                    QrStatus.ERROR -> {
+                                } else if (qrErrorMessage != null && qrBitmap == null) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.padding(16.dp)
+                                    ) {
                                         Icon(
                                             imageVector = Icons.Default.ErrorOutline,
                                             contentDescription = null,
                                             tint = MaterialTheme.colorScheme.error,
-                                            modifier = Modifier.size(20.dp)
+                                            modifier = Modifier.size(36.dp)
                                         )
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = qrErrorMessage ?: "加载失败",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.error,
+                                            textAlign = TextAlign.Center
+                                        )
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        TextButton(onClick = { qrRefreshTrigger++ }) {
+                                            Text("点击重试", fontSize = 13.sp)
+                                        }
+                                    }
+                                } else if (qrBitmap != null) {
+                                    Image(
+                                        bitmap = qrBitmap!!.asImageBitmap(),
+                                        contentDescription = "登录二维码",
+                                        modifier = Modifier
+                                            .size(206.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                    )
+
+                                    // 二维码过期半透明遮罩
+                                    if (qrStatus == QrStatus.EXPIRED) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(Color.Black.copy(alpha = 0.72f))
+                                                .clickable { qrRefreshTrigger++ },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Refresh,
+                                                    contentDescription = "刷新",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(44.dp)
+                                                )
+                                                Spacer(modifier = Modifier.height(6.dp))
+                                                Text(
+                                                    text = "二维码已过期\n点击重新获取",
+                                                    color = Color.White,
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                            }
+                                        }
                                     }
                                 }
+                            }
 
-                                Spacer(modifier = Modifier.width(10.dp))
+                            Spacer(modifier = Modifier.height(18.dp))
 
-                                Text(
-                                    text = qrStatusMessage,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    color = when (qrStatus) {
-                                        QrStatus.EXPIRED -> MaterialTheme.colorScheme.error
-                                        else -> MaterialTheme.colorScheme.onSurface
+                            // 状态提示与引导
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = when (qrStatus) {
+                                    QrStatus.SUCCESS -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                    QrStatus.SCANNED -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+                                    QrStatus.EXPIRED -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
+                                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 12.dp, horizontal = 16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    when (qrStatus) {
+                                        QrStatus.WAITING -> {
+                                            Icon(
+                                                imageVector = Icons.Default.PhoneAndroid,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                        QrStatus.SCANNED -> {
+                                            Icon(
+                                                imageVector = Icons.Default.CheckCircleOutline,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                        QrStatus.SUCCESS -> {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                        QrStatus.EXPIRED -> {
+                                            Icon(
+                                                imageVector = Icons.Default.Warning,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                        QrStatus.ERROR -> {
+                                            Icon(
+                                                imageVector = Icons.Default.ErrorOutline,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
                                     }
-                                )
-                            }
-                        }
 
-                        Spacer(modifier = Modifier.height(20.dp))
+                                    Spacer(modifier = Modifier.width(10.dp))
 
-                        // 底部操作区
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = onDismiss,
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text("取消")
+                                    Text(
+                                        text = qrStatusMessage,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        color = when (qrStatus) {
+                                            QrStatus.EXPIRED -> MaterialTheme.colorScheme.error
+                                            else -> MaterialTheme.colorScheme.onSurface
+                                        }
+                                    )
+                                }
                             }
 
-                            Button(
-                                onClick = { qrRefreshTrigger++ },
-                                enabled = !isQrLoading,
-                                modifier = Modifier.weight(1.3f),
-                                shape = RoundedCornerShape(12.dp)
+                            Spacer(modifier = Modifier.height(20.dp))
+
+                            // 底部操作区
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("刷新二维码")
+                                OutlinedButton(
+                                    onClick = onDismiss,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("取消")
+                                }
+
+                                Button(
+                                    onClick = { qrRefreshTrigger++ },
+                                    enabled = !isQrLoading,
+                                    modifier = Modifier.weight(1.3f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("刷新二维码")
+                                }
                             }
                         }
                     }

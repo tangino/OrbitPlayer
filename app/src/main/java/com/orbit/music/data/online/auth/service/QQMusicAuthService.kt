@@ -240,6 +240,57 @@ class QQMusicAuthService(
         }
     }
 
+    /**
+     * 根据抓取到的 Cookie 字符串解析构建 QQ 音乐账号并获取用户信息
+     */
+    suspend fun parseAccountFromCookies(rawCookieString: String): PlatformAccount? = withContext(Dispatchers.IO) {
+        if (rawCookieString.isBlank()) return@withContext null
+        val cookiesMap = mutableMapOf<String, String>()
+        val pairs = rawCookieString.split(";")
+        for (pair in pairs) {
+            val parts = pair.trim().split("=")
+            if (parts.size >= 2) {
+                val k = parts[0].trim()
+                val v = parts.drop(1).joinToString("=").trim()
+                if (k.isNotEmpty()) cookiesMap[k] = v
+            }
+        }
+
+        val hasKey = cookiesMap.containsKey("qm_keyst") ||
+                cookiesMap.containsKey("qqmusic_key") ||
+                cookiesMap.containsKey("psrf_musickey_id") ||
+                cookiesMap.containsKey("p_skey") ||
+                cookiesMap.containsKey("musickey")
+
+        var uin = cookiesMap["uin"] ?: cookiesMap["p_uin"] ?: cookiesMap["login_uin"] ?: cookiesMap["musicid"] ?: ""
+        uin = uin.replace("^o0*".toRegex(), "")
+
+        if (!hasKey && uin.isBlank()) {
+            return@withContext null
+        }
+
+        val tokensMap = mutableMapOf<String, String>()
+        if (uin.isNotBlank()) tokensMap["uin"] = uin
+        cookiesMap["qm_keyst"]?.let { tokensMap["key"] = it }
+
+        val baseAccount = PlatformAccount(
+            platform = platform,
+            userId = uin.ifBlank { "QQ_User" },
+            nickname = if (uin.isNotBlank()) "QQ 用户 $uin" else "QQ 音乐用户",
+            avatarUrl = if (uin.isNotBlank() && uin.matches(Regex("^\\d+$"))) "https://q1.qlogo.cn/g?b=qq&nk=$uin&s=100" else "",
+            cookies = cookiesMap,
+            tokens = tokensMap,
+            updatedAt = System.currentTimeMillis()
+        )
+
+        try {
+            refreshUserInfo(baseAccount)
+        } catch (_: Exception) {
+            baseAccount
+        }
+    }
+
+
     override suspend fun refreshUserInfo(account: PlatformAccount): PlatformAccount = withContext(Dispatchers.IO) {
         val uin = account.userId
         if (uin.isBlank()) return@withContext account
