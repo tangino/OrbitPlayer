@@ -29,6 +29,15 @@ public:
     const std::vector<float>& getFrequencies() const { return frequencies_; }
     const std::vector<float>& getGains() const { return gains_; }
 
+    // 获取当前所有频段中的最大正增益 (dB)，用于自动裕量计算
+    float getMaxPositiveGainDb() const {
+        float maxG = 0.0f;
+        for (float g : gains_) {
+            if (g > maxG) maxG = g;
+        }
+        return maxG;
+    }
+
     void processStereo(float* buffer, int numFrames);
     float getTotalMagnitudeResponse(float frequency) const;
     void reset();

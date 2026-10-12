@@ -38,6 +38,7 @@ import com.orbit.music.data.online.engine.PlaylistSyncMode
 import com.orbit.music.data.online.model.OnlinePlaylist
 import com.orbit.music.data.online.repository.OnlinePlaylistFavoriteManager
 import com.orbit.music.data.playlist.PlaylistGroupManager
+import com.orbit.music.data.repository.MusicRepository
 import com.orbit.music.ui.theme.DarkBackground
 import com.orbit.music.ui.theme.OrbitTheme
 import com.orbit.music.utils.FastToast
@@ -63,9 +64,12 @@ fun CloudPlaylistSyncDialog(
     val syncManager = remember { CloudPlaylistSyncManager.getInstance(context) }
     val groupManager = remember { PlaylistGroupManager.getInstance(context) }
     val onlineFavoriteManager = remember { OnlinePlaylistFavoriteManager.getInstance(context) }
+    val repository = remember { MusicRepository.getInstance(context) }
 
     val allGroups by groupManager.groups.collectAsState()
     val onlineFavorites by onlineFavoriteManager.favorites.collectAsState()
+    val favoriteSongs by repository.favoriteSongs.collectAsState()
+    val dislikedSongs by repository.dislikedSongs.collectAsState()
 
     var currentTab by remember { mutableStateOf(SyncTab.UPLOAD) }
 
@@ -81,9 +85,11 @@ fun CloudPlaylistSyncDialog(
     var uploadSyncMode by remember { mutableStateOf(PlaylistSyncMode.MERGE) }
     var downloadSyncMode by remember { mutableStateOf(PlaylistSyncMode.MERGE) }
 
-    // 上传状态：选中的本地歌单 ID 集合与选中的在线歌单 ID 集合
+    // 上传状态：选中的本地歌单 ID 集合、选中的在线歌单 ID 集合、是否上传系统喜好
     val selectedLocalUploadIds = remember { mutableStateListOf<Long>() }
     val selectedOnlineUploadIds = remember { mutableStateListOf<String>() }
+    var uploadFavoritesChecked by remember { mutableStateOf(true) }
+    var uploadDislikedChecked by remember { mutableStateOf(true) }
 
     // 初始默认全选所有歌单
     LaunchedEffect(playlists, onlineFavorites) {
@@ -531,7 +537,11 @@ fun CloudPlaylistSyncDialog(
                             // 上传面板
                             val totalLocal = playlists.size
                             val totalOnline = onlineFavorites.size
-                            val isAllSelected = (selectedLocalUploadIds.size == totalLocal) && (selectedOnlineUploadIds.size == totalOnline)
+                            val hasFav = favoriteSongs.isNotEmpty()
+                            val hasDislike = dislikedSongs.isNotEmpty()
+                            val favSelected = (!hasFav || uploadFavoritesChecked)
+                            val dislikeSelected = (!hasDislike || uploadDislikedChecked)
+                            val isAllSelected = (selectedLocalUploadIds.size == totalLocal) && (selectedOnlineUploadIds.size == totalOnline) && favSelected && dislikeSelected
 
                             Column(modifier = Modifier.fillMaxSize()) {
                                 // 工具栏：全选与计数
@@ -543,7 +553,7 @@ fun CloudPlaylistSyncDialog(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text(
-                                        text = "请勾选需要备份到云端的歌单：",
+                                        text = "请勾选需要备份到云端的歌单与喜好：",
                                         fontSize = 12.5.sp,
                                         color = OrbitTheme.colors.textSecondary
                                     )
@@ -552,11 +562,15 @@ fun CloudPlaylistSyncDialog(
                                             if (isAllSelected) {
                                                 selectedLocalUploadIds.clear()
                                                 selectedOnlineUploadIds.clear()
+                                                uploadFavoritesChecked = false
+                                                uploadDislikedChecked = false
                                             } else {
                                                 selectedLocalUploadIds.clear()
                                                 selectedLocalUploadIds.addAll(playlists.map { it.id })
                                                 selectedOnlineUploadIds.clear()
                                                 selectedOnlineUploadIds.addAll(onlineFavorites.map { "${it.platform.name}_${it.id}" })
+                                                uploadFavoritesChecked = true
+                                                uploadDislikedChecked = true
                                             }
                                         }
                                     ) {
@@ -569,12 +583,12 @@ fun CloudPlaylistSyncDialog(
                                     }
                                 }
 
-                                if (playlists.isEmpty() && onlineFavorites.isEmpty()) {
+                                if (playlists.isEmpty() && onlineFavorites.isEmpty() && favoriteSongs.isEmpty() && dislikedSongs.isEmpty()) {
                                     Box(
                                         modifier = Modifier.fillMaxSize(),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Text("本机暂无自建或收藏歌单", color = OrbitTheme.colors.textSecondary, fontSize = 13.sp)
+                                        Text("本机暂无可备份的歌单或喜好数据", color = OrbitTheme.colors.textSecondary, fontSize = 13.sp)
                                     }
                                 } else {
                                     LazyColumn(
@@ -582,7 +596,124 @@ fun CloudPlaylistSyncDialog(
                                         verticalArrangement = Arrangement.spacedBy(8.dp),
                                         contentPadding = PaddingValues(bottom = 12.dp)
                                     ) {
-                                        // 本地歌单列表
+                                        // 0. 系统喜好与态度歌单 (红心与踩)
+                                        if (favoriteSongs.isNotEmpty() || dislikedSongs.isNotEmpty()) {
+                                            item {
+                                                Text(
+                                                    text = "❤️ 系统喜好与态度",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFFFF3366),
+                                                    modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                                                )
+                                            }
+
+                                            if (favoriteSongs.isNotEmpty()) {
+                                                item {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        color = if (uploadFavoritesChecked) Color(0xFFFF3366).copy(alpha = 0.12f) else OrbitTheme.colors.surfaceCard,
+                                                        border = BorderStroke(1.dp, if (uploadFavoritesChecked) Color(0xFFFF3366).copy(alpha = 0.45f) else OrbitTheme.colors.primary.copy(alpha = 0.1f)),
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clickable { uploadFavoritesChecked = !uploadFavoritesChecked }
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.padding(10.dp),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Checkbox(
+                                                                checked = uploadFavoritesChecked,
+                                                                onCheckedChange = { uploadFavoritesChecked = it },
+                                                                colors = CheckboxDefaults.colors(checkedColor = Color(0xFFFF3366))
+                                                            )
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(42.dp)
+                                                                    .clip(RoundedCornerShape(8.dp))
+                                                                    .background(Color(0xFFFF3366).copy(alpha = 0.18f)),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.Favorite,
+                                                                    contentDescription = null,
+                                                                    tint = Color(0xFFFF3366),
+                                                                    modifier = Modifier.size(24.dp)
+                                                                )
+                                                            }
+                                                            Spacer(modifier = Modifier.width(10.dp))
+                                                            Column(modifier = Modifier.weight(1f)) {
+                                                                Text(
+                                                                    text = "我喜欢的音乐 (红心)",
+                                                                    fontSize = 14.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = OrbitTheme.colors.textPrimary
+                                                                )
+                                                                Text(
+                                                                    text = "共 ${favoriteSongs.size} 首已收藏歌曲 · 云端同步",
+                                                                    fontSize = 11.5.sp,
+                                                                    color = OrbitTheme.colors.textSecondary
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            if (dislikedSongs.isNotEmpty()) {
+                                                item {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        color = if (uploadDislikedChecked) Color(0xFFE57373).copy(alpha = 0.12f) else OrbitTheme.colors.surfaceCard,
+                                                        border = BorderStroke(1.dp, if (uploadDislikedChecked) Color(0xFFE57373).copy(alpha = 0.45f) else OrbitTheme.colors.primary.copy(alpha = 0.1f)),
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clickable { uploadDislikedChecked = !uploadDislikedChecked }
+                                                    ) {
+                                                        Row(
+                                                            modifier = Modifier.padding(10.dp),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Checkbox(
+                                                                checked = uploadDislikedChecked,
+                                                                onCheckedChange = { uploadDislikedChecked = it },
+                                                                colors = CheckboxDefaults.colors(checkedColor = Color(0xFFE57373))
+                                                            )
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(42.dp)
+                                                                    .clip(RoundedCornerShape(8.dp))
+                                                                    .background(Color(0xFFE57373).copy(alpha = 0.18f)),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.ThumbDown,
+                                                                    contentDescription = null,
+                                                                    tint = Color(0xFFE57373),
+                                                                    modifier = Modifier.size(22.dp)
+                                                                )
+                                                            }
+                                                            Spacer(modifier = Modifier.width(10.dp))
+                                                            Column(modifier = Modifier.weight(1f)) {
+                                                                Text(
+                                                                    text = "不喜欢的音乐",
+                                                                    fontSize = 14.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = OrbitTheme.colors.textPrimary
+                                                                )
+                                                                Text(
+                                                                    text = "共 ${dislikedSongs.size} 首已标记不喜欢歌曲 · 云端同步",
+                                                                    fontSize = 11.5.sp,
+                                                                    color = OrbitTheme.colors.textSecondary
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // 本地自建歌单列表
                                         if (playlists.isNotEmpty()) {
                                             item {
                                                 Text(
@@ -917,19 +1048,126 @@ fun CloudPlaylistSyncDialog(
                                         verticalArrangement = Arrangement.spacedBy(8.dp),
                                         contentPadding = PaddingValues(bottom = 12.dp)
                                     ) {
-                                        // 云端本地歌单
-                                        if (data.localPlaylists.isNotEmpty()) {
+                                        val systemPlaylists = data.localPlaylists.mapIndexed { idx, p -> idx to p }
+                                            .filter { it.second.name == CloudPlaylistSyncManager.SYSTEM_PLAYLIST_FAVORITE || it.second.name == CloudPlaylistSyncManager.SYSTEM_PLAYLIST_DISLIKED }
+                                        val normalLocalPlaylists = data.localPlaylists.mapIndexed { idx, p -> idx to p }
+                                            .filter { it.second.name != CloudPlaylistSyncManager.SYSTEM_PLAYLIST_FAVORITE && it.second.name != CloudPlaylistSyncManager.SYSTEM_PLAYLIST_DISLIKED }
+
+                                        // 云端系统喜好与态度
+                                        if (systemPlaylists.isNotEmpty()) {
                                             item {
                                                 Text(
-                                                    text = "📁 云端自建歌单 (${data.localPlaylists.size})",
+                                                    text = "❤️ 系统喜好与态度 (${systemPlaylists.size})",
                                                     fontSize = 12.sp,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = OrbitTheme.colors.primary,
+                                                    color = Color(0xFFFF3366),
                                                     modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
                                                 )
                                             }
-                                            items(data.localPlaylists.indices.toList(), key = { "cloud_local_$it" }) { idx ->
-                                                val p = data.localPlaylists[idx]
+                                            items(systemPlaylists, key = { "cloud_sys_${it.first}" }) { (idx, p) ->
+                                                val isChecked = selectedLocalDownloadIndices.contains(idx)
+                                                val isFav = p.name == CloudPlaylistSyncManager.SYSTEM_PLAYLIST_FAVORITE
+                                                val accentColor = if (isFav) Color(0xFFFF3366) else Color(0xFFE57373)
+                                                val icon = if (isFav) Icons.Default.Favorite else Icons.Default.ThumbDown
+                                                val title = if (isFav) "我喜欢的音乐" else "不喜欢的音乐"
+                                                val desc = if (isFav) "恢复后将自动标记为红心喜爱" else "恢复后将自动标记为不喜欢屏蔽"
+                                                val badge = if (isFav) "系统红心" else "系统屏蔽"
+
+                                                Surface(
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    color = if (isChecked) accentColor.copy(alpha = 0.12f) else OrbitTheme.colors.surfaceCard,
+                                                    border = BorderStroke(1.dp, if (isChecked) accentColor.copy(alpha = 0.45f) else OrbitTheme.colors.primary.copy(alpha = 0.1f)),
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable {
+                                                             if (isChecked) selectedLocalDownloadIndices.remove(idx) else selectedLocalDownloadIndices.add(idx)
+                                                        }
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.padding(10.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Checkbox(
+                                                            checked = isChecked,
+                                                            onCheckedChange = {
+                                                                if (it) selectedLocalDownloadIndices.add(idx) else selectedLocalDownloadIndices.remove(idx)
+                                                            },
+                                                            colors = CheckboxDefaults.colors(checkedColor = accentColor)
+                                                        )
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(36.dp)
+                                                                .clip(RoundedCornerShape(8.dp))
+                                                                .background(accentColor.copy(alpha = 0.15f)),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = icon,
+                                                                contentDescription = null,
+                                                                tint = accentColor,
+                                                                modifier = Modifier.size(20.dp)
+                                                            )
+                                                        }
+                                                        Spacer(modifier = Modifier.width(10.dp))
+                                                        Column(modifier = Modifier.weight(1f)) {
+                                                            Row(
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                            ) {
+                                                                Text(
+                                                                    text = title,
+                                                                    fontSize = 14.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = OrbitTheme.colors.textPrimary
+                                                                )
+                                                                Surface(
+                                                                    shape = RoundedCornerShape(4.dp),
+                                                                    color = accentColor.copy(alpha = 0.15f)
+                                                                ) {
+                                                                    Text(
+                                                                        text = badge,
+                                                                        color = accentColor,
+                                                                        fontSize = 9.sp,
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                                    )
+                                                                }
+                                                            }
+                                                            Row(
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                                modifier = Modifier.padding(top = 2.dp)
+                                                            ) {
+                                                                Text(
+                                                                    text = "${p.songs.size} 首歌曲",
+                                                                    fontSize = 11.5.sp,
+                                                                    fontWeight = FontWeight.Medium,
+                                                                    color = OrbitTheme.colors.textSecondary
+                                                                )
+                                                                Text(
+                                                                    text = "· $desc",
+                                                                    fontSize = 11.sp,
+                                                                    color = OrbitTheme.colors.textSecondary.copy(alpha = 0.8f)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // 云端本地自建歌单
+                                        if (normalLocalPlaylists.isNotEmpty()) {
+                                            item {
+                                                Text(
+                                                    text = "📁 云端自建歌单 (${normalLocalPlaylists.size})",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = OrbitTheme.colors.primary,
+                                                    modifier = Modifier.padding(top = if (systemPlaylists.isNotEmpty()) 10.dp else 4.dp, bottom = 2.dp)
+                                                )
+                                            }
+                                            items(normalLocalPlaylists, key = { "cloud_local_${it.first}" }) { (idx, p) ->
                                                 val isChecked = selectedLocalDownloadIndices.contains(idx)
                                                 Surface(
                                                     shape = RoundedCornerShape(12.dp),
@@ -1118,10 +1356,12 @@ fun CloudPlaylistSyncDialog(
                     ) {
                         when (currentTab) {
                             SyncTab.UPLOAD -> {
-                                val totalSel = selectedLocalUploadIds.size + selectedOnlineUploadIds.size
+                                val favCount = if (uploadFavoritesChecked && favoriteSongs.isNotEmpty()) 1 else 0
+                                val dislikeCount = if (uploadDislikedChecked && dislikedSongs.isNotEmpty()) 1 else 0
+                                val totalSel = selectedLocalUploadIds.size + selectedOnlineUploadIds.size + favCount + dislikeCount
                                 Column {
                                     Text(
-                                        text = "已选 $totalSel 个歌单 · ${uploadSyncMode.title}",
+                                        text = "已选 $totalSel 项备份 · ${uploadSyncMode.title}",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Medium,
                                         color = OrbitTheme.colors.textPrimary
@@ -1135,7 +1375,7 @@ fun CloudPlaylistSyncDialog(
                                 Button(
                                     onClick = {
                                         if (totalSel == 0) {
-                                            FastToast.show(context, "请至少勾选一个要上传的歌单")
+                                            FastToast.show(context, "请至少勾选一个要上传的歌单或喜好项")
                                             return@Button
                                         }
                                         val selectedLocals = playlists.filter { it.id in selectedLocalUploadIds }
@@ -1148,7 +1388,11 @@ fun CloudPlaylistSyncDialog(
                                                 selectedLocalPlaylists = selectedLocals,
                                                 selectedOnlinePlaylists = selectedOnlines,
                                                 includeGroups = relatedGroups,
-                                                syncMode = uploadSyncMode
+                                                syncMode = uploadSyncMode,
+                                                uploadFavorites = uploadFavoritesChecked && favoriteSongs.isNotEmpty(),
+                                                favoriteSongs = favoriteSongs,
+                                                uploadDisliked = uploadDislikedChecked && dislikedSongs.isNotEmpty(),
+                                                dislikedSongs = dislikedSongs
                                             )
                                             res.onSuccess { msg ->
                                                 FastToast.show(context, msg)
@@ -1190,7 +1434,7 @@ fun CloudPlaylistSyncDialog(
                                 val totalSel = selectedLocalDownloadIndices.size + selectedOnlineDownloadIndices.size
                                 Column {
                                     Text(
-                                        text = "已选 $totalSel 个歌单 · ${downloadSyncMode.title}",
+                                        text = "已选 $totalSel 项备份 · ${downloadSyncMode.title}",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Medium,
                                         color = OrbitTheme.colors.textPrimary

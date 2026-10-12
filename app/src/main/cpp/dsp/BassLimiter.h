@@ -48,8 +48,8 @@ private:
 
     bool enabled_ = false;
     float sampleRate_ = 44100.0f;
-    float crossoverHz_ = 120.0f;
-    float thresholdDb_ = -2.0f;
+    float crossoverHz_ = 180.0f;
+    float thresholdDb_ = -0.5f;
 
     // Linkwitz-Riley 4 阶：每路两级 Butterworth 级联
     BiquadFilter lowPassL_[2];

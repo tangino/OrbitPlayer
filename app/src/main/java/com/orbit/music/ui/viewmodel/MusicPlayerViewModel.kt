@@ -818,6 +818,14 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
         return repository.getSongsInPlaylist(playlistId)
     }
 
+    suspend fun getPlaylistIdsContainingSong(songId: Long, songPath: String? = null): Set<Long> {
+        return repository.getPlaylistIdsContainingSong(songId, songPath)
+    }
+
+    suspend fun getPlaylistSongCounts(songIds: Collection<Long>): Map<Long, Int> {
+        return repository.getPlaylistSongCounts(songIds)
+    }
+
     fun cycleSongAttitude(song: Song, onResult: ((SongAttitude) -> Unit)? = null) {
         viewModelScope.launch {
             val next = repository.cycleSongAttitude(song)
@@ -828,6 +836,12 @@ class MusicPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun toggleFavorite(song: Song) {
         viewModelScope.launch {
             repository.toggleFavorite(song)
+        }
+    }
+
+    fun setFavorite(song: Song, isFavorite: Boolean) {
+        viewModelScope.launch {
+            repository.setFavorite(song, isFavorite)
         }
     }
 

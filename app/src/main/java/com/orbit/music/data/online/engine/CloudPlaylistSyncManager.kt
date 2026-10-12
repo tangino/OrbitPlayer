@@ -80,6 +80,10 @@ class CloudPlaylistSyncManager private constructor(private val context: Context)
         .build()
 
     companion object {
+        const val SYSTEM_PLAYLIST_FAVORITE = "我喜欢的音乐"
+        const val SYSTEM_PLAYLIST_DISLIKED = "不喜欢的音乐"
+        const val SYSTEM_GROUP_NAME = "系统"
+
         @Volatile
         private var instance: CloudPlaylistSyncManager? = null
 
@@ -91,13 +95,17 @@ class CloudPlaylistSyncManager private constructor(private val context: Context)
     }
 
     /**
-     * 上传选中的本地自建歌单与在线收藏歌单至云端
+     * 上传选中的本地自建歌单、系统喜好/不喜欢歌单与在线收藏歌单至云端
      */
     suspend fun uploadSelectedPlaylists(
         selectedLocalPlaylists: List<Playlist>,
         selectedOnlinePlaylists: List<OnlinePlaylist>,
         includeGroups: List<String>,
-        syncMode: PlaylistSyncMode = PlaylistSyncMode.MERGE
+        syncMode: PlaylistSyncMode = PlaylistSyncMode.MERGE,
+        uploadFavorites: Boolean = false,
+        favoriteSongs: List<Song> = emptyList(),
+        uploadDisliked: Boolean = false,
+        dislikedSongs: List<Song> = emptyList()
     ): Result<String> = withContext(Dispatchers.IO) {
         try {
             val username = authManager.getUsername()
@@ -114,6 +122,24 @@ class CloudPlaylistSyncManager private constructor(private val context: Context)
 
             // 1. 序列化选中的本地自建歌单及其歌曲
             val localArray = JSONArray()
+
+            // 1.1 辅助函数：将 Song 对象序列化为 JSONObject
+            fun serializeSong(s: Song): JSONObject = JSONObject().apply {
+                put("title", s.title)
+                put("artist", s.artist)
+                put("album", s.album)
+                put("durationMs", s.durationMs)
+                put("path", s.path)
+                val art = s.albumArtUri?.let { if (it.startsWith("//")) "https:$it" else it } ?: ""
+                put("albumArtUri", art)
+                put("coverUrl", art)
+                put("isOnline", s.isOnlineSong)
+                put("sourcePlatform", s.sourcePlatform?.name ?: s.resolvedPlatform?.name ?: "")
+                put("isFavorite", s.isFavorite)
+                put("isDisliked", s.isDisliked)
+            }
+
+            // 1.2 序列化自建歌单
             for (p in selectedLocalPlaylists) {
                 val songs = repository.getSongsInPlaylist(p.id)
                 val pObj = JSONObject().apply {
@@ -122,23 +148,41 @@ class CloudPlaylistSyncManager private constructor(private val context: Context)
                     put("createdAt", p.createdAt)
                     val songsArr = JSONArray()
                     for (s in songs) {
-                        val sObj = JSONObject().apply {
-                            put("title", s.title)
-                            put("artist", s.artist)
-                            put("album", s.album)
-                            put("durationMs", s.durationMs)
-                            put("path", s.path)
-                            val art = s.albumArtUri?.let { if (it.startsWith("//")) "https:$it" else it } ?: ""
-                            put("albumArtUri", art)
-                            put("coverUrl", art)
-                            put("isOnline", s.isOnlineSong)
-                            put("sourcePlatform", s.sourcePlatform?.name ?: s.resolvedPlatform?.name ?: "")
-                        }
-                        songsArr.put(sObj)
+                        songsArr.put(serializeSong(s))
                     }
                     put("songs", songsArr)
                 }
                 localArray.put(pObj)
+            }
+
+            // 1.3 序列化“我喜欢的音乐” (若用户勾选同步)
+            if (uploadFavorites && favoriteSongs.isNotEmpty()) {
+                val favObj = JSONObject().apply {
+                    put("name", SYSTEM_PLAYLIST_FAVORITE)
+                    put("groupName", SYSTEM_GROUP_NAME)
+                    put("createdAt", System.currentTimeMillis())
+                    val songsArr = JSONArray()
+                    for (s in favoriteSongs) {
+                        songsArr.put(serializeSong(s.copy(isFavorite = true, isDisliked = false)))
+                    }
+                    put("songs", songsArr)
+                }
+                localArray.put(favObj)
+            }
+
+            // 1.4 序列化“不喜欢的音乐” (若用户勾选同步)
+            if (uploadDisliked && dislikedSongs.isNotEmpty()) {
+                val dislikeObj = JSONObject().apply {
+                    put("name", SYSTEM_PLAYLIST_DISLIKED)
+                    put("groupName", SYSTEM_GROUP_NAME)
+                    put("createdAt", System.currentTimeMillis())
+                    val songsArr = JSONArray()
+                    for (s in dislikedSongs) {
+                        songsArr.put(serializeSong(s.copy(isFavorite = false, isDisliked = true)))
+                    }
+                    put("songs", songsArr)
+                }
+                localArray.put(dislikeObj)
             }
 
             // 2. 序列化选中的在线收藏歌单
@@ -160,9 +204,16 @@ class CloudPlaylistSyncManager private constructor(private val context: Context)
 
             // 3. 序列化相关分组
             val groupsArray = JSONArray()
-            includeGroups.forEach { groupsArray.put(it) }
+            val finalGroups = includeGroups.toMutableSet()
+            if (uploadFavorites || uploadDisliked) {
+                finalGroups.add(SYSTEM_GROUP_NAME)
+            }
+            finalGroups.forEach { groupsArray.put(it) }
 
-            val totalCount = selectedLocalPlaylists.size + selectedOnlinePlaylists.size
+            val totalLocalCount = selectedLocalPlaylists.size +
+                (if (uploadFavorites && favoriteSongs.isNotEmpty()) 1 else 0) +
+                (if (uploadDisliked && dislikedSongs.isNotEmpty()) 1 else 0)
+            val totalCount = totalLocalCount + selectedOnlinePlaylists.size
 
             val payload = JSONObject().apply {
                 put("username", username)
@@ -192,7 +243,11 @@ class CloudPlaylistSyncManager private constructor(private val context: Context)
             val resJson = JSONObject(resStr)
             if (resJson.optBoolean("success", false)) {
                 val modeTitle = if (syncMode == PlaylistSyncMode.OVERWRITE) "全量覆盖" else "增量合并"
-                Result.success("已完成${modeTitle}备份：上传 ${selectedLocalPlaylists.size} 个本地歌单与 ${selectedOnlinePlaylists.size} 个在线歌单")
+                val extraDesc = buildString {
+                    if (uploadFavorites) append("、已同步 ${favoriteSongs.size} 首红心音乐")
+                    if (uploadDisliked) append("、已同步 ${dislikedSongs.size} 首不喜欢音乐")
+                }
+                Result.success("已完成${modeTitle}备份：上传 $totalLocalCount 个本地/系统歌单与 ${selectedOnlinePlaylists.size} 个在线歌单$extraDesc")
             } else {
                 Result.failure(Exception(resJson.optString("message", "上传失败")))
             }
@@ -346,12 +401,33 @@ class CloudPlaylistSyncManager private constructor(private val context: Context)
             }
 
             var localRestoredCount = 0
+            var favoriteRestoredCount = 0
+            var dislikedRestoredCount = 0
             val allLocalSongs = repository.allSongs.value
             val existingPlaylists = repository.playlists.value
 
-            // 2. 恢复本地自建歌单
+            val favSongsToRestore = mutableListOf<Song>()
+            val dislikeSongsToRestore = mutableListOf<Song>()
+
+            // 2. 恢复本地自建歌单与系统喜好状态
             for (cloudP in selectedLocal) {
                 if (cloudP.name.isBlank()) continue
+
+                // 2.1 系统喜好歌单：转换为喜欢/不喜欢状态，不创建普通本地歌单
+                if (cloudP.name.trim() == SYSTEM_PLAYLIST_FAVORITE) {
+                    val resolved = resolveCloudSongsToDomain(cloudP.songs, allLocalSongs, cloudP.name)
+                    favSongsToRestore.addAll(resolved)
+                    favoriteRestoredCount = resolved.size
+                    continue
+                }
+                if (cloudP.name.trim() == SYSTEM_PLAYLIST_DISLIKED) {
+                    val resolved = resolveCloudSongsToDomain(cloudP.songs, allLocalSongs, cloudP.name)
+                    dislikeSongsToRestore.addAll(resolved)
+                    dislikedRestoredCount = resolved.size
+                    continue
+                }
+
+                // 2.2 普通本地自建歌单恢复
                 groupManager.addGroup(cloudP.groupName)
 
                 // 查找本地是否存在同名歌单
@@ -376,69 +452,10 @@ class CloudPlaylistSyncManager private constructor(private val context: Context)
                     emptySet()
                 }
 
-                // 将歌单内的歌曲关联进来
-                val songsToAdd = mutableListOf<Song>()
                 val missingArtOnlineSongs = mutableListOf<Song>()
+                val resolvedSongs = resolveCloudSongsToDomain(cloudP.songs, allLocalSongs, cloudP.name, missingArtOnlineSongs)
+                val songsToAdd = resolvedSongs.filter { it.id !in currentSongIds }
 
-                for (cs in cloudP.songs) {
-                    val isOnline = cs.isOnline || cs.path.startsWith("online://") || cs.path.startsWith("http://") || cs.path.startsWith("https://")
-                    // 尝试在当前设备本地媒体库中匹配歌曲（非网络歌曲时）
-                    val matchedSong = if (!isOnline) {
-                        allLocalSongs.find {
-                            it.path == cs.path || (it.title.equals(cs.title, ignoreCase = true) && it.artist.equals(cs.artist, ignoreCase = true))
-                        }
-                    } else null
-
-                    if (matchedSong != null) {
-                        if (matchedSong.id !in currentSongIds) {
-                            songsToAdd.add(matchedSong)
-                        }
-                    } else {
-                        // 网络歌曲或当前设备未匹配到的歌曲：构造为虚拟/网络歌曲
-                        val plat: OnlinePlatform = (cs.sourcePlatform?.let { pName ->
-                            runCatching { OnlinePlatform.valueOf(pName) }.getOrNull()
-                                ?: OnlinePlatform.values().firstOrNull { it.id.equals(pName, ignoreCase = true) }
-                        } ?: if (cs.path.startsWith("online://")) {
-                            val pId = cs.path.removePrefix("online://").substringBefore("/")
-                            OnlinePlatform.values().firstOrNull { it.id.equals(pId, ignoreCase = true) }
-                        } else null) ?: OnlinePlatform.NETEASE
-
-                        val songId = if (cs.path.startsWith("online://")) {
-                            cs.path.removePrefix("online://").substringAfter("/")
-                        } else {
-                            "${cs.title}_${cs.artist}".hashCode().toString()
-                        }
-
-                        // 尝试从本地已有库查找是否有现成封面可用
-                        val existingArt = cs.albumArtUri ?: allLocalSongs.find {
-                            it.title.equals(cs.title, ignoreCase = true) && it.artist.equals(cs.artist, ignoreCase = true) && !it.albumArtUri.isNullOrBlank()
-                        }?.albumArtUri
-
-                        val virtualId = OnlineAudioSourceManager.generateVirtualSongId(plat, songId)
-                        if (virtualId !in currentSongIds) {
-                            val virtualSong = Song(
-                                id = virtualId,
-                                title = cs.title,
-                                artist = cs.artist.ifBlank { "未知歌手" },
-                                album = cs.album.ifBlank { cloudP.name },
-                                albumId = virtualId,
-                                durationMs = cs.durationMs,
-                                path = if (cs.path.startsWith("online://") || cs.path.startsWith("http")) cs.path else "online://${plat.id}/$songId",
-                                size = 0L,
-                                albumArtUri = existingArt,
-                                folderPath = "云同步歌单 - ${cloudP.name}",
-                                mimeType = "audio/mpeg",
-                                sourcePlatform = plat,
-                                sourceTag = plat.displayName,
-                                originalPlatform = plat
-                            )
-                            songsToAdd.add(virtualSong)
-                            if (virtualSong.albumArtUri.isNullOrBlank()) {
-                                missingArtOnlineSongs.add(virtualSong)
-                            }
-                        }
-                    }
-                }
                 if (songsToAdd.isNotEmpty()) {
                     repository.addSongsToPlaylist(targetPlaylistId, songsToAdd)
                 }
@@ -463,6 +480,15 @@ class CloudPlaylistSyncManager private constructor(private val context: Context)
                 }
             }
 
+            // 执行喜好与不喜欢状态的批量同步恢复
+            if (favSongsToRestore.isNotEmpty() || dislikeSongsToRestore.isNotEmpty()) {
+                repository.batchSyncAttitudes(
+                    favoriteSongs = favSongsToRestore,
+                    dislikedSongs = dislikeSongsToRestore,
+                    overwrite = syncMode == PlaylistSyncMode.OVERWRITE
+                )
+            }
+
             // 3. 恢复在线收藏歌单
             var onlineRestoredCount = 0
             for (op in selectedOnline) {
@@ -474,10 +500,79 @@ class CloudPlaylistSyncManager private constructor(private val context: Context)
             }
 
             val modeTitle = if (syncMode == PlaylistSyncMode.OVERWRITE) "全量覆盖" else "增量合并"
-            Result.success("已完成${modeTitle}恢复：成功恢复 $localRestoredCount 个本地歌单与 $onlineRestoredCount 个在线收藏歌单")
+            val attitudeDesc = buildString {
+                if (favoriteRestoredCount > 0) append("、已恢复 $favoriteRestoredCount 首喜欢的音乐")
+                if (dislikedRestoredCount > 0) append("、已恢复 $dislikedRestoredCount 首不喜欢的音乐")
+            }
+            Result.success("已完成${modeTitle}恢复：成功恢复 $localRestoredCount 个本地歌单与 $onlineRestoredCount 个在线收藏歌单$attitudeDesc")
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    /**
+     * 将云端歌曲数据结构还原为当前设备的 Song 对象 (优先匹配本地已有物理音频，未匹配则构造为虚拟网络歌曲)
+     */
+    private fun resolveCloudSongsToDomain(
+        cloudSongs: List<CloudPlaylistSong>,
+        allLocalSongs: List<Song>,
+        playlistName: String,
+        missingArtCollector: MutableList<Song>? = null
+    ): List<Song> {
+        val result = mutableListOf<Song>()
+        for (cs in cloudSongs) {
+            val isOnline = cs.isOnline || cs.path.startsWith("online://") || cs.path.startsWith("http://") || cs.path.startsWith("https://")
+            val matchedSong = if (!isOnline) {
+                allLocalSongs.find {
+                    it.path == cs.path || (it.title.equals(cs.title, ignoreCase = true) && it.artist.equals(cs.artist, ignoreCase = true))
+                }
+            } else null
+
+            if (matchedSong != null) {
+                result.add(matchedSong)
+            } else {
+                val plat: OnlinePlatform = (cs.sourcePlatform?.let { pName ->
+                    runCatching { OnlinePlatform.valueOf(pName) }.getOrNull()
+                        ?: OnlinePlatform.values().firstOrNull { it.id.equals(pName, ignoreCase = true) }
+                } ?: if (cs.path.startsWith("online://")) {
+                    val pId = cs.path.removePrefix("online://").substringBefore("/")
+                    OnlinePlatform.values().firstOrNull { it.id.equals(pId, ignoreCase = true) }
+                } else null) ?: OnlinePlatform.NETEASE
+
+                val songId = if (cs.path.startsWith("online://")) {
+                    cs.path.removePrefix("online://").substringAfter("/")
+                } else {
+                    "${cs.title}_${cs.artist}".hashCode().toString()
+                }
+
+                val existingArt = cs.albumArtUri ?: allLocalSongs.find {
+                    it.title.equals(cs.title, ignoreCase = true) && it.artist.equals(cs.artist, ignoreCase = true) && !it.albumArtUri.isNullOrBlank()
+                }?.albumArtUri
+
+                val virtualId = OnlineAudioSourceManager.generateVirtualSongId(plat, songId)
+                val virtualSong = Song(
+                    id = virtualId,
+                    title = cs.title,
+                    artist = cs.artist.ifBlank { "未知歌手" },
+                    album = cs.album.ifBlank { playlistName },
+                    albumId = virtualId,
+                    durationMs = cs.durationMs,
+                    path = if (cs.path.startsWith("online://") || cs.path.startsWith("http")) cs.path else "online://${plat.id}/$songId",
+                    size = 0L,
+                    albumArtUri = existingArt,
+                    folderPath = "云同步歌单 - $playlistName",
+                    mimeType = "audio/mpeg",
+                    sourcePlatform = plat,
+                    sourceTag = plat.displayName,
+                    originalPlatform = plat
+                )
+                result.add(virtualSong)
+                if (virtualSong.albumArtUri.isNullOrBlank()) {
+                    missingArtCollector?.add(virtualSong)
+                }
+            }
+        }
+        return result
     }
 
     /**

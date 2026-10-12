@@ -70,6 +70,11 @@ fun OnlineSongSearchView(
     playerViewModel: com.orbit.music.ui.viewmodel.MusicPlayerViewModel? = null
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val resolvedPlayerViewModel: com.orbit.music.ui.viewmodel.MusicPlayerViewModel = playerViewModel ?: androidx.lifecycle.viewmodel.compose.viewModel()
+    val favoriteSongs by resolvedPlayerViewModel.favoriteSongs.collectAsState()
+    val favPaths = remember(favoriteSongs) { favoriteSongs.map { it.path }.toSet() }
+    val favIds = remember(favoriteSongs) { favoriteSongs.map { it.id }.toSet() }
+    val favKeys = remember(favoriteSongs) { favoriteSongs.map { "${it.title.trim().lowercase()}_${it.artist.trim().lowercase()}" }.toSet() }
     var pendingAddToPlaylistSong by remember { mutableStateOf<OnlineSongItem?>(null) }
 
     LaunchedEffect(initialKeyword) {
@@ -80,10 +85,10 @@ fun OnlineSongSearchView(
     }
 
     // 添加到歌单弹窗
-    if (pendingAddToPlaylistSong != null && playerViewModel != null) {
+    if (pendingAddToPlaylistSong != null) {
         AddToPlaylistDialog(
             onlineSong = pendingAddToPlaylistSong,
-            viewModel = playerViewModel,
+            viewModel = resolvedPlayerViewModel,
             onDismiss = { pendingAddToPlaylistSong = null }
         )
     }
@@ -610,9 +615,16 @@ fun OnlineSongSearchView(
                         items = uiState.searchResults,
                         key = { index, song -> "${song.platform.id}_${song.id}_$index" }
                     ) { index, song ->
+                        val isFav = remember(song, favPaths, favIds, favKeys) {
+                            val vPath = "online://${song.platform.id}/${song.id}"
+                            val vId = com.orbit.music.data.online.engine.OnlineAudioSourceManager.generateVirtualSongId(song.platform, song.id)
+                            val key = "${song.title.trim().lowercase()}_${song.artist.trim().lowercase()}"
+                            vPath in favPaths || vId in favIds || key in favKeys
+                        }
                         OnlineSongSearchItemRow(
                             song = song,
                             index = index,
+                            isFavorite = isFav,
                             onClick = { onPlaySong(uiState.searchResults, index) },
                             onAddPlaylist = {
                                 if (onAddSongToPlaylist != null) {
@@ -777,6 +789,7 @@ fun OnlineSongSearchDialog(
 fun OnlineSongSearchItemRow(
     song: OnlineSongItem,
     index: Int,
+    isFavorite: Boolean = false,
     onClick: () -> Unit,
     onAddPlaylist: () -> Unit,
     onViewAlbum: (() -> Unit)? = null,
@@ -838,6 +851,26 @@ fun OnlineSongSearchItemRow(
                         tint = OrbitTheme.colors.textSecondary.copy(alpha = 0.6f),
                         modifier = Modifier.size(20.dp)
                     )
+                }
+
+                // 封面右下角红心微标
+                if (isFavorite) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(2.dp)
+                            .size(15.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFFF3366)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Favorite,
+                            contentDescription = "已喜欢",
+                            tint = Color.White,
+                            modifier = Modifier.size(9.dp)
+                        )
+                    }
                 }
             }
 

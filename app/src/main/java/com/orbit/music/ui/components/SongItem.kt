@@ -418,6 +418,35 @@ fun SongItem(
                                 }
                             }
                         }
+
+                        // 喜欢/不喜欢标记微标 (列表模式下在专辑封面右下角标记)
+                        if (song.isFavorite || song.isDisliked) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(3.dp)
+                                    .size(15.dp)
+                                    .clip(CircleShape)
+                                    .background(if (song.isFavorite) Color(0xFFFF3366) else Color(0xFFE57373)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (song.isFavorite) {
+                                    Icon(
+                                        imageVector = Icons.Default.Favorite,
+                                        contentDescription = "已喜欢",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(9.dp)
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.ThumbDown,
+                                        contentDescription = "不喜欢",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(9.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                 }

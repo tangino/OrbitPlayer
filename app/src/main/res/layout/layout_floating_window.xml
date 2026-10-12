@@ -152,4 +152,66 @@
             android:contentDescription="Close" />
     </LinearLayout>
 
+    <!-- 长按唤起的尺寸调整层 (默认隐藏)：虚线选择框 + 四角拖动圆点 + 实时尺寸提示 -->
+    <FrameLayout
+        android:id="@+id/floating_resize_overlay"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:visibility="gone">
+
+        <!-- 虚线选择框 (圆角与胶囊等半径，跟随缩放自适应) -->
+        <View
+            android:id="@+id/floating_resize_frame"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <!-- 四角拖动圆点：沿胶囊半圆外轮廓 45° 排布 -->
+        <View
+            android:id="@+id/floating_resize_handle_tl"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_gravity="top|start"
+            android:background="@drawable/bg_floating_resize_handle" />
+
+        <View
+            android:id="@+id/floating_resize_handle_tr"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_gravity="top|end"
+            android:background="@drawable/bg_floating_resize_handle" />
+
+        <View
+            android:id="@+id/floating_resize_handle_bl"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_gravity="bottom|start"
+            android:background="@drawable/bg_floating_resize_handle" />
+
+        <View
+            android:id="@+id/floating_resize_handle_br"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_gravity="bottom|end"
+            android:background="@drawable/bg_floating_resize_handle" />
+
+        <!-- 实时尺寸提示 (拖动时显示百分比与 dp 尺寸) -->
+        <TextView
+            android:id="@+id/floating_resize_hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:background="@drawable/bg_floating_resize_hint"
+            android:maxLines="1"
+            android:paddingStart="9dp"
+            android:paddingEnd="9dp"
+            android:paddingTop="3dp"
+            android:paddingBottom="3dp"
+            android:text="拖动圆点调整大小"
+            android:textColor="#FFFFFFFF"
+            android:textSize="10.5sp" />
+    </FrameLayout>
+
 </FrameLayout>

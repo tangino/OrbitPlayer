@@ -20,6 +20,8 @@ import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.DisplayMetrics
 import android.util.Log
 import android.util.TypedValue
@@ -88,6 +90,12 @@ class FloatingWindowManager private constructor(private val context: Context) {
         private const val KEY_POS_Y = "key_floating_pos_y"
         private const val KEY_USER_SCALE = "key_floating_user_scale"
 
+        /** 用户可自由缩放范围：最小 60%，最大 220%（会再按屏幕尺寸二次收敛） */
+        private const val MIN_USER_SCALE = 0.6f
+        private const val MAX_USER_SCALE = 2.2f
+        /** 尺寸调整框长时间无操作自动收起，避免误触后一直停留在调整状态 */
+        private const val RESIZE_IDLE_TIMEOUT_MS = 7000L
+
         @Volatile
         private var instance: FloatingWindowManager? = null
 
@@ -102,9 +110,11 @@ class FloatingWindowManager private constructor(private val context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     /**
-     * 用户自定义缩放因子 (0.7f ~ 1.8f，默认 1.0f)
+     * 用户自定义缩放因子 (默认 1.0f，可长按悬浮窗后拖动四角圆点自由调节)
+     * 所有控件尺寸与字体大小均按该因子等比缩放
      */
-    var userScaleFactor: Float = prefs.getFloat(KEY_USER_SCALE, 1.0f).coerceIn(0.7f, 1.8f)
+    var userScaleFactor: Float = prefs.getFloat(KEY_USER_SCALE, 1.0f)
+            .coerceIn(MIN_USER_SCALE, MAX_USER_SCALE)
         private set
 
     /**
@@ -171,6 +181,7 @@ class FloatingWindowManager private constructor(private val context: Context) {
     private var currentSongId: Long = -1L
     private var currentLyricLines: List<LyricLine> = emptyList()
     private var lastLyricIndex: Int = -2
+    private var lastLyricStateKey: String = ""
 
     // 控件引用
     private var rootCard: View? = null
@@ -189,6 +200,45 @@ class FloatingWindowManager private constructor(private val context: Context) {
     private var btnClose: ImageButton? = null
     private var coverRotateAnimator: ObjectAnimator? = null
 
+    // 尺寸调整模式 (长按唤起) 相关控件与状态
+    private var resizeOverlay: FrameLayout? = null
+    private var resizeFrame: View? = null
+    private var resizeHint: TextView? = null
+    private val resizeHandles = mutableListOf<ResizeHandle>()
+
+    /** 单个拖动圆点：dirX/dirY 表示向外拖动时该角对应的缩放增长方向 */
+    private data class ResizeHandle(val view: View, val dirX: Int, val dirY: Int)
+
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private var resizeIdleRunnable: Runnable? = null
+
+    /** 当前是否处于"拖动四角圆点调整大小"模式 */
+    var isResizeMode: Boolean = false
+        private set
+
+    private var resizeStartScale = 1f
+    private var resizeStartRawX = 0f
+    private var resizeStartRawY = 0f
+    private var resizeStartCenterX = 0f
+    private var resizeStartCenterY = 0f
+    /** 长按刚触发唤起调整框时，本次手势尚未抬手，下一次抬手必须吸收忽略，避免一松手就关闭 */
+    private var suppressExitOnNextUp = false
+    private var longPressTriggered = false
+    private var infoLongPressRunnable: Runnable? = null
+
+    /**
+     * 尝试响应轻触抬手退出调整模式：
+     * 若为长按唤起手势的自然抬手，则安全吸收忽略，保持调整框显示
+     */
+    private fun tryExitOnTouchUp(): Boolean {
+        if (suppressExitOnNextUp) {
+            suppressExitOnNextUp = false
+            return false
+        }
+        exitResizeMode()
+        return true
+    }
+
     /**
      * 判断用户是否在设置中开启了悬浮窗功能（默认开启）
      */
@@ -204,16 +254,21 @@ class FloatingWindowManager private constructor(private val context: Context) {
     }
 
     /**
-     * 设置自定义缩放因子 (0.7f ~ 1.8f)
+     * 设置自定义缩放因子 (0.6x ~ 屏幕允许上限)
      */
     fun setUserScale(scale: Float) {
-        val clamped = scale.coerceIn(0.7f, 1.8f)
+        val clamped = clampScale(scale)
         if (abs(userScaleFactor - clamped) > 0.01f) {
             userScaleFactor = clamped
             prefs.edit().putFloat(KEY_USER_SCALE, clamped).apply()
             floatingView?.let { view ->
                 applyAdaptiveDimensions(view)
                 windowParams?.let { params ->
+                    val density = context.resources.displayMetrics.density
+                    val (baseW, baseH) = baseCapsuleSizeDp()
+                    val padPx = (2 * density).toInt() * 2
+                    params.width = (baseW * clamped * density + padPx).toInt()
+                    params.height = (baseH * clamped * density + padPx).toInt()
                     clampCoordinates(params, view)
                     try {
                         if (view.isAttachedToWindow) {
@@ -264,6 +319,39 @@ class FloatingWindowManager private constructor(private val context: Context) {
     }
 
     /**
+     * 各档位胶囊基准尺寸 (dp) —— 全链路唯一数据源
+     * 缩放、屏幕边界钳制与尺寸调整框均以它为准，避免多处硬编码造成尺寸计算不一致
+     */
+    private fun baseCapsuleSizeDp(tier: DeviceTier = getDeviceTier()): Pair<Float, Float> = when (tier) {
+        DeviceTier.CAR_OR_LARGE -> Pair(360f, 92f)
+        DeviceTier.TABLET -> Pair(285f, 74f)
+        DeviceTier.PHONE -> Pair(205f, 54f)
+    }
+
+    /**
+     * 当前屏幕允许的最大缩放因子：既受全局上限约束，也要保证放大后仍完整落在屏幕内
+     */
+    private fun effectiveMaxScale(): Float {
+        val bounds = getScreenBounds()
+        val density = context.resources.displayMetrics.density.coerceAtLeast(0.1f)
+        val (baseW, baseH) = baseCapsuleSizeDp()
+        return FloatingResizeMath.maxScaleForBounds(
+            screenWidthPx = bounds.width(),
+            screenHeightPx = bounds.height(),
+            baseWidthPx = baseW * density,
+            baseHeightPx = baseH * density,
+            hardMaxScale = MAX_USER_SCALE,
+            minScale = MIN_USER_SCALE
+        )
+    }
+
+    /**
+     * 统一缩放因子钳制：0.6x ~ 屏幕允许上限
+     */
+    private fun clampScale(scale: Float): Float =
+        FloatingResizeMath.clampScale(scale, MIN_USER_SCALE, effectiveMaxScale())
+
+    /**
      * 根据设置、前后台状态与权限自动判断是否显示悬浮窗
      */
     fun checkAndAutoShow() {
@@ -297,21 +385,20 @@ class FloatingWindowManager private constructor(private val context: Context) {
     /**
      * 保证坐标完全处于当前屏幕可视边界内，杜绝旋转或拖拽时飞出屏幕外
      */
-    private fun clampCoordinates(params: WindowManager.LayoutParams, targetView: View? = floatingView) {
+    private fun clampCoordinates(
+        params: WindowManager.LayoutParams,
+        targetView: View? = floatingView,
+        expectedWidthPx: Int = 0,
+        expectedHeightPx: Int = 0
+    ) {
         val bounds = getScreenBounds()
         val density = context.resources.displayMetrics.density
-        val tier = getDeviceTier()
 
-        val expectedWidth = when (tier) {
-            DeviceTier.CAR_OR_LARGE -> (380 * userScaleFactor * density).toInt()
-            DeviceTier.TABLET -> (305 * userScaleFactor * density).toInt()
-            DeviceTier.PHONE -> (210 * userScaleFactor * density).toInt()
-        }
-        val expectedHeight = when (tier) {
-            DeviceTier.CAR_OR_LARGE -> (90 * userScaleFactor * density).toInt()
-            DeviceTier.TABLET -> (72 * userScaleFactor * density).toInt()
-            DeviceTier.PHONE -> (50 * userScaleFactor * density).toInt()
-        }
+        val (baseW, baseH) = baseCapsuleSizeDp()
+        val expectedWidth = if (expectedWidthPx > 0) expectedWidthPx
+        else (baseW * userScaleFactor * density).toInt()
+        val expectedHeight = if (expectedHeightPx > 0) expectedHeightPx
+        else (baseH * userScaleFactor * density).toInt()
 
         val vWidth = targetView?.width?.takeIf { it > 0 }
             ?: capsuleContainer?.width?.takeIf { it > 0 }
@@ -355,9 +442,15 @@ class FloatingWindowManager private constructor(private val context: Context) {
             val savedX = prefs.getInt(KEY_POS_X, defaultX)
             val savedY = prefs.getInt(KEY_POS_Y, defaultY)
 
+            val density = context.resources.displayMetrics.density
+            val (baseW, baseH) = baseCapsuleSizeDp()
+            val padPx = (2 * density).toInt() * 2
+            val initW = (baseW * userScaleFactor * density + padPx).toInt()
+            val initH = (baseH * userScaleFactor * density + padPx).toInt()
+
             val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                initW,
+                initH,
                 layoutType,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
@@ -374,9 +467,12 @@ class FloatingWindowManager private constructor(private val context: Context) {
             floatingView = view
 
             bindViews(view)
+            // 恢复用户上次自由调整的尺寸 (并保证在当前屏幕范围内)
+            userScaleFactor = clampScale(userScaleFactor)
             applyAdaptiveDimensions(view)
             clampCoordinates(params, view)
             setupTouchAndDrag(view, params)
+            setupResizeHandles()
             setupClickListeners()
 
             windowManager.addView(view, params)
@@ -398,6 +494,11 @@ class FloatingWindowManager private constructor(private val context: Context) {
      */
     fun hide() {
         if (!isShowing && floatingView == null) return
+
+        // 关闭悬浮窗前先收起尺寸调整状态并清理未触发的长按/超时计时
+        if (isResizeMode) exitResizeMode()
+        cancelInfoLongPress()
+        cancelResizeIdleExit()
 
         observeJob?.cancel()
         observeJob = null
@@ -445,6 +546,66 @@ class FloatingWindowManager private constructor(private val context: Context) {
 
         btnClose = root.findViewById(R.id.floating_btn_close)
 
+        // 尺寸调整层 (长按唤起)
+        resizeOverlay = root.findViewById(R.id.floating_resize_overlay)
+        resizeFrame = root.findViewById(R.id.floating_resize_frame)
+        resizeHint = root.findViewById(R.id.floating_resize_hint)
+        resizeHandles.clear()
+        listOf(
+            Triple(R.id.floating_resize_handle_tl, -1, -1),
+            Triple(R.id.floating_resize_handle_tr, 1, -1),
+            Triple(R.id.floating_resize_handle_bl, -1, 1),
+            Triple(R.id.floating_resize_handle_br, 1, 1)
+        ).forEach { (id, dirX, dirY) ->
+            root.findViewById<View>(id)?.let { resizeHandles.add(ResizeHandle(it, dirX, dirY)) }
+        }
+
+        // 虚线选择框：圆角恒等于胶囊半高，随缩放自适应贴合
+        val density = context.resources.displayMetrics.density
+        resizeFrame?.background = PillDashFrameDrawable(
+            strokeWidthPx = 1.6f * density,
+            dashLengthPx = 4.5f * density,
+            dashColor = Color.argb(215, 255, 255, 255)
+        )
+
+        // 调整层触摸拦截：点击非圆点区域退出调整模式，并彻底防止点击穿透到下层播放/关闭按钮
+        var overlayStartX = 0f
+        var overlayStartY = 0f
+        var overlayMoved = false
+        val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+
+        resizeOverlay?.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    cancelResizeIdleExit()
+                    overlayStartX = event.rawX
+                    overlayStartY = event.rawY
+                    overlayMoved = false
+                    suppressExitOnNextUp = false
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (abs(event.rawX - overlayStartX) > touchSlop || abs(event.rawY - overlayStartY) > touchSlop) {
+                        overlayMoved = true
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!overlayMoved) {
+                        tryExitOnTouchUp()
+                    } else {
+                        scheduleResizeIdleExit()
+                    }
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    scheduleResizeIdleExit()
+                    true
+                }
+                else -> true
+            }
+        }
+
         // 为封面设置正圆唱片裁切
         ivCover?.outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: Outline) {
@@ -470,6 +631,8 @@ class FloatingWindowManager private constructor(private val context: Context) {
         Log.d(TAG, "onConfigurationChanged orientation=${newConfig.orientation}, updating adaptive dimensions")
 
         view.post {
+            // 屏幕尺寸可能已变化 (横竖屏切换)，重新收敛缩放因子后再刷新尺寸
+            userScaleFactor = clampScale(userScaleFactor)
             applyAdaptiveDimensions(view)
             clampCoordinates(params, view)
             try {
@@ -495,11 +658,7 @@ class FloatingWindowManager private constructor(private val context: Context) {
         val scale = userScaleFactor
 
         // 1. 各档位基准参数矩阵 (车机紧凑大屏 360x92dp，平板 285x74dp，手机 205x54dp)
-        val (baseCapsuleWidthDp, baseCapsuleHeightDp) = when (tier) {
-            DeviceTier.CAR_OR_LARGE -> Pair(360f, 92f)
-            DeviceTier.TABLET -> Pair(285f, 74f)
-            DeviceTier.PHONE -> Pair(205f, 54f)
-        }
+        val (baseCapsuleWidthDp, baseCapsuleHeightDp) = baseCapsuleSizeDp(tier)
 
         val baseCoverSizeDp = when (tier) {
             DeviceTier.CAR_OR_LARGE -> 76f
@@ -610,16 +769,290 @@ class FloatingWindowManager private constructor(private val context: Context) {
             it.setPadding(p, p, p, p)
         }
 
-        // 6. 为卡片设置半高全圆角裁切
-        val card = rootCard ?: root.findViewById<View>(R.id.floating_root_card)
-        card?.outlineProvider = object : ViewOutlineProvider() {
+        // 6. 动态更新胶囊背景圆角与半圆全圆角裁切 (彻底解决固定 27dp 变形与根容器错位裁切)
+        val capsuleRadius = capsuleH / 2f
+        (capsuleContainer?.background?.mutate() as? android.graphics.drawable.GradientDrawable)?.let { gd ->
+            gd.cornerRadius = capsuleRadius
+        }
+
+        capsuleContainer?.outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: Outline) {
-                val radius = if (view.height > 0) view.height / 2f else capsuleH / 2f
-                outline.setRoundRect(0, 0, view.width, view.height, radius.coerceAtLeast(1f))
+                val r = if (view.height > 0) view.height / 2f else capsuleRadius
+                outline.setRoundRect(0, 0, view.width, view.height, r.coerceAtLeast(1f))
             }
         }
-        card?.clipToOutline = true
-        card?.invalidateOutline()
+        capsuleContainer?.clipToOutline = true
+        capsuleContainer?.invalidateOutline()
+
+        // 根卡片作为包裹容器不启用 outline 裁切，杜绝尺寸不一时边缘被削平
+        rootCard?.clipToOutline = false
+
+        // 7. 同步尺寸调整框几何 (虚线框与四角圆点始终贴合胶囊轮廓)
+        updateResizeOverlayGeometry(root)
+    }
+
+    // ==================== 长按自由调整大小 (Resize Mode) ====================
+
+    /**
+     * 进入尺寸调整模式：弹出虚线选择框、四角拖动圆点与实时尺寸提示
+     */
+    private fun enterResizeMode() {
+        if (isResizeMode) return
+        val view = floatingView ?: return
+        isResizeMode = true
+        // 关键保护：长按触发时手指仍在屏幕上，吸收接下来长按手势的自然抬手，不准立刻退出
+        suppressExitOnNextUp = true
+
+        // 触觉反馈：明确告知用户已进入可调整状态
+        try {
+            view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+        } catch (_: Exception) {}
+
+        // 进入调整模式时，临时关闭根卡片 clipToOutline，确保四角圆点与高亮外边完整展示不被截断
+        rootCard?.clipToOutline = false
+
+        resizeOverlay?.visibility = View.VISIBLE
+        updateResizeOverlayGeometry(view)
+        updateResizeHintText(dragging = false)
+
+        // 淡入动效：明确告知用户已进入可调整状态
+        val fadeViews = listOfNotNull(resizeFrame) + resizeHandles.map { it.view }
+        fadeViews.forEach { target ->
+            target.alpha = 0f
+            target.animate().alpha(1f).setDuration(180).start()
+        }
+        scheduleResizeIdleExit()
+        val (baseW, baseH) = baseCapsuleSizeDp()
+        Log.i(
+            TAG,
+            "进入尺寸调整模式: scale=$userScaleFactor " +
+                    "size=${(baseW * userScaleFactor).toInt()}x${(baseH * userScaleFactor).toInt()}dp"
+        )
+    }
+
+    /**
+     * 退出尺寸调整模式，并持久化用户调整后的尺寸
+     */
+    private fun exitResizeMode() {
+        if (!isResizeMode) return
+        isResizeMode = false
+        suppressExitOnNextUp = false
+        longPressTriggered = false
+        cancelResizeIdleExit()
+        infoContainer?.animate()?.translationX(0f)?.setDuration(100)?.start()
+        resizeOverlay?.visibility = View.GONE
+
+        // 刷新胶囊裁切
+        capsuleContainer?.invalidateOutline()
+
+        prefs.edit().putFloat(KEY_USER_SCALE, userScaleFactor).apply()
+        Log.i(TAG, "退出尺寸调整模式: scale=$userScaleFactor")
+    }
+
+    /** 长时间无操作自动收起调整框，避免停留在调整状态影响正常操作 */
+    private fun scheduleResizeIdleExit() {
+        cancelResizeIdleExit()
+        val runnable = Runnable { exitResizeMode() }
+        resizeIdleRunnable = runnable
+        uiHandler.postDelayed(runnable, RESIZE_IDLE_TIMEOUT_MS)
+    }
+
+    private fun cancelResizeIdleExit() {
+        resizeIdleRunnable?.let { uiHandler.removeCallbacks(it) }
+        resizeIdleRunnable = null
+    }
+
+    /**
+     * 信息区长按计时：长按信息区同样唤起尺寸调整框
+     * (信息区被独立触摸监听器接管，需单独做长按检测)
+     */
+    private fun scheduleInfoLongPress() {
+        cancelInfoLongPress()
+        longPressTriggered = false
+        val runnable = Runnable {
+            if (!isResizeMode) {
+                // 标记本次手势已被长按消费，抬手时不再触发进播放器/切歌
+                longPressTriggered = true
+                try {
+                    infoContainer?.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                } catch (_: Exception) {}
+                // 长按触发瞬间，平滑归位轻微位移，避免文字偏移歪斜
+                infoContainer?.animate()?.translationX(0f)?.setDuration(100)?.start()
+                enterResizeMode()
+            }
+        }
+        infoLongPressRunnable = runnable
+        uiHandler.postDelayed(runnable, ViewConfiguration.getLongPressTimeout().toLong())
+    }
+
+    private fun cancelInfoLongPress() {
+        infoLongPressRunnable?.let { uiHandler.removeCallbacks(it) }
+        infoLongPressRunnable = null
+    }
+
+    /**
+     * 同步调整框几何：严格以胶囊尺寸为准排布 Overlay 与四角圆点，杜绝撑大根 FrameLayout
+     */
+    private fun updateResizeOverlayGeometry(root: View) {
+        val container = capsuleContainer ?: return
+        val overlay = resizeOverlay ?: return
+        val density = context.resources.displayMetrics.density
+
+        // 显式指定 Overlay 宽高严格等于胶囊主体尺寸并居中，从源头杜绝 match_parent 撑爆父布局全屏
+        val capsuleW = (container.layoutParams?.width ?: 0).takeIf { it > 0 } ?: root.width
+        val capsuleH = (container.layoutParams?.height ?: 0).takeIf { it > 0 } ?: root.height
+        if (capsuleW <= 0 || capsuleH <= 0) return
+
+        val overlayLp = overlay.layoutParams as? FrameLayout.LayoutParams ?: FrameLayout.LayoutParams(capsuleW, capsuleH)
+        overlayLp.width = capsuleW
+        overlayLp.height = capsuleH
+        overlayLp.gravity = Gravity.CENTER
+        overlay.layoutParams = overlayLp
+
+        resizeFrame?.let { frame ->
+            val lp = frame.layoutParams as? FrameLayout.LayoutParams ?: FrameLayout.LayoutParams(capsuleW, capsuleH)
+            lp.width = capsuleW
+            lp.height = capsuleH
+            frame.layoutParams = lp
+        }
+
+        // 胶囊为半高全圆角，圆点沿 45° 落在圆弧上：偏移 = r * (1 - √2/2) ≈ 0.293r
+        val radius = capsuleH / 2f
+        val offset = radius * (1f - 0.70710678f)
+        // 圆点触控尺寸：保证 18dp~26dp，大拇指极易按中
+        val handleSize = (capsuleH * 0.30f).coerceIn(18f * density, 26f * density)
+        val sizePx = handleSize.toInt().coerceAtLeast(1)
+        val margin = (offset - handleSize / 2f).coerceAtLeast(0f).toInt()
+
+        resizeHandles.forEach { handle ->
+            val lp = handle.view.layoutParams as? FrameLayout.LayoutParams
+                ?: FrameLayout.LayoutParams(sizePx, sizePx)
+            lp.width = sizePx
+            lp.height = sizePx
+            lp.leftMargin = if (handle.dirX < 0) margin else 0
+            lp.rightMargin = if (handle.dirX > 0) margin else 0
+            lp.topMargin = if (handle.dirY < 0) margin else 0
+            lp.bottomMargin = if (handle.dirY > 0) margin else 0
+            handle.view.layoutParams = lp
+        }
+    }
+
+    /**
+     * 刷新尺寸提示文案：拖动中显示百分比与 dp 尺寸，静止时提示操作方式
+     */
+    private fun updateResizeHintText(dragging: Boolean) {
+        val hint = resizeHint ?: return
+        val (baseW, baseH) = baseCapsuleSizeDp()
+        hint.text = if (dragging) {
+            val percent = (userScaleFactor * 100f).toInt()
+            val wDp = (baseW * userScaleFactor).toInt()
+            val hDp = (baseH * userScaleFactor).toInt()
+            "$percent% · ${wDp}×${hDp}dp"
+        } else {
+            "拖动圆点调整大小"
+        }
+        // 提示文字随尺寸轻微跟随，小尺寸下仍保证可读
+        hint.setTextSize(
+            TypedValue.COMPLEX_UNIT_SP,
+            (10.5f * userScaleFactor).coerceIn(9f, 14f)
+        )
+    }
+
+    /**
+     * 以按下时锁定的中心点为锚点应用新的缩放因子：
+     * 杜绝差分累加舍入误差与贴边漂移，保证缩放过程视觉中心绝对平稳
+     */
+    private fun applyScaleAroundCenter(targetScale: Float) {
+        val view = floatingView ?: return
+        val params = windowParams ?: return
+        val newScale = clampScale(targetScale)
+
+        if (abs(newScale - userScaleFactor) < 0.002f) {
+            updateResizeHintText(dragging = true)
+            return
+        }
+
+        val density = context.resources.displayMetrics.density
+        val (baseW, baseH) = baseCapsuleSizeDp()
+
+        userScaleFactor = newScale
+        val newW = baseW * density * newScale
+        val newH = baseH * density * newScale
+
+        applyAdaptiveDimensions(view)
+
+        // 严格基于按下时锁定的窗口中心计算左上角位置，避免多次 MOVE 累积舍入误差
+        params.x = (resizeStartCenterX - newW / 2f).toInt()
+        params.y = (resizeStartCenterY - newH / 2f).toInt()
+        val padPx = (2 * density).toInt() * 2
+        params.width = (newW + padPx).toInt()
+        params.height = (newH + padPx).toInt()
+        clampCoordinates(params, view, newW.toInt(), newH.toInt())
+        try {
+            if (view.isAttachedToWindow) {
+                windowManager.updateViewLayout(view, params)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Update layout while resizing failed: ${e.message}")
+        }
+        updateResizeHintText(dragging = true)
+    }
+
+    /**
+     * 四角圆点拖动手势：拖得越远越大，反向拖回则缩小
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupResizeHandles() {
+        val density = context.resources.displayMetrics.density
+        val (baseW, baseH) = baseCapsuleSizeDp()
+        val baseWpx = (baseW * density).coerceAtLeast(1f)
+        val baseHpx = (baseH * density).coerceAtLeast(1f)
+
+        resizeHandles.forEach { handle ->
+            handle.view.setOnTouchListener { _, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        handle.view.parent?.requestDisallowInterceptTouchEvent(true)
+                        cancelResizeIdleExit()
+                        suppressExitOnNextUp = false
+                        resizeStartScale = userScaleFactor
+                        resizeStartRawX = event.rawX
+                        resizeStartRawY = event.rawY
+                        val curW = baseW * density * userScaleFactor
+                        val curH = baseH * density * userScaleFactor
+                        windowParams?.let { p ->
+                            resizeStartCenterX = p.x + curW / 2f
+                            resizeStartCenterY = p.y + curH / 2f
+                        }
+                        handle.view.animate().scaleX(1.35f).scaleY(1.35f).setDuration(90).start()
+                        true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = event.rawX - resizeStartRawX
+                        val dy = event.rawY - resizeStartRawY
+                        // 位移投影到"等比放大"的对角方向换算缩放增量 (已含中心展开补偿因子)
+                        val delta = FloatingResizeMath.scaleDelta(
+                            dxPx = dx,
+                            dyPx = dy,
+                            dirX = handle.dirX,
+                            dirY = handle.dirY,
+                            baseWidthPx = baseWpx,
+                            baseHeightPx = baseHpx
+                        )
+                        applyScaleAroundCenter(resizeStartScale + delta)
+                        true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        handle.view.animate().scaleX(1f).scaleY(1f).setDuration(90).start()
+                        prefs.edit().putFloat(KEY_USER_SCALE, userScaleFactor).apply()
+                        Log.i(TAG, "拖动圆点结束: scale=$userScaleFactor")
+                        scheduleResizeIdleExit()
+                        true
+                    }
+                    else -> false
+                }
+            }
+        }
     }
 
     private fun setupClickListeners() {
@@ -651,7 +1084,7 @@ class FloatingWindowManager private constructor(private val context: Context) {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
                 isScaling = true
                 val factor = detector.scaleFactor
-                userScaleFactor = (userScaleFactor * factor).coerceIn(0.7f, 1.8f)
+                userScaleFactor = clampScale(userScaleFactor * factor)
                 applyAdaptiveDimensions(view)
                 clampCoordinates(params, view)
                 try {
@@ -672,9 +1105,17 @@ class FloatingWindowManager private constructor(private val context: Context) {
         // 2. 双击手势检测器 (双击切换 1.0x 标准与 1.35x 超大模式)
         val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDoubleTap(e: MotionEvent): Boolean {
+                if (isResizeMode) return true
                 val targetScale = if (userScaleFactor < 1.2f) 1.35f else 1.0f
                 setUserScale(targetScale)
                 return true
+            }
+
+            override fun onLongPress(e: MotionEvent) {
+                // 长按唤起尺寸调整框：拖动四角圆点即可自由改变悬浮窗大小
+                if (!isResizeMode) {
+                    enterResizeMode()
+                }
             }
         })
 
@@ -685,6 +1126,15 @@ class FloatingWindowManager private constructor(private val context: Context) {
 
         // 4. 卡片整体拖拽与双指捏合
         view.setOnTouchListener { _, event ->
+            // 4.1 尺寸调整模式：单指轻触外围空白处安全退出调整模式，长按自然抬手不退出
+            if (isResizeMode) {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> suppressExitOnNextUp = false
+                    MotionEvent.ACTION_UP -> tryExitOnTouchUp()
+                }
+                return@setOnTouchListener true
+            }
+
             gestureDetector.onTouchEvent(event)
             scaleDetector.onTouchEvent(event)
 
@@ -769,17 +1219,31 @@ class FloatingWindowManager private constructor(private val context: Context) {
         var isHorizontalSwiping = false
 
         container.setOnTouchListener { v, event ->
+            // 尺寸调整模式下：信息区不响应切歌/进播放器，轻触抬手安全退出，长按自然抬手不退出
+            if (isResizeMode) {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> suppressExitOnNextUp = false
+                    MotionEvent.ACTION_UP -> tryExitOnTouchUp()
+                }
+                return@setOnTouchListener true
+            }
+
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     startX = event.rawX
                     startY = event.rawY
                     isHorizontalSwiping = false
                     v.parent?.requestDisallowInterceptTouchEvent(true)
+                    // 长按信息区同样可唤起尺寸调整框
+                    scheduleInfoLongPress()
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - startX
                     val dy = event.rawY - startY
+                    if (abs(dx) > touchSlop || abs(dy) > touchSlop) {
+                        cancelInfoLongPress()
+                    }
                     if (!isHorizontalSwiping && abs(dx) > touchSlop && abs(dx) > abs(dy) * 1.2f) {
                         isHorizontalSwiping = true
                     }
@@ -790,6 +1254,14 @@ class FloatingWindowManager private constructor(private val context: Context) {
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    cancelInfoLongPress()
+                    // 长按已进入尺寸调整模式：本次抬手不再触发点击/切歌
+                    if (longPressTriggered) {
+                        longPressTriggered = false
+                        v.animate().translationX(0f).alpha(1f).setDuration(120).start()
+                        isHorizontalSwiping = false
+                        return@setOnTouchListener true
+                    }
                     val dx = event.rawX - startX
                     val dy = event.rawY - startY
                     val totalMove = abs(dx) + abs(dy)
@@ -880,6 +1352,7 @@ class FloatingWindowManager private constructor(private val context: Context) {
                 tvLyric?.text = "正在同步歌词..."
                 tvLyricNext?.text = ""
                 lastLyricIndex = -2
+                lastLyricStateKey = ""
 
                 // 启动全通道封面异步解析与加载
                 loadSongCover(song)
@@ -900,6 +1373,7 @@ class FloatingWindowManager private constructor(private val context: Context) {
             currentSongId = -1L
             currentLyricLines = emptyList()
             lastLyricIndex = -2
+            lastLyricStateKey = ""
             tvTitle?.text = "OrBit Player"
             tvArtist?.text = "未在播放音乐"
             tvLyric?.text = "享受美好旋律"
@@ -1015,57 +1489,89 @@ class FloatingWindowManager private constructor(private val context: Context) {
 
     private val lyricDecelerateInterpolator = DecelerateInterpolator(1.6f)
 
+    private fun isSequentialLyricState(prev: String, curr: String): Boolean {
+        if (prev.isEmpty() || prev == "empty" || prev == "none") return false
+        if (prev == "intro" && curr.startsWith("line_")) return true
+
+        val prevIdx = parseStateIndex(prev)
+        val currIdx = parseStateIndex(curr)
+        if (prevIdx == null || currIdx == null) return false
+
+        // 同一行人声演唱结束，转入间奏展示: line_X -> interlude_X
+        if (prev == "line_$prevIdx" && curr == "interlude_$prevIdx") return true
+        // 间奏结束，平滑进入下一行歌词: interlude_X -> line_${prevIdx + 1}
+        if (prev == "interlude_$prevIdx" && curr == "line_${prevIdx + 1}") return true
+        // 紧凑快速连唱，未插播间奏，直接从当前行切到下一行: line_X -> line_${prevIdx + 1}
+        if (prev == "line_$prevIdx" && curr == "line_${prevIdx + 1}") return true
+        // 歌曲最后一句唱完，转入尾奏伴奏: line_X -> outro
+        if (prev == "line_$prevIdx" && curr == "outro") return true
+
+        return false
+    }
+
+    private fun parseStateIndex(key: String): Int? {
+        return when {
+            key.startsWith("line_") -> key.removePrefix("line_").toIntOrNull()
+            key.startsWith("interlude_") -> key.removePrefix("interlude_").toIntOrNull()
+            key == "outro" -> 999999
+            else -> null
+        }
+    }
+
     private fun updateLyricLine(currentPositionMs: Long) {
         if (currentLyricLines.isEmpty()) {
-            if (lastLyricIndex != -1) {
+            if (lastLyricStateKey != "empty") {
+                lastLyricStateKey = "empty"
                 lastLyricIndex = -1
                 setLyricDirectly("♪ 享受音乐旋律 ♪", "", Color.parseColor("#80FFFFFF"))
             }
             return
         }
 
-        val index = currentLyricLines.indexOfLast { it.timeMs <= currentPositionMs }
-        if (index != lastLyricIndex) {
-            val previousIndex = lastLyricIndex
-            lastLyricIndex = index
+        // 智能人声识别与歌词状态解析：
+        // 1. 开唱歌词快唱完剩约 2 个字时自适应提前上浮预滚动
+        // 2. 人声唱完而伴奏仍在继续（间奏/Solo/尾奏）时及时向上滚动过渡，杜绝字幕死滞
+        val state = FloatingLyricHelper.resolveLyricState(currentLyricLines, currentPositionMs)
+        if (state.stateKey != lastLyricStateKey) {
+            val prevStateKey = lastLyricStateKey
+            lastLyricStateKey = state.stateKey
 
-            // 当前正在唱的歌词 (核心行)
-            val currentText = if (index >= 0) {
-                currentLyricLines[index].text.trim().ifBlank { "♪ ♪ ♪" }
+            val targetText1: String
+            val targetText2: String
+            val targetColor2: Int
+
+            if (state.isInstrumental) {
+                // 伴奏段落 (前奏 / 间奏 / 尾奏)：第一行突出伴奏标识，第二行作为下一句预告
+                targetText1 = state.text1
+                targetText2 = state.text2
+                targetColor2 = Color.parseColor("#80FFFFFF")
             } else {
-                currentLyricLines.firstOrNull()?.text?.trim() ?: "♪ ♪ ♪"
+                // 人声演唱阶段：测量宽度，超长时拆分为两行高亮显示
+                val currentText = state.text1
+                val nextText = state.text2
+                val paint = tvLyric?.paint
+                val availableWidth = if ((tvLyric?.width ?: 0) > 0) {
+                    tvLyric!!.width.toFloat()
+                } else {
+                    val density = context.resources.displayMetrics.density
+                    102f * userScaleFactor * density
+                }
+                val textWidth = paint?.measureText(currentText) ?: 0f
+
+                if (textWidth > availableWidth && currentText.length >= 7) {
+                    val (part1, part2) = splitLongLyric(currentText)
+                    targetText1 = part1
+                    targetText2 = part2
+                    targetColor2 = Color.parseColor("#F1F5F9")
+                } else {
+                    targetText1 = currentText
+                    targetText2 = nextText
+                    targetColor2 = Color.parseColor("#80FFFFFF")
+                }
             }
 
-            // 即将开唱的下一句歌词 (预告行)
-            val nextText = if (index >= 0 && index + 1 < currentLyricLines.size) {
-                currentLyricLines[index + 1].text.trim()
-            } else if (index < 0 && currentLyricLines.size > 1) {
-                currentLyricLines[1].text.trim()
-            } else {
-                ""
-            }
-
-            // 动态测量当前歌词宽度，判断是否太长需要占用两行显示
-            val paint = tvLyric?.paint
-            val availableWidth = if ((tvLyric?.width ?: 0) > 0) {
-                tvLyric!!.width.toFloat()
-            } else {
-                val density = context.resources.displayMetrics.density
-                102f * userScaleFactor * density
-            }
-            val textWidth = paint?.measureText(currentText) ?: 0f
-
-            val (targetText1, targetText2, targetColor2) = if (textWidth > availableWidth && currentText.length >= 7) {
-                // 当前字幕太长：拆分为两行显示完整歌词，两行均呈现高亮纯白
-                val (part1, part2) = splitLongLyric(currentText)
-                Triple(part1, part2, Color.parseColor("#F1F5F9"))
-            } else {
-                // 普通长度字幕：第一行永远是当前唱的歌词，第二行是下一句预告歌词
-                Triple(currentText, nextText, Color.parseColor("#80FFFFFF"))
-            }
-
-            // 当歌曲在正常推进过程中发生行切换时应用平滑上移过渡动效，否则瞬时更新避免跳闪
-            if (previousIndex >= 0 && isShowing) {
+            // 顺次推进时应用平滑上浮过渡动效；大幅拖动跳跃或快退时直接瞬时更新，避免动画错位跳闪
+            if (isSequentialLyricState(prevStateKey, state.stateKey) && isShowing) {
                 animateLyricTransition(targetText1, targetText2, targetColor2)
             } else {
                 setLyricDirectly(targetText1, targetText2, targetColor2)

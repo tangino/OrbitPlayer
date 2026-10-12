@@ -170,6 +170,21 @@ void DSPChain::setLimiterThresholdDb(float thresholdDb) {
 void DSPChain::process(float* buffer, int numFrames) {
     // 1. Equalizer (Graphic or Parametric) - 独立受均衡器开关控制
     if (equalizerEnabled_) {
+        // 自动裕量计算 (Auto-Headroom):
+        // 当用户提升了某些频段 (特别是低频提升 +3dB ~ +6dB 时)，
+        // 自动在输入端提供等比例的平滑安全裕量，防止正增益累积导致数字峰值打满。
+        // 保留低音相对其他频段的完整响度优势，同时给整体波形留出安全呼吸空间。
+        const float maxPositiveGain = (engineMode_ == EQEngineMode::GRAPHIC)
+            ? graphicEQ_.getMaxPositiveGainDb()
+            : parametricEQ_.getMaxPositiveGainDb();
+        if (maxPositiveGain > 0.5f) {
+            const float autoHeadroomDb = std::min(3.5f, maxPositiveGain * 0.5f);
+            const float headroomLinear = std::pow(10.0f, -autoHeadroomDb / 20.0f);
+            for (int i = 0; i < numFrames * 2; ++i) {
+                buffer[i] *= headroomLinear;
+            }
+        }
+
         if (engineMode_ == EQEngineMode::GRAPHIC) {
             graphicEQ_.processStereo(buffer, numFrames);
         } else {
@@ -192,6 +207,13 @@ void DSPChain::process(float* buffer, int numFrames) {
 
     // 5. Lookahead / Peak Limiter 峰值限制器防削波
     limiter_.processStereo(buffer, numFrames);
+
+    // 6. Master Soft Ceiling (零抽吸、绝对透明防冲击保护)
+    // 无论用户是否开启压限器，末端必须保证峰值绝对不突破 ±0.999f (0dBFS)，
+    // 纯单样本代数渐近映射，零延迟、零记忆、零抽吸，彻底防止突破 1.0f 触发手机底层硬件芯片 (SmartPA/AudioFlinger) 的暴跌降音量 DRC！
+    for (int i = 0; i < numFrames * 2; ++i) {
+        buffer[i] = applyMasterCeiling(buffer[i]);
+    }
 
     // 实时推入 FFT 频谱与 Peak 监测
     fftAnalyzer_.pushSamples(buffer, numFrames);

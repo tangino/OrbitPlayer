@@ -4,8 +4,11 @@ namespace dsp {
 
 Limiter::Limiter(float sampleRate) : sampleRate_(sampleRate) {
     setThresholdDb(-0.3f); // 提升门限至 -0.3dBFS，保留充足动态
-    attackMs_ = 0.8f;      // 0.8ms 迅捷起控
-    releaseMs_ = 35.0f;    // 35ms 快速平滑释放，消除抽吸泵感
+    attackMs_ = 0.5f;      // 0.5ms 迅捷起控
+    releaseMs_ = 20.0f;    // 20ms 快速平滑释放，低音冲击后即刻恢复，消除抽吸泵感
+    maxReductionDb_ = -2.0f;
+    maxReductionLinear_ = std::pow(10.0f, maxReductionDb_ / 20.0f);
+    kneeDb_ = 0.8f;
     updateCoefficients();
 }
 

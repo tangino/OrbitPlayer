@@ -143,13 +143,54 @@ class MusicRepository private constructor(private val context: Context) {
     }
 
     suspend fun toggleFavorite(song: Song) = withContext(Dispatchers.IO) {
-        val newFavorite = !song.isFavorite
+        val isOnline = song.isOnlineSong || song.path.startsWith("online://") || song.path.startsWith("http://") || song.path.startsWith("https://") || song.id < 0
+        val isAlreadyFav = _favoriteSongs.value.any { it.path == song.path || it.id == song.id } || song.isFavorite
+        val newFavorite = !isAlreadyFav
+
+        if (isOnline) {
+            db.songDao.insertAll(listOf(song.copy(isFavorite = newFavorite, isDisliked = false)))
+        }
+
         db.songDao.toggleFavorite(song.path, newFavorite)
-        val updatedList = _allSongs.value.map {
-            if (it.path == song.path) it.copy(isFavorite = newFavorite, isDisliked = false) else it
+
+        val existsInAll = _allSongs.value.any { it.path == song.path || it.id == song.id }
+        val updatedList = if (existsInAll) {
+            _allSongs.value.map {
+                if (it.path == song.path || it.id == song.id) it.copy(isFavorite = newFavorite, isDisliked = false) else it
+            }
+        } else {
+            if (newFavorite) {
+                _allSongs.value + song.copy(isFavorite = true, isDisliked = false)
+            } else {
+                _allSongs.value
+            }
         }
         updateCollections(updatedList)
         MusicPlayerManager.getInstance(context).updateSongFavorite(song.path, newFavorite)
+    }
+
+    suspend fun setFavorite(song: Song, isFavorite: Boolean) = withContext(Dispatchers.IO) {
+        val isOnline = song.isOnlineSong || song.path.startsWith("online://") || song.path.startsWith("http://") || song.path.startsWith("https://") || song.id < 0
+        if (isOnline) {
+            db.songDao.insertAll(listOf(song.copy(isFavorite = isFavorite, isDisliked = false)))
+        }
+
+        db.songDao.toggleFavorite(song.path, isFavorite)
+
+        val existsInAll = _allSongs.value.any { it.path == song.path || it.id == song.id }
+        val updatedList = if (existsInAll) {
+            _allSongs.value.map {
+                if (it.path == song.path || it.id == song.id) it.copy(isFavorite = isFavorite, isDisliked = false) else it
+            }
+        } else {
+            if (isFavorite) {
+                _allSongs.value + song.copy(isFavorite = true, isDisliked = false)
+            } else {
+                _allSongs.value
+            }
+        }
+        updateCollections(updatedList)
+        MusicPlayerManager.getInstance(context).updateSongFavorite(song.path, isFavorite)
     }
 
     suspend fun removeDislike(song: Song) = withContext(Dispatchers.IO) {
@@ -171,6 +212,44 @@ class MusicRepository private constructor(private val context: Context) {
             if (it.isDisliked) it.copy(isDisliked = false) else it
         }
         updateCollections(updatedList)
+    }
+
+    /**
+     * 云端备份恢复：批量同步喜欢的音乐与不喜欢的音乐状态
+     */
+    suspend fun batchSyncAttitudes(
+        favoriteSongs: List<Song>,
+        dislikedSongs: List<Song>,
+        overwrite: Boolean
+    ) = withContext(Dispatchers.IO) {
+        if (overwrite) {
+            if (favoriteSongs.isNotEmpty()) {
+                db.songDao.clearAllFavorites()
+            }
+            if (dislikedSongs.isNotEmpty()) {
+                db.songDao.clearAllDislikes()
+            }
+        }
+
+        // 针对本地数据库尚未记录的网络虚拟歌曲，先持久化存入 songs 表
+        val existingPaths = _allSongs.value.map { it.path }.toSet()
+        val missingSongs = (favoriteSongs + dislikedSongs).filter { it.path !in existingPaths }
+        if (missingSongs.isNotEmpty()) {
+            db.songDao.insertAll(missingSongs)
+        }
+
+        for (s in favoriteSongs) {
+            db.songDao.updateSongAttitude(s.path, isFavorite = true, isDisliked = false)
+            MusicPlayerManager.getInstance(context).updateSongAttitude(s.path, isFavorite = true, isDisliked = false)
+        }
+        for (s in dislikedSongs) {
+            db.songDao.updateSongAttitude(s.path, isFavorite = false, isDisliked = true)
+            MusicPlayerManager.getInstance(context).updateSongAttitude(s.path, isFavorite = false, isDisliked = true)
+        }
+
+        // 重新拉取所有歌曲并刷新各集合
+        val updated = db.songDao.getAllSongs()
+        updateCollections(updated)
     }
 
     suspend fun recordSongPlay(song: Song) = withContext(Dispatchers.IO) {
@@ -371,6 +450,14 @@ class MusicRepository private constructor(private val context: Context) {
         refreshPlaylists()
     }
 
+    suspend fun getPlaylistIdsContainingSong(songId: Long, songPath: String? = null): Set<Long> = withContext(Dispatchers.IO) {
+        db.songDao.getPlaylistIdsContainingSong(songId, songPath)
+    }
+
+    suspend fun getPlaylistSongCounts(songIds: Collection<Long>): Map<Long, Int> = withContext(Dispatchers.IO) {
+        db.songDao.getPlaylistSongCounts(songIds)
+    }
+
     suspend fun updateSongAlbumArt(songId: Long, albumArtUri: String) = withContext(Dispatchers.IO) {
         if (songId == 0L || albumArtUri.isBlank()) return@withContext
         val normUri = if (albumArtUri.startsWith("//")) "https:$albumArtUri" else albumArtUri
@@ -384,12 +471,24 @@ class MusicRepository private constructor(private val context: Context) {
 
     suspend fun setFavoriteBatch(songs: List<Song>, isFavorite: Boolean) = withContext(Dispatchers.IO) {
         if (songs.isEmpty()) return@withContext
+        val onlineSongs = songs.filter { it.isOnlineSong || it.path.startsWith("online://") || it.path.startsWith("http://") || it.path.startsWith("https://") || it.id < 0 }
+        if (onlineSongs.isNotEmpty()) {
+            db.songDao.insertAll(onlineSongs.map { it.copy(isFavorite = isFavorite, isDisliked = false) })
+        }
+
         val paths = songs.map { it.path }
         db.songDao.setFavoriteBatch(paths, isFavorite)
         val pathSet = paths.toSet()
+        val idSet = songs.map { it.id }.toSet()
+
+        val existingPaths = _allSongs.value.map { it.path }.toSet()
+        val existingIds = _allSongs.value.map { it.id }.toSet()
+        val missingSongs = if (isFavorite) songs.filter { it.path !in existingPaths && it.id !in existingIds }.map { it.copy(isFavorite = true, isDisliked = false) } else emptyList()
+
         val updatedList = _allSongs.value.map {
-            if (it.path in pathSet) it.copy(isFavorite = isFavorite, isDisliked = if (isFavorite) false else it.isDisliked) else it
-        }
+            if (it.path in pathSet || it.id in idSet) it.copy(isFavorite = isFavorite, isDisliked = if (isFavorite) false else it.isDisliked) else it
+        } + missingSongs
+
         updateCollections(updatedList)
     }
 

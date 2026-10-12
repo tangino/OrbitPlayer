@@ -845,6 +845,10 @@ fun OnlinePlaylistDetailView(
     var songToAddToPlaylist by remember { mutableStateOf<OnlineSongItem?>(null) }
 
     val resolvedViewModel: com.orbit.music.ui.viewmodel.MusicPlayerViewModel = playerViewModel ?: androidx.lifecycle.viewmodel.compose.viewModel()
+    val favoriteSongs by resolvedViewModel.favoriteSongs.collectAsState()
+    val favPaths = remember(favoriteSongs) { favoriteSongs.map { it.path }.toSet() }
+    val favIds = remember(favoriteSongs) { favoriteSongs.map { it.id }.toSet() }
+    val favKeys = remember(favoriteSongs) { favoriteSongs.map { "${it.title.trim().lowercase()}_${it.artist.trim().lowercase()}" }.toSet() }
 
     // 添加到网络歌单弹窗
     if (songToAddToPlaylist != null) {
@@ -1311,18 +1315,47 @@ fun OnlinePlaylistDetailView(
                                 modifier = Modifier.width(28.dp)
                             )
 
+                            val isSongFav = remember(song, favPaths, favIds, favKeys) {
+                                val vPath = "online://${song.platform.id}/${song.id}"
+                                val vId = com.orbit.music.data.online.engine.OnlineAudioSourceManager.generateVirtualSongId(song.platform, song.id)
+                                val key = "${song.title.trim().lowercase()}_${song.artist.trim().lowercase()}"
+                                vPath in favPaths || vId in favIds || key in favKeys
+                            }
+
                             if (!song.coverUrl.isNullOrEmpty()) {
-                            AsyncImage(
-                                model = song.coverUrl,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(OrbitTheme.colors.surface),
-                                contentScale = ContentScale.Crop
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                        }
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(OrbitTheme.colors.surface)
+                                ) {
+                                    AsyncImage(
+                                        model = song.coverUrl,
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                    if (isSongFav) {
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.BottomEnd)
+                                                .padding(2.dp)
+                                                .size(13.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFFFF3366)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Favorite,
+                                                contentDescription = "已喜欢",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(8.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                            }
 
                         Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {

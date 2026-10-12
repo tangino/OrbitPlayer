@@ -33,13 +33,13 @@ private:
 
     bool enabled_ = false;
     float sampleRate_ = 44100.0f;
-    float thresholdDb_ = -15.0f;
-    float ratio_ = 3.0f;
+    float thresholdDb_ = -10.0f;
+    float ratio_ = 2.0f;
     float attackMs_ = 20.0f;
-    float releaseMs_ = 60.0f;
-    float makeupGainDb_ = 4.0f;
-    float makeupGainLinear_ = 1.5849f;
-    float kneeWidthDb_ = 8.0f;
+    float releaseMs_ = 35.0f;
+    float makeupGainDb_ = 2.0f;
+    float makeupGainLinear_ = 1.2589f;
+    float kneeWidthDb_ = 6.0f;
 
     float attackCoeff_ = 0.0f;
     float releaseCoeff_ = 0.0f;

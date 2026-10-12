@@ -366,6 +366,16 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
         updateSongAttitude(path, isFavorite = isFavorite, isDisliked = false)
     }
 
+    fun clearAllFavorites() {
+        val db = helper.writableDatabase
+        db.execSQL("UPDATE song_stats SET isFavorite = 0")
+    }
+
+    fun clearAllDislikes() {
+        val db = helper.writableDatabase
+        db.execSQL("UPDATE song_stats SET isDisliked = 0")
+    }
+
     fun incrementPlayCount(path: String) {
         val db = helper.writableDatabase
         val now = System.currentTimeMillis()
@@ -733,6 +743,46 @@ class SongDaoImpl(private val helper: SQLiteOpenHelper) {
 
     fun clearPlaylistSongs(playlistId: Long): Int {
         return helper.writableDatabase.delete("playlist_songs", "playlistId = ?", arrayOf(playlistId.toString()))
+    }
+
+    /**
+     * 查询包含指定歌曲的所有歌单 ID
+     */
+    fun getPlaylistIdsContainingSong(songId: Long, songPath: String? = null): Set<Long> {
+        val result = mutableSetOf<Long>()
+        val sql = if (!songPath.isNullOrBlank()) {
+            """
+            SELECT DISTINCT ps.playlistId 
+            FROM playlist_songs ps
+            LEFT JOIN songs s ON ps.songId = s.id
+            WHERE ps.songId = ? OR s.path = ?
+            """.trimIndent()
+        } else {
+            "SELECT DISTINCT playlistId FROM playlist_songs WHERE songId = ?"
+        }
+        val args = if (!songPath.isNullOrBlank()) arrayOf(songId.toString(), songPath) else arrayOf(songId.toString())
+        helper.readableDatabase.rawQuery(sql, args).use { c ->
+            while (c.moveToNext()) {
+                result.add(c.getLong(0))
+            }
+        }
+        return result
+    }
+
+    /**
+     * 查询一组歌曲在各个歌单中出现的数量 (playlistId -> 包含本批歌曲的曲目数)
+     */
+    fun getPlaylistSongCounts(songIds: Collection<Long>): Map<Long, Int> {
+        if (songIds.isEmpty()) return emptyMap()
+        val counts = mutableMapOf<Long, Int>()
+        val inClause = songIds.joinToString(",") { it.toString() }
+        val sql = "SELECT playlistId, COUNT(DISTINCT songId) FROM playlist_songs WHERE songId IN ($inClause) GROUP BY playlistId"
+        helper.readableDatabase.rawQuery(sql, null).use { c ->
+            while (c.moveToNext()) {
+                counts[c.getLong(0)] = c.getInt(1)
+            }
+        }
+        return counts
     }
 
     fun getSongsInPlaylist(playlistId: Long): List<Song> {

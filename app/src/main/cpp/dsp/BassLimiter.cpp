@@ -3,18 +3,16 @@
 namespace dsp {
 
 BassLimiter::BassLimiter(float sampleRate) : sampleRate_(sampleRate) {
-    // 分频点 180Hz：完整覆盖 Bass Boost (90Hz Low Shelf) 的提升区间，
-    // 同时把男声基频主体 (100~200Hz 之外的部分) 尽量留在高频段，避免人声低频厚度被牵连
+    // 分频点 180Hz：完整覆盖 Bass Boost (90Hz Low Shelf) 的提升区间
     crossoverHz_ = 180.0f;
-    // 低频段限幅保留 -2.0dBFS 门限：为与中高频段相加留出充分相位叠加余量，
-    // 避免分频带限幅后总和仍需要主限幅器大幅度宽带衰减 (即人声被压小)
-    thresholdDb_ = -2.0f;
+    // 低频段限幅设为 -0.5dBFS 门限：保留充分动态余量，正常低音不被过度削波
+    thresholdDb_ = -0.5f;
     updateCrossover();
     lowBandLimiter_.setSampleRate(sampleRate_);
     lowBandLimiter_.setThresholdDb(thresholdDb_);
-    lowBandLimiter_.setAttackTimeMs(1.0f);
-    lowBandLimiter_.setReleaseTimeMs(60.0f);
-    lowBandLimiter_.setMaxReductionDb(-18.0f); // 允许低频段独立深压，绝不外溢到中高频
+    lowBandLimiter_.setAttackTimeMs(0.8f);
+    lowBandLimiter_.setReleaseTimeMs(22.0f);   // 22ms 迅捷平滑释放，节拍过后瞬间恢复，彻底杜绝抽吸泵感
+    lowBandLimiter_.setMaxReductionDb(-4.0f);  // 最大衰减严格限制在 -4.0dB，保证低频底盘饱满，绝不让音量断崖式下跌
     lowBandLimiter_.setEnabled(true);
 }
 

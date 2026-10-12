@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -33,10 +34,14 @@ import coil.compose.AsyncImage
 import com.orbit.music.R
 import com.orbit.music.data.model.Playlist
 import com.orbit.music.data.model.Song
+import com.orbit.music.data.online.engine.OnlineAudioSourceManager
 import com.orbit.music.data.online.model.OnlineSongItem
 import com.orbit.music.ui.theme.DarkBackground
 import com.orbit.music.ui.theme.OrbitTheme
 import com.orbit.music.ui.viewmodel.MusicPlayerViewModel
+import kotlinx.coroutines.launch
+
+private const val FAVORITE_PLAYLIST_ID = -999L
 
 /**
  * 通用添加到歌单对话框
@@ -55,11 +60,27 @@ fun AddToPlaylistDialog(
     val context = LocalContext.current
     val playlists by viewModel.playlists.collectAsState()
     val allGroups by viewModel.playlistGroups.collectAsState()
+    val favoriteSongs by viewModel.favoriteSongs.collectAsState()
 
     var selectedGroupFilter by remember { mutableStateOf("全部") }
     var showCreatePlaylistDialog by remember { mutableStateOf(false) }
 
-    // 整合目标歌曲信息
+    // 整合并标准化目标歌曲列表
+    val targetSongs = remember(song, onlineSong, songs, onlineSongs) {
+        val list = mutableListOf<Song>()
+        if (song != null) list.add(song)
+        if (onlineSong != null) {
+            list.add(OnlineAudioSourceManager.getInstance(context).toSong(onlineSong))
+        }
+        if (songs.isNotEmpty()) list.addAll(songs)
+        if (onlineSongs.isNotEmpty()) {
+            list.addAll(OnlineAudioSourceManager.getInstance(context).toSongList(onlineSongs))
+        }
+        list
+    }
+    val targetSongCount = targetSongs.size
+
+    // 目标歌曲信息展示
     val isMulti = songs.size > 1 || onlineSongs.size > 1
     val isOnlineTarget = onlineSong != null || onlineSongs.isNotEmpty() || (song != null && song.isOnlineSong)
     val displayTitle = when {
@@ -81,38 +102,116 @@ fun AddToPlaylistDialog(
     val displayCover = onlineSong?.coverUrl ?: song?.albumArtUri ?: onlineSongs.firstOrNull()?.coverUrl ?: songs.firstOrNull()?.albumArtUri
     val targetPlatform = onlineSong?.platform ?: song?.resolvedPlatform ?: onlineSongs.firstOrNull()?.platform
 
+    // 本地立即反馈状态：点击添加到红心时瞬间点亮微标，避免数据库异步写入的微小延迟影响视觉反馈
+    var locallyMarkedFavorite by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    // 检测目标歌曲是否已在红心歌单中 (单曲时只要匹配即算；多选时全包含才算)
+    val isTargetAlreadyFavorite = remember(targetSongs, favoriteSongs, locallyMarkedFavorite) {
+        if (locallyMarkedFavorite) true
+        else if (targetSongs.isEmpty()) false
+        else {
+            val favPaths = favoriteSongs.map { it.path }.toSet()
+            val favIds = favoriteSongs.map { it.id }.toSet()
+            targetSongs.all { s -> s.id in favIds || s.path in favPaths || s.isFavorite }
+        }
+    }
+    val isTargetFavEffective = isTargetAlreadyFavorite || locallyMarkedFavorite
+
+    // 异步查询目标歌曲所在的自建歌单 ID 列表及各歌单包含该批歌曲的数量
+    var containingPlaylistIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
+    var playlistSongCounts by remember { mutableStateOf<Map<Long, Int>>(emptyMap()) }
+
+    LaunchedEffect(targetSongs) {
+        if (targetSongs.size == 1) {
+            val single = targetSongs.first()
+            val ids = viewModel.getPlaylistIdsContainingSong(single.id, single.path)
+            containingPlaylistIds = ids
+            playlistSongCounts = ids.associateWith { 1 }
+        } else if (targetSongs.size > 1) {
+            val counts = viewModel.getPlaylistSongCounts(targetSongs.map { it.id })
+            playlistSongCounts = counts
+            containingPlaylistIds = counts.keys
+        } else {
+            containingPlaylistIds = emptySet()
+            playlistSongCounts = emptyMap()
+        }
+    }
+
+    // 系统红心歌单虚拟实体
+    val favoritePlaylist = remember(favoriteSongs.size, locallyMarkedFavorite) {
+        Playlist(
+            id = FAVORITE_PLAYLIST_ID,
+            name = "我喜欢的音乐",
+            songCount = if (locallyMarkedFavorite) favoriteSongs.size + 1 else favoriteSongs.size,
+            createdAt = 0L,
+            groupName = "系统"
+        )
+    }
+
     // 执行添加歌曲核心逻辑
     val executeAdd = { targetPlaylist: Playlist ->
-        when {
-            onlineSong != null -> {
-                viewModel.addOnlineSongToPlaylist(targetPlaylist.id, onlineSong) {
-                    Toast.makeText(context, "已添加「${onlineSong.title}」至歌单「${targetPlaylist.name}」", Toast.LENGTH_SHORT).show()
-                    onAdded?.invoke(targetPlaylist.name)
+        if (targetPlaylist.id == FAVORITE_PLAYLIST_ID) {
+            if (isTargetFavEffective) {
+                Toast.makeText(context, "歌曲已在「我喜欢的音乐」中", Toast.LENGTH_SHORT).show()
+            } else {
+                locallyMarkedFavorite = true
+                scope.launch {
+                    when {
+                        onlineSong != null -> {
+                            val s = OnlineAudioSourceManager.getInstance(context).toSong(onlineSong)
+                            viewModel.setFavorite(s, true)
+                            Toast.makeText(context, "已添加「${onlineSong.title}」至我喜欢的音乐", Toast.LENGTH_SHORT).show()
+                            onAdded?.invoke("我喜欢的音乐")
+                        }
+                        song != null -> {
+                            viewModel.setFavorite(song, true)
+                            Toast.makeText(context, "已添加「${song.title}」至我喜欢的音乐", Toast.LENGTH_SHORT).show()
+                            onAdded?.invoke("我喜欢的音乐")
+                        }
+                        targetSongs.isNotEmpty() -> {
+                            viewModel.setFavoriteBatch(targetSongs, true)
+                            Toast.makeText(context, "已添加 ${targetSongs.size} 首歌曲至我喜欢的音乐", Toast.LENGTH_SHORT).show()
+                            onAdded?.invoke("我喜欢的音乐")
+                        }
+                        else -> {}
+                    }
+                    kotlinx.coroutines.delay(420)
                     onDismiss()
                 }
             }
-            song != null -> {
-                viewModel.addSongToPlaylist(targetPlaylist.id, song) {
-                    Toast.makeText(context, "已添加「${song.title}」至歌单「${targetPlaylist.name}」", Toast.LENGTH_SHORT).show()
-                    onAdded?.invoke(targetPlaylist.name)
-                    onDismiss()
+        } else {
+            when {
+                onlineSong != null -> {
+                    viewModel.addOnlineSongToPlaylist(targetPlaylist.id, onlineSong) {
+                        Toast.makeText(context, "已添加「${onlineSong.title}」至歌单「${targetPlaylist.name}」", Toast.LENGTH_SHORT).show()
+                        onAdded?.invoke(targetPlaylist.name)
+                        onDismiss()
+                    }
                 }
-            }
-            onlineSongs.isNotEmpty() -> {
-                viewModel.addOnlineSongsToPlaylist(targetPlaylist.id, onlineSongs) {
-                    Toast.makeText(context, "已添加 ${onlineSongs.size} 首网络歌曲至歌单「${targetPlaylist.name}」", Toast.LENGTH_SHORT).show()
-                    onAdded?.invoke(targetPlaylist.name)
-                    onDismiss()
+                song != null -> {
+                    viewModel.addSongToPlaylist(targetPlaylist.id, song) {
+                        Toast.makeText(context, "已添加「${song.title}」至歌单「${targetPlaylist.name}」", Toast.LENGTH_SHORT).show()
+                        onAdded?.invoke(targetPlaylist.name)
+                        onDismiss()
+                    }
                 }
-            }
-            songs.isNotEmpty() -> {
-                viewModel.addSongsToPlaylist(targetPlaylist.id, songs) {
-                    Toast.makeText(context, "已添加 ${songs.size} 首歌曲至歌单「${targetPlaylist.name}」", Toast.LENGTH_SHORT).show()
-                    onAdded?.invoke(targetPlaylist.name)
-                    onDismiss()
+                onlineSongs.isNotEmpty() -> {
+                    viewModel.addOnlineSongsToPlaylist(targetPlaylist.id, onlineSongs) {
+                        Toast.makeText(context, "已添加 ${onlineSongs.size} 首网络歌曲至歌单「${targetPlaylist.name}」", Toast.LENGTH_SHORT).show()
+                        onAdded?.invoke(targetPlaylist.name)
+                        onDismiss()
+                    }
                 }
+                songs.isNotEmpty() -> {
+                    viewModel.addSongsToPlaylist(targetPlaylist.id, songs) {
+                        Toast.makeText(context, "已添加 ${songs.size} 首歌曲至歌单「${targetPlaylist.name}」", Toast.LENGTH_SHORT).show()
+                        onAdded?.invoke(targetPlaylist.name)
+                        onDismiss()
+                    }
+                }
+                else -> onDismiss()
             }
-            else -> onDismiss()
         }
     }
 
@@ -185,7 +284,7 @@ fun AddToPlaylistDialog(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // 2. 待添加歌曲信息横幅预览
+                // 2. 待添加歌曲信息横幅预览 (已加红心歌单的在封面与标题上显示红心)
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = OrbitTheme.colors.surfaceCard.copy(alpha = 0.6f),
@@ -200,7 +299,7 @@ fun AddToPlaylistDialog(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(42.dp)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(OrbitTheme.colors.surface),
                             contentAlignment = Alignment.Center
@@ -219,6 +318,26 @@ fun AddToPlaylistDialog(
                                     tint = OrbitTheme.colors.primary,
                                     modifier = Modifier.size(20.dp)
                                 )
+                            }
+
+                            // 封面右下角红心微标
+                            if (isTargetFavEffective) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(2.dp)
+                                        .size(15.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFFF3366)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Favorite,
+                                        contentDescription = "已是红心歌曲",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(9.dp)
+                                    )
+                                }
                             }
                         }
 
@@ -250,6 +369,33 @@ fun AddToPlaylistDialog(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
+
+                                if (isTargetFavEffective) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = Color(0xFFFF3366).copy(alpha = 0.15f)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Favorite,
+                                                contentDescription = null,
+                                                tint = Color(0xFFFF3366),
+                                                modifier = Modifier.size(9.dp)
+                                            )
+                                            Text(
+                                                text = "已喜欢",
+                                                color = Color(0xFFFF3366),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
                             }
                             if (displayArtist.isNotBlank()) {
                                 Spacer(modifier = Modifier.height(2.dp))
@@ -269,7 +415,7 @@ fun AddToPlaylistDialog(
 
                 // 3. 分组过滤选择 Chips
                 val filterList = remember(allGroups) {
-                    val list = mutableListOf("全部")
+                    val list = mutableListOf("全部", "系统")
                     list.addAll(allGroups)
                     list.distinct()
                 }
@@ -305,12 +451,12 @@ fun AddToPlaylistDialog(
                     Spacer(modifier = Modifier.height(10.dp))
                 }
 
-                // 4. 歌单列表
-                val filteredPlaylists = remember(playlists, selectedGroupFilter) {
-                    if (selectedGroupFilter == "全部") {
-                        playlists
-                    } else {
-                        playlists.filter { it.groupName == selectedGroupFilter }
+                // 4. 歌单列表 (包含系统红心歌单及自建歌单；已存在的变灰不能添加)
+                val filteredPlaylists = remember(playlists, selectedGroupFilter, favoritePlaylist) {
+                    when (selectedGroupFilter) {
+                        "全部" -> listOf(favoritePlaylist) + playlists
+                        "系统" -> listOf(favoritePlaylist)
+                        else -> playlists.filter { it.groupName == selectedGroupFilter }
                     }
                 }
 
@@ -344,13 +490,41 @@ fun AddToPlaylistDialog(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         items(filteredPlaylists, key = { it.id }) { playlist ->
+                            val isFavPlaylist = playlist.id == FAVORITE_PLAYLIST_ID
+                            val isAlreadyInPlaylist = if (isFavPlaylist) {
+                                isTargetFavEffective
+                            } else if (isMulti) {
+                                (playlistSongCounts[playlist.id] ?: 0) >= targetSongCount
+                            } else {
+                                containingPlaylistIds.contains(playlist.id)
+                            }
+                            val partialCount = if (!isFavPlaylist && isMulti) (playlistSongCounts[playlist.id] ?: 0) else 0
+
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = OrbitTheme.colors.surfaceCard,
-                                border = BorderStroke(0.5.dp, OrbitTheme.colors.primary.copy(alpha = 0.1f)),
+                                color = if (isAlreadyInPlaylist) {
+                                    OrbitTheme.colors.surfaceCard.copy(alpha = 0.35f)
+                                } else if (isFavPlaylist) {
+                                    Color(0xFFFF3366).copy(alpha = 0.08f)
+                                } else {
+                                    OrbitTheme.colors.surfaceCard
+                                },
+                                border = BorderStroke(
+                                    if (isAlreadyInPlaylist) 0.5.dp else if (isFavPlaylist) 1.dp else 0.5.dp,
+                                    if (isAlreadyInPlaylist) OrbitTheme.colors.textSecondary.copy(alpha = 0.15f)
+                                    else if (isFavPlaylist) Color(0xFFFF3366).copy(alpha = 0.3f)
+                                    else OrbitTheme.colors.primary.copy(alpha = 0.15f)
+                                ),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { executeAdd(playlist) }
+                                    .clickable {
+                                        if (isAlreadyInPlaylist) {
+                                            val hint = if (isFavPlaylist) "歌曲已在「我喜欢的音乐」中" else "歌单「${playlist.name}」已包含该歌曲"
+                                            Toast.makeText(context, hint, Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            executeAdd(playlist)
+                                        }
+                                    }
                             ) {
                                 Row(
                                     modifier = Modifier
@@ -358,12 +532,33 @@ fun AddToPlaylistDialog(
                                         .padding(horizontal = 12.dp, vertical = 10.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.QueueMusic,
-                                        contentDescription = null,
-                                        tint = OrbitTheme.colors.primary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
+                                    // 歌单左侧图标
+                                    if (isFavPlaylist) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(
+                                                    if (isAlreadyInPlaylist) Color(0xFFFF3366).copy(alpha = 0.1f)
+                                                    else Color(0xFFFF3366).copy(alpha = 0.2f)
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Favorite,
+                                                contentDescription = null,
+                                                tint = if (isAlreadyInPlaylist) Color(0xFFFF3366).copy(alpha = 0.35f) else Color(0xFFFF3366),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.QueueMusic,
+                                            contentDescription = null,
+                                            tint = if (isAlreadyInPlaylist) OrbitTheme.colors.textSecondary.copy(alpha = 0.35f) else OrbitTheme.colors.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
 
                                     Spacer(modifier = Modifier.width(10.dp))
 
@@ -373,74 +568,127 @@ fun AddToPlaylistDialog(
                                                 text = playlist.name,
                                                 fontSize = 13.5.sp,
                                                 fontWeight = FontWeight.Medium,
-                                                color = OrbitTheme.colors.textPrimary,
+                                                color = if (isAlreadyInPlaylist) {
+                                                    OrbitTheme.colors.textSecondary.copy(alpha = 0.5f)
+                                                } else {
+                                                    OrbitTheme.colors.textPrimary
+                                                },
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
 
                                             Spacer(modifier = Modifier.width(6.dp))
 
-                                            // 智能类型 Badge (网络 / 混合 / 本地)
-                                            val typeColor = when (playlist.type) {
-                                                com.orbit.music.data.model.PlaylistType.ONLINE -> Color(0xFF00E5FF)
-                                                com.orbit.music.data.model.PlaylistType.HYBRID -> Color(0xFFFF9100)
-                                                com.orbit.music.data.model.PlaylistType.LOCAL -> Color(0xFF3B82F6)
-                                            }
-                                            val typeText = when (playlist.type) {
-                                                com.orbit.music.data.model.PlaylistType.ONLINE -> "网络"
-                                                com.orbit.music.data.model.PlaylistType.HYBRID -> "混合"
-                                                com.orbit.music.data.model.PlaylistType.LOCAL -> "本地"
-                                            }
-                                            Surface(
-                                                shape = RoundedCornerShape(4.dp),
-                                                color = typeColor.copy(alpha = 0.12f),
-                                                border = BorderStroke(0.5.dp, typeColor.copy(alpha = 0.4f))
-                                            ) {
-                                                Text(
-                                                    text = typeText,
-                                                    color = typeColor,
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                )
-                                            }
-
-                                            if (playlist.groupName.isNotBlank() && playlist.groupName != "默认") {
-                                                Spacer(modifier = Modifier.width(5.dp))
-                                                Box(
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(4.dp))
-                                                        .background(OrbitTheme.colors.primary.copy(alpha = 0.12f))
-                                                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                                            if (isFavPlaylist) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = if (isAlreadyInPlaylist) Color.Gray.copy(alpha = 0.15f) else Color(0xFFFF3366).copy(alpha = 0.15f)
                                                 ) {
                                                     Text(
-                                                        text = playlist.groupName,
+                                                        text = if (isAlreadyInPlaylist) "已在红心歌单" else "系统红心",
+                                                        color = if (isAlreadyInPlaylist) OrbitTheme.colors.textSecondary.copy(alpha = 0.6f) else Color(0xFFFF3366),
                                                         fontSize = 9.sp,
-                                                        color = OrbitTheme.colors.primary
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                                     )
+                                                }
+                                            } else {
+                                                // 智能类型 Badge (网络 / 混合 / 本地)
+                                                val typeColor = when (playlist.type) {
+                                                    com.orbit.music.data.model.PlaylistType.ONLINE -> Color(0xFF00E5FF)
+                                                    com.orbit.music.data.model.PlaylistType.HYBRID -> Color(0xFFFF9100)
+                                                    com.orbit.music.data.model.PlaylistType.LOCAL -> Color(0xFF3B82F6)
+                                                }
+                                                val typeText = when (playlist.type) {
+                                                    com.orbit.music.data.model.PlaylistType.ONLINE -> "网络"
+                                                    com.orbit.music.data.model.PlaylistType.HYBRID -> "混合"
+                                                    com.orbit.music.data.model.PlaylistType.LOCAL -> "本地"
+                                                }
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = if (isAlreadyInPlaylist) OrbitTheme.colors.textSecondary.copy(alpha = 0.08f) else typeColor.copy(alpha = 0.12f),
+                                                    border = BorderStroke(0.5.dp, if (isAlreadyInPlaylist) Color.Transparent else typeColor.copy(alpha = 0.4f))
+                                                ) {
+                                                    Text(
+                                                        text = typeText,
+                                                        color = if (isAlreadyInPlaylist) OrbitTheme.colors.textSecondary.copy(alpha = 0.5f) else typeColor,
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                    )
+                                                }
+
+                                                if (playlist.groupName.isNotBlank() && playlist.groupName != "默认") {
+                                                    Spacer(modifier = Modifier.width(5.dp))
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .clip(RoundedCornerShape(4.dp))
+                                                            .background(
+                                                                if (isAlreadyInPlaylist) OrbitTheme.colors.textSecondary.copy(alpha = 0.08f)
+                                                                else OrbitTheme.colors.primary.copy(alpha = 0.12f)
+                                                            )
+                                                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = playlist.groupName,
+                                                            fontSize = 9.sp,
+                                                            color = if (isAlreadyInPlaylist) OrbitTheme.colors.textSecondary.copy(alpha = 0.5f) else OrbitTheme.colors.primary
+                                                        )
+                                                    }
+                                                }
+
+                                                if (isAlreadyInPlaylist) {
+                                                    Spacer(modifier = Modifier.width(5.dp))
+                                                    Surface(
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        color = OrbitTheme.colors.textSecondary.copy(alpha = 0.12f)
+                                                    ) {
+                                                        Text(
+                                                            text = if (isMulti) "已全部包含" else "已包含此歌曲",
+                                                            color = OrbitTheme.colors.textSecondary.copy(alpha = 0.65f),
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
 
                                         Spacer(modifier = Modifier.height(2.dp))
-                                        val countDesc = when (playlist.type) {
-                                            com.orbit.music.data.model.PlaylistType.HYBRID -> "${playlist.songCount} 首 (本地 ${playlist.localSongCount} · 网络 ${playlist.onlineSongCount})"
-                                            com.orbit.music.data.model.PlaylistType.ONLINE -> "${playlist.songCount} 首网络歌曲"
-                                            com.orbit.music.data.model.PlaylistType.LOCAL -> "${playlist.songCount} 首本地歌曲"
+                                        val countDesc = if (isFavPlaylist) {
+                                            "${playlist.songCount} 首红心曲目"
+                                        } else {
+                                            when (playlist.type) {
+                                                com.orbit.music.data.model.PlaylistType.HYBRID -> "${playlist.songCount} 首 (本地 ${playlist.localSongCount} · 网络 ${playlist.onlineSongCount})"
+                                                com.orbit.music.data.model.PlaylistType.ONLINE -> "${playlist.songCount} 首网络歌曲"
+                                                com.orbit.music.data.model.PlaylistType.LOCAL -> "${playlist.songCount} 首本地歌曲"
+                                            }
                                         }
+                                        val extraHint = if (!isAlreadyInPlaylist && partialCount > 0) " (已包含 $partialCount 首，可追加)" else ""
                                         Text(
-                                            text = countDesc,
+                                            text = "$countDesc$extraHint",
                                             fontSize = 11.sp,
-                                            color = OrbitTheme.colors.textSecondary
+                                            color = if (isAlreadyInPlaylist) OrbitTheme.colors.textSecondary.copy(alpha = 0.45f) else OrbitTheme.colors.textSecondary
                                         )
                                     }
 
-                                    Icon(
-                                        imageVector = Icons.Default.AddCircleOutline,
-                                        contentDescription = "添加到此歌单",
-                                        tint = OrbitTheme.colors.primary.copy(alpha = 0.7f),
-                                        modifier = Modifier.size(20.dp)
-                                    )
+                                    // 右侧状态图标：已存在的显示打勾禁用图标，未添加的显示添加图标
+                                    if (isAlreadyInPlaylist) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = "已存在此歌单",
+                                            tint = OrbitTheme.colors.textSecondary.copy(alpha = 0.35f),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.AddCircleOutline,
+                                            contentDescription = "添加到此歌单",
+                                            tint = if (isFavPlaylist) Color(0xFFFF3366) else OrbitTheme.colors.primary.copy(alpha = 0.7f),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
                                 }
                             }
                         }

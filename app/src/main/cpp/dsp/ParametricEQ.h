@@ -34,6 +34,17 @@ public:
 
     int getBandCount() const { return static_cast<int>(configs_.size()); }
     const std::vector<BandConfig>& getConfigs() const { return configs_; }
+
+    // 获取当前所有已启用频段中的最大正增益 (dB)，用于自动裕量计算
+    float getMaxPositiveGainDb() const {
+        float maxG = 0.0f;
+        for (const auto& cfg : configs_) {
+            if (cfg.enabled && cfg.gainDb > maxG) {
+                maxG = cfg.gainDb;
+            }
+        }
+        return maxG;
+    }
     void reset();
 
 private:

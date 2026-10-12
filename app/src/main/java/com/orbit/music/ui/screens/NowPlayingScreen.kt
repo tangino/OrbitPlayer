@@ -172,8 +172,12 @@ fun NowPlayingScreen(
     val song = remember(rawSong, allSongs, favoriteSongs) {
         if (rawSong == null) null
         else {
-            val fromLib = allSongs.find { it.path == rawSong.path }
-            val isFavorite = favoriteSongs.any { it.path == rawSong.path }
+            val fromLib = allSongs.find { it.path == rawSong.path || it.id == rawSong.id }
+            val isFavorite = favoriteSongs.any {
+                it.path == rawSong.path || it.id == rawSong.id ||
+                (it.title.trim().equals(rawSong.title.trim(), ignoreCase = true) &&
+                 it.artist.trim().equals(rawSong.artist.trim(), ignoreCase = true))
+            }
             (fromLib ?: rawSong).copy(isFavorite = isFavorite)
         }
     }
@@ -624,14 +628,15 @@ fun NowPlayingScreen(
         }
 
         // 2. 独占沉浸式整页歌词展示视图 (支持当前行主色高亮放大、平滑居中滚动、单行进度跳转、顶部与底部羽化渐隐虚化)
+        // 2. 独占沉浸式整页歌词展示视图 (当前行正中居中、两端视口羽化渐隐遮罩、非当前行按行距阶梯渐隐)
         val fullLyricListState = rememberLazyListState()
         LaunchedEffect(currentLyricIndex) {
-            if (currentLyricIndex >= 0 && lyricLines.isNotEmpty()) {
-                fullLyricListState.animateScrollToItem(maxOf(0, currentLyricIndex - 2))
+            if (currentLyricIndex >= 0 && lyricLines.isNotEmpty() && !fullLyricListState.isScrollInProgress) {
+                fullLyricListState.animateScrollToItem(currentLyricIndex, 0)
             }
         }
         val fullLyricsView: @Composable (Modifier) -> Unit = { mod ->
-            Box(
+            BoxWithConstraints(
                 modifier = mod
                     .fillMaxWidth()
                     .clickable(
@@ -641,20 +646,62 @@ fun NowPlayingScreen(
                     ),
                 contentAlignment = Alignment.Center
             ) {
+                // 计算让当前行垂直精确居中于歌词控件的上下安全留白
+                val centerPadding = (maxHeight / 2 - 24.dp).coerceAtLeast(0.dp)
+
                 if (lyricLines.isNotEmpty()) {
                     LazyColumn(
                         state = fullLyricListState,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                            .drawWithContent {
+                                drawContent()
+                                // 顶部羽化渐隐 (两边渐隐)：从完全透明平滑过渡到不透明
+                                val fadeTop = 72.dp.toPx()
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        colors = listOf(Color.Transparent, Color.Black),
+                                        startY = 0f,
+                                        endY = fadeTop
+                                    ),
+                                    blendMode = BlendMode.DstIn
+                                )
+                                // 底部羽化渐隐 (两边渐隐)：从不透明平滑过渡到完全透明
+                                val fadeBottom = 84.dp.toPx()
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        colors = listOf(Color.Black, Color.Transparent),
+                                        startY = size.height - fadeBottom,
+                                        endY = size.height
+                                    ),
+                                    blendMode = BlendMode.DstIn
+                                )
+                            },
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        contentPadding = PaddingValues(top = 36.dp, bottom = 48.dp)
+                        contentPadding = PaddingValues(top = centerPadding, bottom = centerPadding)
                     ) {
                         itemsIndexed(
                             items = lyricLines,
                             key = { idx: Int, line: LyricLine -> "${line.timeMs}_$idx" }
                         ) { index: Int, line: LyricLine ->
                             val isCurrent = index == currentLyricIndex
+                            // 距离当前唱的行越远，透明度阶梯式渐隐，视觉焦点自然凝聚在中央当前行
+                            val lineDistance = if (currentLyricIndex >= 0) kotlin.math.abs(index - currentLyricIndex) else 2
+                            val targetAlpha = when {
+                                isCurrent -> 1.0f
+                                lineDistance == 1 -> 0.58f
+                                lineDistance == 2 -> 0.35f
+                                lineDistance == 3 -> 0.20f
+                                else -> 0.10f
+                            }
+                            val lyricAlpha by animateFloatAsState(
+                                targetValue = targetAlpha,
+                                animationSpec = tween(280),
+                                label = "FullLyricAlpha"
+                            )
                             val textColor by animateColorAsState(
-                                targetValue = if (isCurrent) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary.copy(alpha = 0.40f),
+                                targetValue = if (isCurrent) OrbitTheme.colors.primary else Color.White.copy(alpha = lyricAlpha),
                                 animationSpec = tween(280),
                                 label = "FullLyricColor"
                             )
@@ -666,51 +713,21 @@ fun NowPlayingScreen(
 
                             Text(
                                 text = line.text,
-                                fontSize = if (isCurrent) 19.sp else 15.sp,
+                                fontSize = if (isCurrent) 20.sp else 15.sp,
                                 fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
                                 color = textColor,
                                 textAlign = TextAlign.Center,
-                                lineHeight = if (isCurrent) 26.sp else 22.sp,
+                                lineHeight = if (isCurrent) 28.sp else 22.sp,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .scale(lyricScale)
-                                    .padding(vertical = 9.dp, horizontal = 16.dp)
+                                    .padding(vertical = 9.dp, horizontal = 20.dp)
                                     .clickable {
                                         viewModel.seekTo(line.timeMs)
                                     }
                             )
                         }
                     }
-
-                    // 顶部与底部优雅的虚化羽化渐变遮罩 (悬浮虚空质感)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(38.dp)
-                            .align(Alignment.TopCenter)
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        OrbitTheme.colors.background,
-                                        Color.Transparent
-                                    )
-                                )
-                            )
-                    )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(38.dp)
-                            .align(Alignment.BottomCenter)
-                            .background(
-                                Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        OrbitTheme.colors.background
-                                    )
-                                )
-                            )
-                    )
                 } else {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -736,32 +753,69 @@ fun NowPlayingScreen(
         // 2. 歌词展示视图
         val lyricListState = rememberLazyListState()
         LaunchedEffect(currentLyricIndex) {
-            if (currentLyricIndex >= 0 && lyricLines.isNotEmpty()) {
-                lyricListState.animateScrollToItem(maxOf(0, currentLyricIndex - 1))
+            if (currentLyricIndex >= 0 && lyricLines.isNotEmpty() && !lyricListState.isScrollInProgress) {
+                lyricListState.animateScrollToItem(currentLyricIndex, 0)
             }
         }
         val lyricsView: @Composable (Modifier) -> Unit = { mod ->
-            Box(
+            BoxWithConstraints(
                 modifier = mod.padding(horizontal = 12.dp),
                 contentAlignment = Alignment.Center
             ) {
+                val centerPadding = (maxHeight / 2 - 16.dp).coerceAtLeast(0.dp)
+
                 if (lyricLines.isNotEmpty()) {
                     LazyColumn(
                         state = lyricListState,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                            .drawWithContent {
+                                drawContent()
+                                val fadeTop = 40.dp.toPx()
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        colors = listOf(Color.Transparent, Color.Black),
+                                        startY = 0f,
+                                        endY = fadeTop
+                                    ),
+                                    blendMode = BlendMode.DstIn
+                                )
+                                val fadeBottom = 48.dp.toPx()
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        colors = listOf(Color.Black, Color.Transparent),
+                                        startY = size.height - fadeBottom,
+                                        endY = size.height
+                                    ),
+                                    blendMode = BlendMode.DstIn
+                                )
+                            },
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        contentPadding = PaddingValues(vertical = 14.dp)
+                        contentPadding = PaddingValues(top = centerPadding, bottom = centerPadding)
                     ) {
                         itemsIndexed(
                             items = lyricLines,
                             key = { idx: Int, line: LyricLine -> "${line.timeMs}_$idx" }
                         ) { index: Int, line: LyricLine ->
                             val isCurrent = index == currentLyricIndex
+                            val lineDistance = if (currentLyricIndex >= 0) kotlin.math.abs(index - currentLyricIndex) else 2
+                            val targetAlpha = when {
+                                isCurrent -> 1.0f
+                                lineDistance == 1 -> 0.58f
+                                lineDistance == 2 -> 0.35f
+                                else -> 0.15f
+                            }
+                            val lyricAlpha by animateFloatAsState(
+                                targetValue = targetAlpha,
+                                animationSpec = tween(280),
+                                label = "LyricAlpha"
+                            )
                             Text(
                                 text = line.text,
                                 fontSize = if (isCurrent) (if (isLandscape) 17.sp else 16.sp) else (if (isLandscape) 13.5.sp else 12.5.sp),
                                 fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isCurrent) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary.copy(alpha = 0.45f),
+                                color = if (isCurrent) OrbitTheme.colors.primary else Color.White.copy(alpha = lyricAlpha),
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier
                                     .fillMaxWidth()

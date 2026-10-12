@@ -334,17 +334,31 @@ fun MusicLibraryScreen(
         }
     }
 
-    // 当收藏列表更新且当前停留在收藏歌单时自动同步
+    // 当收藏列表更新且当前停留在歌单时自动同步状态
     LaunchedEffect(favoriteSongs) {
         if (openedPlaylist?.id == FAVORITE_PLAYLIST_ID) {
             playlistSongs = favoriteSongs
+        } else if (openedPlaylist != null && openedPlaylist?.id != DISLIKED_PLAYLIST_ID && playlistSongs.isNotEmpty()) {
+            val favPaths = favoriteSongs.map { it.path }.toSet()
+            val favIds = favoriteSongs.map { it.id }.toSet()
+            playlistSongs = playlistSongs.map { s ->
+                val isFav = s.id in favIds || s.path in favPaths
+                if (s.isFavorite != isFav) s.copy(isFavorite = isFav) else s
+            }
         }
     }
 
-    // 当不喜欢列表更新且当前停留在不喜欢歌单时自动同步
+    // 当不喜欢列表更新且当前停留在歌单时自动同步状态
     LaunchedEffect(dislikedSongs) {
         if (openedPlaylist?.id == DISLIKED_PLAYLIST_ID) {
             playlistSongs = dislikedSongs
+        } else if (openedPlaylist != null && openedPlaylist?.id != FAVORITE_PLAYLIST_ID && playlistSongs.isNotEmpty()) {
+            val disPaths = dislikedSongs.map { it.path }.toSet()
+            val disIds = dislikedSongs.map { it.id }.toSet()
+            playlistSongs = playlistSongs.map { s ->
+                val isDis = s.id in disIds || s.path in disPaths
+                if (s.isDisliked != isDis) s.copy(isDisliked = isDis) else s
+            }
         }
     }
 
@@ -6407,226 +6421,28 @@ fun MusicLibraryScreen(
         )
     }
 
-    // 5. 歌曲列表中单曲添加到播放列表弹窗 (使用 allPlaylists 彻底解决搜索歌曲时歌单被过滤找不到的问题)
+    // 5. 歌曲列表中单曲添加到播放列表弹窗
     songToAddToPlaylist?.let { targetSong ->
-        AlertDialog(
-            onDismissRequest = { songToAddToPlaylist = null },
-            title = {
-                Text(
-                    text = stringResource(R.string.add_to_playlist),
-                    color = OrbitTheme.colors.textPrimary,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth().heightIn(max = 380.dp)) {
-                    Text(
-                        text = targetSong.title,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
-                        color = OrbitTheme.colors.primary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-
-                    // 快速新建播放列表入口
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable {
-                                newPlaylistName = ""
-                                showNewPlaylistDialog = true
-                            }
-                            .padding(vertical = 10.dp, horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, tint = OrbitTheme.colors.primary, modifier = Modifier.size(22.dp))
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = stringResource(R.string.create_new_playlist),
-                            color = OrbitTheme.colors.primary,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
-                        )
-                    }
-
-                    HorizontalDivider(
-                        color = OrbitTheme.colors.textSecondary.copy(alpha = 0.15f),
-                        modifier = Modifier.padding(vertical = 6.dp)
-                    )
-
-                    if (allPlaylists.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.empty_playlist_hint),
-                            fontSize = 12.sp,
-                            color = OrbitTheme.colors.textSecondary,
-                            modifier = Modifier.padding(vertical = 12.dp)
-                        )
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            items(allPlaylists, key = { it.id }) { pl ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable {
-                                            viewModel.addSongToPlaylist(pl.id, targetSong.id)
-                                            songToAddToPlaylist = null
-                                        }
-                                        .padding(vertical = 10.dp, horizontal = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.PlaylistPlay,
-                                        contentDescription = null,
-                                        tint = OrbitTheme.colors.primary,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = pl.name,
-                                            fontWeight = FontWeight.Medium,
-                                            fontSize = 14.sp,
-                                            color = OrbitTheme.colors.textPrimary
-                                        )
-                                        Text(
-                                            text = stringResource(R.string.tracks_count, pl.songCount),
-                                            fontSize = 11.sp,
-                                            color = OrbitTheme.colors.textSecondary
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { songToAddToPlaylist = null }) {
-                    Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
-                }
-            },
-            containerColor = OrbitTheme.colors.surfaceDialog
+        com.orbit.music.ui.components.AddToPlaylistDialog(
+            song = targetSong,
+            viewModel = viewModel,
+            onDismiss = { songToAddToPlaylist = null }
         )
     }
 
     // 5.5 批量添加到播放列表弹窗
     if (showBatchAddToPlaylistDialog && selectedSongIds.isNotEmpty()) {
-        AlertDialog(
-            onDismissRequest = { showBatchAddToPlaylistDialog = false },
-            title = {
-                Text(
-                    text = stringResource(R.string.batch_add_to_playlist_dialog_title),
-                    color = OrbitTheme.colors.textPrimary,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth().heightIn(max = 380.dp)) {
-                    Text(
-                        text = stringResource(R.string.selected_count, selectedSongIds.size),
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 13.sp,
-                        color = OrbitTheme.colors.primary,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-
-                    // 快速新建播放列表入口
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable {
-                                newPlaylistName = ""
-                                showNewPlaylistDialog = true
-                            }
-                            .padding(vertical = 10.dp, horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, tint = OrbitTheme.colors.primary, modifier = Modifier.size(22.dp))
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = stringResource(R.string.create_new_playlist),
-                            color = OrbitTheme.colors.primary,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
-                        )
-                    }
-
-                    HorizontalDivider(
-                        color = OrbitTheme.colors.textSecondary.copy(alpha = 0.15f),
-                        modifier = Modifier.padding(vertical = 6.dp)
-                    )
-
-                    if (allPlaylists.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.empty_playlist_hint),
-                            fontSize = 12.sp,
-                            color = OrbitTheme.colors.textSecondary,
-                            modifier = Modifier.padding(vertical = 12.dp)
-                        )
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            items(allPlaylists, key = { it.id }) { pl ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable {
-                                            val addCount = selectedSongIds.size
-                                            viewModel.addSongsToPlaylist(pl.id, selectedSongIds) {
-                                                FastToast.show(context, context.getString(R.string.batch_add_to_playlist_success, addCount))
-                                            }
-                                            showBatchAddToPlaylistDialog = false
-                                            isSelectionMode = false
-                                            selectedSongIds = emptySet()
-                                        }
-                                        .padding(vertical = 10.dp, horizontal = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.PlaylistPlay,
-                                        contentDescription = null,
-                                        tint = OrbitTheme.colors.primary,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = pl.name,
-                                            fontWeight = FontWeight.Medium,
-                                            fontSize = 14.sp,
-                                            color = OrbitTheme.colors.textPrimary
-                                        )
-                                        Text(
-                                            text = stringResource(R.string.tracks_count, pl.songCount),
-                                            fontSize = 11.sp,
-                                            color = OrbitTheme.colors.textSecondary
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showBatchAddToPlaylistDialog = false }) {
-                    Text(stringResource(R.string.btn_cancel), color = OrbitTheme.colors.textSecondary)
-                }
-            },
-            containerColor = OrbitTheme.colors.surfaceDialog
+        val selectedSongs = remember(selectedSongIds, allSongs) {
+            allSongs.filter { it.id in selectedSongIds }
+        }
+        com.orbit.music.ui.components.AddToPlaylistDialog(
+            songs = selectedSongs,
+            viewModel = viewModel,
+            onDismiss = {
+                showBatchAddToPlaylistDialog = false
+                isSelectionMode = false
+                selectedSongIds = emptySet()
+            }
         )
     }
 

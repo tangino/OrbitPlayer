@@ -86,8 +86,21 @@ private:
     // 音调 (Bass/Treble) 状态变化时，联动更新分频带低频限幅器与主限幅器的衰减权限
     void updateToneDependentStages();
 
-    static constexpr float kToneFreeHeadroomDb = 3.0f;      // 音调关闭时的默认衰减下限 (-3.0dB)
-    static constexpr float kMaxLimiterReductionDb = 18.0f;  // 允许的最深衰减 (防止无量纲过冲)
+    static constexpr float kToneFreeHeadroomDb = 2.0f;      // 音调关闭时的默认衰减下限 (-2.0dB)
+    static constexpr float kMaxLimiterReductionDb = 4.5f;   // 允许的最深衰减 (温和防削波，严禁深压致音量塌陷)
+
+    static inline float applyMasterCeiling(float x) {
+        constexpr float kLimit = 0.96f;     // 线性安全区 (-0.35 dBFS)，以下完全 100% 直通无损
+        constexpr float kHeadroom = 0.039f; // 极限严格渐近收敛于 0.96 + 0.039 = 0.999f，永不突破 1.0f
+        if (x > kLimit) {
+            const float excess = x - kLimit;
+            return kLimit + kHeadroom * (excess / (excess + kHeadroom));
+        } else if (x < -kLimit) {
+            const float excess = -kLimit - x;
+            return -kLimit - kHeadroom * (excess / (excess + kHeadroom));
+        }
+        return x;
+    }
 
     mutable std::mutex configMutex_;
 
