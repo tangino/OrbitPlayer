@@ -29,20 +29,28 @@ void Limiter::setReleaseTimeMs(float releaseMs) {
     updateCoefficients();
 }
 
+void Limiter::setMaxReductionDb(float maxReductionDb) {
+    maxReductionDb_ = std::clamp(maxReductionDb, -24.0f, 0.0f);
+    maxReductionLinear_ = std::pow(10.0f, maxReductionDb_ / 20.0f);
+}
+
 void Limiter::updateCoefficients() {
     attackCoeff_ = std::exp(-1.0f / (attackMs_ * 0.001f * sampleRate_));
     releaseCoeff_ = std::exp(-1.0f / (releaseMs_ * 0.001f * sampleRate_));
 }
 
-// 模拟三次方柔和软饱和函数：替代生硬的硬裁切 clamp，消灭奇次谐波尖刺
+// 平滑软饱和函数：在拐点处一阶连续 (斜率恒为 1)，且渐近线严格收敛到 ±1.0
+// 关键修复：旧实现 excess/(1+1.5*excess) 的渐近值为 0.98+1/1.5≈1.65，
+// 输出会突破 0dBFS 后在 AudioTrack/HAL 被硬削波，造成低音开大就"糊/爆"。
 float Limiter::applySoftSaturation(float x) const {
-    const float limit = 0.98f;
+    constexpr float limit = 0.95f;          // 软拐点起点 (-0.45dBFS)
+    constexpr float headroom = 1.0f - limit; // 拐点以上的最大可压缩余量
     if (x > limit) {
-        float excess = x - limit;
-        return limit + excess / (1.0f + excess * 1.5f);
+        const float excess = x - limit;
+        return limit + headroom * (excess / (excess + headroom));
     } else if (x < -limit) {
-        float excess = -limit - x;
-        return -limit - excess / (1.0f + excess * 1.5f);
+        const float excess = -limit - x;
+        return -limit - headroom * (excess / (excess + headroom));
     }
     return x;
 }
@@ -77,9 +85,10 @@ void Limiter::processStereo(float* buffer, int numFrames) {
             targetGain = 1.0f - 0.5f * (x * x) * (1.0f - thresholdLinear_ / envelope_);
         }
 
-        // 增益衰减下限保护：全频宽带衰减最大不超过 -3.0dB (0.707f)，杜绝低音把人声压小
-        // 超过的瞬态能量直接交由三次方软饱和 (applySoftSaturation) 吸收
-        targetGain = std::max(targetGain, 0.707f);
+        // 增益衰减下限保护：默认 -3.0dB 保护下限 (杜绝低音把人声压小)；
+        // 当音调/前级存在提升时，DSPChain 会通过 setMaxReductionDb() 放宽该下限，
+        // 让限幅器有能力把提升后的峰值真正压回门限内，避免只能靠软饱和硬吃而产生失真
+        targetGain = std::max(targetGain, maxReductionLinear_);
 
         // 增益控制平滑滤波（杜绝包络快速变化引起的拉链声或互调失真）
         if (targetGain < gainReduction_) {
