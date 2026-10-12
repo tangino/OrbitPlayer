@@ -26,15 +26,58 @@ class AudioEffectManager private constructor(private val context: Context) {
     private val defaultFrequencies = floatArrayOf(31.25f, 62.5f, 125f, 250f, 500f, 1000f, 2000f, 4000f, 8000f, 16000f)
     private var currentBandGains = FloatArray(10) { 0f }
     private var isBassBoostEnabled = false
-    private var currentBassBoostStrength = 0.5f
+    private var currentBassBoostStrength = 0f
     private var isTrebleBoostEnabled = false
-    private var currentTrebleBoostStrength = 0.5f
+    private var currentTrebleBoostStrength = 0f
 
     // 内部播放器 Session ID (由 NativeDspAudioProcessor 接管高精度 PCM 浮点运算)
     private var internalSessionId: Int = -1
 
+    @Synchronized
     fun registerInternalSession(sessionId: Int) {
         internalSessionId = sessionId
+        // 防御性处理：若该 session 先前已按外部播放器挂载过系统音效，
+        // 立即摘除，确保内部播放只经过自研 C++ 浮点 DSP，绝不双重处理
+        activeSessions[sessionId]?.let { session ->
+            val hasSystemProcessing = session.dynamicsProcessing != null ||
+                    session.systemEqualizer != null ||
+                    session.systemBassBoost?.enabled == true
+            if (hasSystemProcessing) {
+                Log.i(TAG, "session $sessionId 注册为内部播放通道，摘除其系统级音效 (避免与 C++ DSP 双重处理)")
+                purgeSystemEffects(session)
+            }
+        }
+    }
+
+    /**
+     * 释放并清空某个 session 上的全部系统级音效。
+     * 内部播放通道必须保持纯净直通：音调 (Bass/Treble)、均衡、前级均由 C++ 浮点 DSP 处理，
+     * 若同时在系统层再挂一次，会造成增益被叠加两次 (低音/高音听感翻倍) 与严重的相位/抽吸问题。
+     */
+    private fun purgeSystemEffects(session: SessionEffects) {
+        try {
+            session.dynamicsProcessing?.enabled = false
+            session.dynamicsProcessing?.release()
+        } catch (e: Exception) {
+            Log.w(TAG, "释放 DynamicsProcessing 失败 (session ${session.sessionId})", e)
+        }
+        session.dynamicsProcessing = null
+
+        try {
+            session.systemEqualizer?.enabled = false
+            session.systemEqualizer?.release()
+        } catch (e: Exception) {
+            Log.w(TAG, "释放系统 Equalizer 失败 (session ${session.sessionId})", e)
+        }
+        session.systemEqualizer = null
+
+        try {
+            session.systemBassBoost?.enabled = false
+            session.systemBassBoost?.release()
+        } catch (e: Exception) {
+            Log.w(TAG, "释放系统 BassBoost 失败 (session ${session.sessionId})", e)
+        }
+        session.systemBassBoost = null
     }
 
     // 限幅器参数
@@ -86,10 +129,13 @@ class AudioEffectManager private constructor(private val context: Context) {
 
         Log.i(TAG, "Attaching AudioEffects to session: $sessionId, isEnabled=$isEnabled")
         val effects = SessionEffects(sessionId)
+        val isInternal = (sessionId == internalSessionId)
 
         // 1. 在 Android 9+ 优先初始化高通透、低相位失真的 DynamicsProcessing (Pre-EQ 10 bands + 软拐点防削波 Limiter)
+        // 内部播放通道由自研 C++ 浮点 DSP 全权接管 (均衡 + 音调 + 前级 + 压缩 + 限幅)，
+        // 系统层必须保持纯净直通，否则低音/高音/均衡会被叠加两次，音色与响度完全失控
         var isDynamicsProcessingAttached = false
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && !isInternal) {
             try {
                 val dpConfig = DynamicsProcessing.Config.Builder(
                     DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
@@ -114,8 +160,8 @@ class AudioEffectManager private constructor(private val context: Context) {
             }
         }
 
-        // 2. 回退机制：若无 DynamicsProcessing，启用标准硬件级 Equalizer 滤波器
-        if (!isDynamicsProcessingAttached) {
+        // 2. 回退机制：若无 DynamicsProcessing 且非内部通道，启用标准硬件级 Equalizer 滤波器
+        if (!isDynamicsProcessingAttached && !isInternal) {
             try {
                 val eq = Equalizer(0, sessionId)
                 eq.enabled = this.isEnabled
@@ -130,7 +176,6 @@ class AudioEffectManager private constructor(private val context: Context) {
         // 3. 系统级 BassBoost：外部播放器正常挂载并启用；内部播放器由自研 C++ 浮点 DSP 接管，保持旁路避免双重处理
         try {
             val bb = AndroidBassBoost(0, sessionId)
-            val isInternal = (sessionId == internalSessionId)
             bb.enabled = !isInternal && this.isBassBoostEnabled
             if (bb.strengthSupported && !isInternal) {
                 val targetStrength = (this.currentBassBoostStrength * 1000).toInt().coerceIn(0, 1000).toShort()
@@ -225,13 +270,21 @@ class AudioEffectManager private constructor(private val context: Context) {
 
         activeSessions.values.forEach { session ->
             try {
-                session.systemEqualizer?.enabled = enabled
-                session.systemBassBoost?.enabled = isBassBoostEnabled
-                session.dynamicsProcessing?.let { dp ->
-                    dp.enabled = enabled
-                    syncAllGainsToDynamicsProcessing(dp)
-                    syncCompressorToDynamicsProcessing(dp)
-                    syncLimiterToDynamicsProcessing(dp)
+                if (session.sessionId == internalSessionId) {
+                    // 内部播放通道始终旁路系统音效：音调独立于总开关，且完全由 C++ DSP 处理，
+                    // 绝不能在此处把系统 BassBoost/Equalizer 重新打开 (会造成低音双重提升)
+                    session.systemEqualizer?.enabled = false
+                    session.systemBassBoost?.enabled = false
+                    session.dynamicsProcessing?.enabled = false
+                } else {
+                    session.systemEqualizer?.enabled = enabled
+                    session.systemBassBoost?.enabled = isBassBoostEnabled
+                    session.dynamicsProcessing?.let { dp ->
+                        dp.enabled = enabled
+                        syncAllGainsToDynamicsProcessing(dp)
+                        syncCompressorToDynamicsProcessing(dp)
+                        syncLimiterToDynamicsProcessing(dp)
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error updating enabled status on session ${session.sessionId}", e)
@@ -324,15 +377,18 @@ class AudioEffectManager private constructor(private val context: Context) {
                     val distance = abs(Math.log((f / centerFreqHz).toDouble())).toFloat()
                     if (distance < 1.1f) {
                         val weight = 1f / (1f + distance * distance * 1.5f)
+                        // 音调提升：直接套用与自带播放器 (C++ DSP) 完全同源的 Shelf 曲线，
+                        // 避免外部播放器只有 +3dB 而自带播放器 +15dB 的音调落差
                         var extraBoost = 0f
-
-                        // 高音增强：只在 >= 8000Hz 超高频段平滑提升，避开 3k~6k 尖刺齿音区
-                        if (isTrebleBoostEnabled && f >= 8000f) {
-                            extraBoost += currentTrebleBoostStrength * 3.5f
+                        if (isBassBoostEnabled) {
+                            extraBoost += ToneResponse.bassBoostDb(
+                                f.toDouble(), currentBassBoostStrength, SYSTEM_EFFECT_SAMPLE_RATE
+                            ).toFloat()
                         }
-                        // 低音增强：在 60Hz~125Hz 饱满区给予温润浑厚补偿
-                        if (isBassBoostEnabled && f in 60f..150f) {
-                            extraBoost += currentBassBoostStrength * 3.0f
+                        if (isTrebleBoostEnabled) {
+                            extraBoost += ToneResponse.trebleBoostDb(
+                                f.toDouble(), currentTrebleBoostStrength, SYSTEM_EFFECT_SAMPLE_RATE
+                            ).toFloat()
                         }
 
                         weightedGain += (currentBandGains[i] + extraBoost) * weight
@@ -361,13 +417,16 @@ class AudioEffectManager private constructor(private val context: Context) {
                     val freq = defaultFrequencies[i]
                     var gain = currentBandGains[i]
 
-                    // 超高频空气感提升 (>= 8000Hz)
-                    if (isTrebleBoostEnabled && freq >= 8000f) {
-                        gain += currentTrebleBoostStrength * 3.5f
+                    // 音调提升：与自带播放器 C++ DSP 使用同一条 Shelf 曲线
+                    if (isBassBoostEnabled) {
+                        gain += ToneResponse.bassBoostDb(
+                            freq.toDouble(), currentBassBoostStrength, SYSTEM_EFFECT_SAMPLE_RATE
+                        ).toFloat()
                     }
-                    // 低频温暖浑厚提升 (60Hz ~ 150Hz)
-                    if (isBassBoostEnabled && freq in 60f..150f) {
-                        gain += currentBassBoostStrength * 3.0f
+                    if (isTrebleBoostEnabled) {
+                        gain += ToneResponse.trebleBoostDb(
+                            freq.toDouble(), currentTrebleBoostStrength, SYSTEM_EFFECT_SAMPLE_RATE
+                        ).toFloat()
                     }
 
                     // 修复核心：频段始终保持就绪 (true)，由外层 dp.enabled 统一控制激活与直通旁路
@@ -544,6 +603,9 @@ class AudioEffectManager private constructor(private val context: Context) {
 
     companion object {
         private const val TAG = "AudioEffectManager"
+
+        // 系统音效 (DynamicsProcessing / Equalizer) 工作采样率，用于计算音调 Shelf 曲线
+        private const val SYSTEM_EFFECT_SAMPLE_RATE = 48000.0
 
         @Volatile
         private var INSTANCE: AudioEffectManager? = null
