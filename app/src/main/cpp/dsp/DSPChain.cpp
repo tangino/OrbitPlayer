@@ -4,6 +4,30 @@ namespace dsp {
 
 DSPChain::DSPChain() {
     setSampleRate(44100.0f);
+    updateToneDependentStages();
+}
+
+/**
+ * 音调状态联动两件事：
+ * 1. 分频带低频限幅器：只要低频提升开启，就由它把低音过冲能量就地吸收，
+ *    中高频 (人声/乐器) 完全不被牵连，从根上消除"低音开大把人声压小"。
+ * 2. 主限幅器的衰减权限：作为最终安全网，仍按音调提升量放宽下限，
+ *    确保任何情况下都不会突破 0dBFS 被硬削波。音调关闭时维持原有 -3dB 保护下限。
+ */
+void DSPChain::updateToneDependentStages() {
+    float toneBoostDb = 0.0f;
+    if (bassBoost_.isEnabled()) {
+        toneBoostDb = std::max(toneBoostDb, bassBoost_.getMaxGainDb() * bassBoost_.getStrength());
+    }
+    if (trebleBoost_.isEnabled()) {
+        toneBoostDb = std::max(toneBoostDb, trebleBoost_.getMaxGainDb() * trebleBoost_.getStrength());
+    }
+
+    // 低频提升开启时启用分频带低频限幅 (不提升时完全旁路，零开销、零音染)
+    bassLimiter_.setEnabled(bassBoost_.isEnabled() && bassBoost_.getStrength() > 0.001f);
+
+    const float maxReductionDb = -(std::min(kToneFreeHeadroomDb + toneBoostDb, kMaxLimiterReductionDb));
+    limiter_.setMaxReductionDb(maxReductionDb);
 }
 
 void DSPChain::setSampleRate(float sampleRate) {
@@ -13,6 +37,7 @@ void DSPChain::setSampleRate(float sampleRate) {
     parametricEQ_.setSampleRate(sampleRate_);
     bassBoost_.setSampleRate(sampleRate_);
     trebleBoost_.setSampleRate(sampleRate_);
+    bassLimiter_.setSampleRate(sampleRate_);
     compressor_.setSampleRate(sampleRate_);
     limiter_.setSampleRate(sampleRate_);
 }
@@ -69,6 +94,7 @@ void DSPChain::setParametricBandQ(int bandIndex, float q) {
 void DSPChain::setBassBoostEnabled(bool enabled) {
     std::lock_guard<std::mutex> lock(configMutex_);
     bassBoost_.setEnabled(enabled);
+    updateToneDependentStages();
 }
 
 bool DSPChain::isBassBoostEnabled() const {
@@ -78,11 +104,13 @@ bool DSPChain::isBassBoostEnabled() const {
 void DSPChain::setBassBoostStrength(float strength) {
     std::lock_guard<std::mutex> lock(configMutex_);
     bassBoost_.setStrength(strength);
+    updateToneDependentStages();
 }
 
 void DSPChain::setTrebleBoostEnabled(bool enabled) {
     std::lock_guard<std::mutex> lock(configMutex_);
     trebleBoost_.setEnabled(enabled);
+    updateToneDependentStages();
 }
 
 bool DSPChain::isTrebleBoostEnabled() const {
@@ -92,6 +120,7 @@ bool DSPChain::isTrebleBoostEnabled() const {
 void DSPChain::setTrebleBoostStrength(float strength) {
     std::lock_guard<std::mutex> lock(configMutex_);
     trebleBoost_.setStrength(strength);
+    updateToneDependentStages();
 }
 
 void DSPChain::setPreampGainDb(float gainDb) {
@@ -152,6 +181,9 @@ void DSPChain::process(float* buffer, int numFrames) {
     bassBoost_.processStereo(buffer, numFrames);
     trebleBoost_.processStereo(buffer, numFrames);
 
+    // 2.5 分频带低频限幅：把低音提升的过冲就地压回安全区，中高频完全不受影响
+    bassLimiter_.processStereo(buffer, numFrames);
+
     // 3. Preamp 前级增益
     preamp_.processStereo(buffer, numFrames);
 
@@ -175,7 +207,11 @@ float DSPChain::getMagnitudeResponse(float frequency) const {
             eqDb = parametricEQ_.getTotalMagnitudeResponse(frequency);
         }
     }
-    return eqDb + preamp_.getGainDb();
+    // 音调 (Bass/Treble) 也计入响应曲线：低频段经分频带限幅处理，
+    // 曲线按 Shelf 目标增益呈现 (实际低频路径在 180Hz 以上由分频器自然滚降)
+    const float toneDb = bassBoost_.getMagnitudeResponse(frequency)
+                       + trebleBoost_.getMagnitudeResponse(frequency);
+    return eqDb + toneDb + preamp_.getGainDb();
 }
 
 void DSPChain::getSpectrum(float* outBands, int numBands) {
@@ -190,7 +226,11 @@ void DSPChain::reset() {
     std::lock_guard<std::mutex> lock(configMutex_);
     graphicEQ_.reset();
     parametricEQ_.reset();
+    bassBoost_.reset();
+    trebleBoost_.reset();
+    bassLimiter_.reset();
     preamp_.reset();
+    compressor_.reset();
     limiter_.reset();
 }
 

@@ -2,10 +2,12 @@
 #include "ParametricEQ.h"
 #include "BassBoost.h"
 #include "TrebleBoost.h"
+#include "BassLimiter.h"
 #include "Preamp.h"
 #include "Compressor.h"
 #include "Limiter.h"
 #include "FFTAnalyzer.h"
+#include <algorithm>
 #include <mutex>
 #include <vector>
 
@@ -81,6 +83,12 @@ public:
     void reset();
 
 private:
+    // 音调 (Bass/Treble) 状态变化时，联动更新分频带低频限幅器与主限幅器的衰减权限
+    void updateToneDependentStages();
+
+    static constexpr float kToneFreeHeadroomDb = 3.0f;      // 音调关闭时的默认衰减下限 (-3.0dB)
+    static constexpr float kMaxLimiterReductionDb = 18.0f;  // 允许的最深衰减 (防止无量纲过冲)
+
     mutable std::mutex configMutex_;
 
     bool equalizerEnabled_ = true;
@@ -91,6 +99,7 @@ private:
     ParametricEQ parametricEQ_;
     BassBoost bassBoost_;
     TrebleBoost trebleBoost_;
+    BassLimiter bassLimiter_;
     Preamp preamp_;
     Compressor compressor_;
     Limiter limiter_;
