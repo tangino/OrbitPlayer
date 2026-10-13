@@ -187,7 +187,11 @@
   - ⚠️ **按 §9 D14**：本地曲的「喜欢」要调 `PlaylistStore.toggleFavorite(song)`（既有机制），**不要**调 `SongAttitudeRepository`；「不喜欢」与在线曲的「喜欢」才走 `SongAttitudeRepository`。
   - 依赖：P2-01
 
-- [ ] **P2-03 歌单分组（数据层）** — `PlaylistGroupStore`：增/改名/删/排序；删分组时其下歌单回落 `默认`。
+- [x] **P2-03 歌单分组（数据层）** — ✅ 已完成（提交 `20ed046`，`module/data/.../prefs/PlaylistGroupStore.kt`）。
+  - 新增 `UserPlaylistDao.updatePlaylistGroup`（移单个歌单）+ `reassignGroup`（整组改挂）。
+  - 关键设计：**「默认」不存进 `playlist_groups` 表**，由 `user_playlists.group_name` 的列默认值兜底 → 它是保留分组（不可创建/改名/删除），读列表时由 `refresh` 统一补在最前，**因此永远不可能出现无归属歌单**。
+  - **分组改名与删除分组必须同时改两张表**（`playlist_groups` + `user_playlists.group_name`），用 `withTransaction` 包住；只成功一半会让歌单指向不存在的分组而整批消失。
+  - `rename` 只捕获 `NoSuchElementException` 转 `NotFound`，`CancellationException` 自然上抛（**不用 `runCatching`**，避免重蹈吞取消的坑）。
   - 依赖：P1-12
 
 - [ ] **P2-04 歌单分组（UI）** — 歌单页按 `SectionHeader(groupName)` 分区；歌单/分组长按 → 移动分组/改名/删除。
@@ -216,8 +220,13 @@
 - [ ] **P2-07 歌单导入导出（UI）** — `ExportPlaylistDialog` / `ImportPlaylistDialog`（Miuix + `RawMiuixOverlayDialog`）；导入支持 链接 / JSON / M3U8 / 纯文本 四种输入。
   - 依赖：P2-06
 
-- [ ] **P2-08 QQ 音乐扫码登录（逻辑层）** — `IPlatformAuthService` / `PlatformAccountModels` / `QQMusicAuthService` / `PlatformAccountManager`；cookie 用 Keystore + AES-GCM 加密后存 `AppPreferences.PlatformAuth`；`QrCodeGenerator`（ZXing）。
-  - 验收：能拿到二维码、轮询到登录成功、能拉取"我创建的"与"我收藏的"歌单。
+- [x] **P2-08 QQ / 酷狗扫码登录（逻辑层）** — ✅ 已完成（提交 `b09bcb6`）。
+  - `PlatformCredentialCipher`（`module/online/.../auth/crypto/`）：Android Keystore + **AES-GCM**，每次加密用**新的随机 IV**（固定 IV 会让 GCM 彻底失去安全性），IV 与密文拼接后 base64。
+  - `PlatformAccountManager`（`object`，不需要 Context）：`getQrCode` / `checkQrStatus`（成功即落盘）/ `saveAccount` / `logout` / `refreshAccount` / `fetchUserPlaylists` / `getCookieHeader` / `isLoggedIn`。
+  - `AppPreferences.PlatformAuth`（MMKV）：**只存密文**、不做加解密 —— 否则 `:module:data` 要反向依赖 `:module:online` 成环。
+  - ⚠️ **三条不能改的约束**：① **加密失败绝不退化成写明文**，直接放弃保存并记日志；② **解密失败返回 null 而非抛异常**（Keystore 密钥可能在恢复出厂/换机恢复后失效，那时应按未登录处理让用户重扫，不能在启动路径崩溃）；③ 首次访问时**懒恢复**而不是 `init` 里读 MMKV（MMKV 由 `CoreInit` 初始化，避免初始化顺序问题）。
+  - 恢复后自动调用 **P1-09 预留的 `bindAuthProviders` 钩子**，把账号接到音源请求上（含避免重入死锁的处理）—— 这条之前一直是空钩子，现在接上了。
+  - 待验证（真机）：能拿到二维码、轮询到登录成功、能列出并导入「我创建的」与「我收藏的」歌单；以及**落盘不可明文读出**。
   - 依赖：P1-01
 
 - [ ] **P2-09 酷狗扫码登录（逻辑层）** — `KugouMusicAuthService`，**必须保留 10 条候选 URL 兜底链**与签名盐常量；凭据同样加密存储。
