@@ -202,8 +202,14 @@
   - `rename` 只捕获 `NoSuchElementException` 转 `NotFound`，`CancellationException` 自然上抛（**不用 `runCatching`**，避免重蹈吞取消的坑）。
   - 依赖：P1-12
 
-- [ ] **P2-04 歌单分组（UI）** — 歌单页按 `SectionHeader(groupName)` 分区；歌单/分组长按 → 移动分组/改名/删除。
-  - 依赖：P2-03、P2-02（同一文件，建议串行）
+- [x] **P2-04 歌单分组（UI）** — ✅ 已完成（提交 `8ebb8e9`）。`PlaylistScreen.kt` 按 `PlaylistGroupStore.groups` 分区 + `SectionHeader` 标题行，仍走既有虚拟列表（`chunked(N)` + `VirtualListCustomProvider`，**无 `LazyVerticalGrid`**）。文件规模 734 → 678 行，新增组件拆到 `PlaylistGroupChrome.kt`（292）/ `PlaylistGroupDialogs.kt`（422）。
+  - 五个设计决策：① 两张「喜欢/不喜欢」伪卡**置顶、不受分组影响**（系统入口、不落 Room、没有 group_name，塞进「默认」会混淆系统语义与用户数据）；② **空分组也渲染标题行**，否则没有可长按的地方去改名/删除；③ 歌单指向不存在分组（云同步还原回来的 groupName）时**回落「默认」分区显示**，而不是从界面消失；④ 首帧 Store 未刷回时按「只有默认」处理，避免真实歌单一帧全丢；⑤ 长按与 more 统一开「歌单操作」菜单（重命名/移动到分组/删除），删除仍有二次确认。
+  - 按上一轮的约定：`UserPlaylist` 模型**不加** `groupName`，分组归属从 `PlaylistGroupStore.playlistGroups` 查；写操作显式 rethrow `CancellationException`、不用 `runCatching`；文案 EN/ZH 各 23 条键完全对齐（已脚本核对）。
+  - 🐛 **顺带修掉 P2-02 的漏网 bug**（提交 `413a1db`）：`PlaylistStore.playlists` **本来就含**真实系统歌单 `favorites`（名「我喜欢的音乐」），而 P2-02 又插了一张指向**同一底层歌单**的伪卡 → 用户会看到两张「喜欢」卡。修法是 `filterNot { it.isFavorites }`（伪卡 id 是 `attitude:favorites`，不满足 `isFavorites`，不会误伤）。只影响界面列表，存储/WebDAV/云同步不受影响。
+  - ⚠️ **待真机验证**：删分组后歌单回落默认、空分组渲染、移动分组 —— 目前只是代码路径推理，未实测。
+  - ⚠️ 次要遗留：`PlaylistGroupDialogs.kt` 里用了 2 处 Material3 `Text`（与同目录既有 `PlaylistScreen.kt` 的用法一致，属局部约定），严格按 §4.3「不要扩散 Material3」应改用 Miuix `Text`，留作清理项。
+  - ⚠️ **「默认」分组的存储值仍是中文字面量 `默认`**（`PlaylistGroupEntity.DEFAULT_GROUP_NAME`，也是 `user_playlists.group_name` 的列默认值），只在**显示层**按语言本地化。这是有意的：该字面量已写进 `MIGRATION_6_7` 与 schema，且云端 `groups_json` 的合并语义就是「永远丢弃『默认』」。**不要**为了英文环境去改存储值。
+  - 依赖：P2-03、P2-02
 
 - [x] **P2-05 先定契约** — ✅ 已完成（勘察结论如下，**动手 P2-06/07 前必读**）。
   - **`song_key` 规则**（权威定义在 `core/common/.../model/UserPlaylist.kt:33`）：`AudioFile.playlistIdentityKey()` =
