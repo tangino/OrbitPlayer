@@ -183,8 +183,16 @@
   - 已实现：`dislikedKeys` / `onlineFavoriteKeys`（**只收 `online://` 前缀**）/ `setDisliked` / `removeDislike` / `clearAllDislikes` / `setOnlineFavorite` / `setOnlineFavorites`（批量）/ `cycleOnline`（`NONE→FAVORITE→DISLIKED→NONE`）。写入后统一 `refresh` 发布 `StateFlow`。
   - 依赖：P1-12
 
-- [ ] **P2-02 喜欢 / 不喜欢（UI）** — **改 `app/.../ui/playlist/PlaylistScreen.kt`（不是 `core/ui/.../PlaylistsPage.kt`，后者是 29 行空壳占位页）**：顶部两个伪歌单卡片（曲目数实时）+ 歌曲长按菜单三项 + 清空不喜欢的二次确认 + 批量喜欢。
-  - ⚠️ **按 §9 D14**：本地曲的「喜欢」要调 `PlaylistStore.toggleFavorite(song)`（既有机制），**不要**调 `SongAttitudeRepository`；「不喜欢」与在线曲的「喜欢」才走 `SongAttitudeRepository`。
+- [x] **P2-02 喜欢 / 不喜欢（UI）** — ✅ 已完成（提交 `cab2282`，7 个文件 / +506 行）。
+  - **A 伪歌单卡**：`PlaylistScreen.kt` 在真实歌单**之前**插入「我喜欢的歌」「我不喜欢的歌」两张卡，曲目数实时（喜欢=`PlaylistStore.favoriteSongKeys().size`，不喜欢=`dislikedKeys.size`）；复用既有 `chunked(2)` + `playlistRowHeight = cardWidth/0.86f + 14.dp` + `VirtualListCustomProvider` 网格与 `PlaylistFrameCard`；**不可改名/删除/长按**。按 D14：喜欢走 `PlaylistStore.toggleFavorite`，**不碰 `song_attitude`**。
+  - **B 曲目列表**：伪卡走既有 `PLAYLIST_DETAIL_PAGE`，`AppPageRenderer` 即时构造**内存** `UserPlaylist`（不落 Room，见 `AttitudePlaylists.kt`），复用 `PlaylistDetailScreen` → 列表/空态/播放/随机播放都能用；列表内长按移除按伪 id 分流。
+  - **C 长按菜单 + 清空**：互斥的 喜欢/取消喜欢/不喜欢/取消不喜欢 动作行；「清空所有不喜欢」在歌单页顶栏尾部（`headerTrailingContent` 插槽），`RawMiuixOverlayDialog` 二次确认后 `clearAllDislikes`。反馈走 `AppNoticeBus`。
+  - 新增 21 个 `playlist_attitude_*` 文案（EN/ZH **各 21 条、键完全对齐**，已脚本核对）；新增 1 个 `ic_thumb_down_fill.xml`（仓库原本只有心形，没有「不喜欢」图标）。
+  - 🚧 **发现一个重要限制：播放器的长按菜单里拿不到在线曲的权威 key。** 长按菜单看到的 `AudioFile` 已经是在线曲**解析后**的形态（`path` = 可播放 URL、`encodingFormat = "rawsmusic-online-resolved"`），而 `online://<platformId>/<songId>` 这个权威 key（`OnlineSourceMediaMapper.onlineSongKey`）在解析过程中**丢了** —— `PlayerControllerMusicSourcePlaybackBackend.toAudioFile()` 只存了 `stableIdentity` 的哈希。用它算 `playlistIdentityKey()` 会写一条**永远匹配不上、且会随 URL 失效的脏数据**。
+    → 当前处理：对这类曲目**隐藏**喜欢/不喜欢动作（本地曲不受影响）。
+    → **影响面**：在线曲的「喜欢」并非完全不可用 —— **在线广场的歌单详情页**（`:core/ui`）手里有 `OnlineSongItem`，能拿到正确 key，那边的收藏按钮仍可正常写入 `song_attitude`。缺的只是「从播放器长按菜单给在线曲点喜欢」这一入口。
+    → 若要补：需把 `online://` key 从 `MusicSourcePlaybackRequest.item` 透传到 `AudioFile`，改动落在 **`:module:player`**，属独立任务（不要和 P2 其它任务混做）。
+  - ⚠️ 未做真机验证；`SongAttitudeRepository` 目前只在进歌单页/打开长按菜单时 `refresh`，**App 启动没有全局预热**，所以极早期进页面会先显示 0 再跳变（后续可考虑在 `CoreInit` 或首帧后预热）。
   - 依赖：P2-01
 
 - [x] **P2-03 歌单分组（数据层）** — ✅ 已完成（提交 `20ed046`，`module/data/.../prefs/PlaylistGroupStore.kt`）。
