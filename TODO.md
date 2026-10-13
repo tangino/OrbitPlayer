@@ -214,7 +214,11 @@
   - **`insertSongs` 用 `OnConflictStrategy.IGNORE`，而 `upsertSongs` 用 `REPLACE`** —— 重复添加同一首歌时两者行为不同（IGNORE 保留旧行、REPLACE 覆盖）。P2-06 批量导入时要想清楚用哪个，否则重复导入会静默丢数据或覆盖 `addedAt`。
   - 依赖：P1-12
 
-- [ ] **P2-05b 在线曲目在本地歌单里怎么表示（P2-06 / P2-07 的前置设计，**先定这个再写导入**）** — 已设计，待实现：
+- [x] **P2-05b 在线曲目在本地歌单里怎么表示（P2-06 / P2-07 的前置设计）** — ✅ 数据层已完成（提交 `2d43c4d`）。
+  - **已实现**：`core:common` 里唯一定义 `ONLINE_SONG_KEY_PREFIX` / `onlineSongKey(platformId, songId)` / `isOnlineSongKey` / `generateVirtualSongId` / `UserPlaylistSong.isOnlineEntry`；`:module:online` 的 `OnlineSourceMediaMapper.onlineSongKey` 改为**委托**到 core（不再自己拼串）；新增 `OnlineSourceMediaMapper.toUserPlaylistSong(item)`；`PlaylistStore` 新增并列访问器 `onlineSongsOf` + 合并视图 `PlaylistEntries` / `playlistEntries`。
+  - **`resolveSongs` 未改动**（16 处调用，改返回类型回归面太大）——在线曲由并列访问器暴露。
+  - [ ] **剩余（UI 接线）**：歌单详情页改用 `playlistEntries` 并**分两段渲染**（本地段走既有虚拟列表；在线段点击走 `OnlinePlaybackLauncher`）。这块要改 `:app` 的 `PlaylistDetailScreen.kt`，**等 P2-02 落盘后再做**（避免与它并发改 `:app`）。
+  - [ ] 剩余（P2-06）：导入时用 `toUserPlaylistSong` 落库，并决定批量写用 `insertSongs`(IGNORE) 还是 `upsertSongs`(REPLACE)。
   - **背景**：P2-05 查明 `PlaylistStore.resolveSongs` 会把不在曲库、且本地文件不存在的行**静默丢弃**，而导入 QQ/酷狗歌单必然产生这类行。不定好表示法，导入会「看起来成功但列表是空的」。
   - **选定方案（Option B：本地/在线两条路，不新建表）**：仍写进 `user_playlist_songs`，用以下约定区分 ——
     | 列 | 在线曲取值 |
