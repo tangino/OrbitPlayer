@@ -248,6 +248,24 @@
     4. **链接/文本导入**：平台分享链接 → `OnlineMusicRepository.parseLinkOrText`。
     5. **在线曲目要能进出**：现在 `importTextPlaylist` 的 `matched` **只从 `librarySongs` 里取**，所以引用在线曲的条目会被静默丢弃；导出时也要用 `isOnlineEntry()` 区分本地/在线，并让 `OnlineSourceMediaMapper.toUserPlaylistSong` 负责在线行的构造。
   - ⚠️ 批量写用 `insertSongs`（`IGNORE`）还是 `upsertSongs`（`REPLACE`）要想清楚：**同曲重复导入时二者行为不同**（IGNORE 保留旧行与旧 `addedAt`，REPLACE 覆盖）。
+  - **M3U8 精确格式（已从 OrBit `PlaylistTransferManager.exportToM3u8` 抄实，照这个写）**：
+    ```
+    #EXTM3U
+    #PLAYLIST:<标题>
+    #DESCRIPTION:<描述>            （换行替换成空格；为空则整行不写）
+    #EXT-ORBIT-COVER:<封面 url>     （为空则不写）
+    #EXT-ORBIT-PLATFORM:<平台id>:<原始id>
+    #EXT-ORBIT-CREATOR:<创建者>
+    （空行）
+    #EXTINF:<秒>,<歌手> - <歌名>
+    #EXTIMG:<封面 url>             （为空则不写）
+    #EXT-ORBIT-ONLINE:<平台id>:<songId>
+    <path 或 online://<平台id>/<songId>>
+    （空行）
+    ```
+    - 导入侧（`PlaylistTransferManager:464-521`）：`#EXTINF:` 后的文本按 **`" - "`** 拆成 `歌手` / `歌名`（拆不开就把整串当歌名、歌手记「未知歌手」）；状态在遇到下一首时清空。
+    - ⚠️ **规格里写的「把 `#EXTORBIT-*` 改名为 `#EXTRAWS-*`」不准确**：OrBit 实际用的前缀是 **`#EXT-ORBIT-`**（带连字符）。因此本移植应统一改成 **`#EXT-RAWS-`**（保持同形），**不要**写成 `#EXTRAWS-`，否则与源格式形状不一致、以后对照解读会出错。导入侧两种前缀都认，以便直接读 OrBit 导出的文件。
+    - 好消息：OrBit 这套格式**本来就带在线曲支持**（`#EXT-ORBIT-ONLINE:` + `online://` 路径），与 P2-05b 定的表示法一致 —— 说明 P2-05b 的方向是对的。
   - 依赖：P2-05、P2-05b
 
 - [ ] **P2-07 歌单导入导出（UI）** — `ExportPlaylistDialog` / `ImportPlaylistDialog`（Miuix + `RawMiuixOverlayDialog`）；导入支持 链接 / JSON / M3U8 / 纯文本 四种输入。
