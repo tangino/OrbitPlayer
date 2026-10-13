@@ -167,6 +167,8 @@
     - `CircularProgressIndicator` 用 `androidx.compose.material3` 的（全仓 13 处、无 Miuix 等价物）；
     - 封面用 `BitmapImage(key = url, ...)`，其底层 `BitmapProvider` 已支持 http(s) 远程源，**不要引入 Coil**。
     - 网格沿用 `chunked(N)`（决策 D11），**不要 `LazyVerticalGrid`**。
+    - ⚠️ **不要用 `.\gradlew.bat --rerun-tasks`**：本工程会炸 `:core:common`（`io.github.proify.lyricon.*` 全部 Unresolved —— KMP 依赖 `:lyric:model` 的 jar 在强制重跑语义下拿不到）。用普通命令或 `:app:compileReleaseKotlin` 即可。
+    - ⚠️ **`runCatching` 会吞掉 `CancellationException`**：OrBit 代码大量使用 `runCatching`，逐字移植会把「协程取消」伪装成业务失败（切平台/切分类时闪假错误）。已在仓库层用 `resultOf` 根治（提交 `d1674c3`）；**后续移植/新写的挂起函数一律用 `resultOf` 或显式 rethrow**，不要用裸 `runCatching`。
 
 ---
 
