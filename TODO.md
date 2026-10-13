@@ -78,36 +78,33 @@
 
 > 设计见 `AGENTS.MD` §6.1；映射与端点见 `docs/porting-reference.md`。
 
-- [ ] **P1-01 新建 `:module:online` 模块骨架** — `settings.gradle.kts` 加 `include(":module:online")`；建 `build.gradle.kts`（namespace `com.rawsmusic.module.online`，依赖 core:common / module:data / okhttp / gson / zxing / coroutines）；`:core:ui` 与 `:app` 加依赖。
-  - 验收：`.\gradlew.bat :module:online:compileDebugKotlin` 通过（空模块）。
-  - 依赖：P0-05
+- [x] **P1-01 新建 `:module:online` 模块骨架** — ✅ 已完成。`settings.gradle.kts` 已加 `include(":module:online")`；`module/online/build.gradle.kts`（namespace `com.rawsmusic.module.online`，依赖 core:common / module:data / okhttp / gson / zxing / coroutines）；catalog 新增 `zxing = "3.5.3"` + `zxing-core`。
+  - 验收：`.\gradlew.bat :module:online:compileReleaseKotlin` 通过 ✅（1m29s）
+  - 说明：`:core:ui` 与 `:app` 的依赖**推迟到 P1-13** 接入，避免留下未使用的依赖。
 
-- [ ] **P1-02 移植在线模型** — `OnlinePlatform`(5 平台) / `OnlinePlaylistTag` / `OnlinePlaylist` / `OnlineSongItem` / `OnlineLeaderboard` / `OnlineArtistCategory` / `OnlineArtist` / `OnlineAlbum` / `OnlineArtistDetail` → `core/common/.../model/OnlineMusicModels.kt`（或 module:online 内，视引用范围定）。
-  - 依赖：P1-01
+- [x] **P1-02 移植在线模型** — ✅ 已完成，落在 `module/online/.../model/OnlineMusicModels.kt`（仅在线功能使用，不进 `core:common`）。`OnlinePlatform` 额外加了 `fromId()` 宽松查找。
 
-- [ ] **P1-03 定义 `OnlinePlatformSource` 接口** — 从 `IOnlineMusicSource` 改名迁入；保留歌手/专辑方法的默认空实现。
+- [x] **P1-03 定义 `OnlinePlatformSource` 接口** — ✅ 已完成，`module/online/.../source/OnlinePlatformSource.kt`，保留歌手/专辑方法的默认空实现。
   - 依赖：P1-02
 
-- [ ] **P1-04 移植网易云适配器** — 含 `NeteaseCrypto`（weapi/eapi）。端点/Referer/fallback 照搬。
-  - 验收：真机能拉到 tags、分类歌单、榜单、歌单详情。
-  - 依赖：P1-03
+- [x] **P1-04 移植网易云适配器** — ✅ 已完成（`source/netease/NeteaseMusicSource.kt` + `NeteaseCrypto.kt`，逐字移植）。
+  - 待真机验证：tags / 分类歌单 / 榜单 / 歌单详情。
 
-- [ ] **P1-05 移植 QQ 音乐适配器** — 含 `musicu.fcg` 统一入口、JSONP 清洗、封面 URL 规则。
-  - 依赖：P1-03
+- [x] **P1-05 移植 QQ 音乐适配器** — ✅ 已完成（`source/qq/QQMusicSource.kt`）。
 
-- [ ] **P1-06 移植酷狗适配器** — 含 `mobilecdn*` 系列与 2 条搜索 fallback。
-  - 依赖：P1-03
+- [x] **P1-06 移植酷狗适配器** — ✅ 已完成（`source/kugou/KugouMusicSource.kt`）。它调用 `KugouMusicAuthService.getPlaylistTracks`，因此连带移植了 auth 层（见 P2-08）。
 
-- [ ] **P1-07 移植酷我适配器** — 含 `r.s` 单引号 JSON 修正。
-  - 依赖：P1-03
+- [x] **P1-07 移植酷我适配器** — ✅ 已完成（`source/kuwo/KuwoMusicSource.kt`）。
 
-- [ ] **P1-08 移植咪咕适配器** — 含硬编码榜单兜底与 `resolveMiguDirectPlayUrl` 两步直链。
-  - 依赖：P1-03
+- [x] **P1-08 移植咪咕适配器** — ✅ 已完成（`source/migu/MiguMusicSource.kt`）。
 
-- [ ] **P1-09 `OnlineMusicRepository`（单平台 + 缓存）** — 平台切换、tags/歌单/榜单/详情/搜索、LruCache 风格缓存（详情 50 条）。
-  - 依赖：P1-04 ~ P1-08
+> ⚠️ 5 个适配器都是**逐字移植**：只改包名（`com.orbit.music.data.online` → `com.rawsmusic.module.online`）、接口名（`IOnlineMusicSource` → `OnlinePlatformSource`）和日志（`android.util.Log` → `AppLogger`，共 24 处）。**端点、请求参数、Referer、fallback 链一律未动**。`:module:online:compileReleaseKotlin` 通过。
+> 适配器里的中文字符串是**平台 API 参数值**（如酷我的分类标签 `"全部"/"热歌"`）与数据层标签，属外部契约，不是 UI 文案，不要抽成 stringResource。
 
-- [ ] **P1-10 全网搜歌（多平台聚合）** — `searchSongsAllPlatforms` 并发 fan-out + `searchSongsAggregated` 轮询合并去重 + `searchArtists`/歌手详情/歌手专辑 + `parseLinkOrText`。
+- [x] **P1-09 `OnlineMusicRepository`（单平台 + 缓存）** — ✅ 已完成（`repository/OnlineMusicRepository.kt`）：平台映射表与 `switchPlatform`、tags/歌单/榜单/详情/搜索、`LruCache` 详情缓存（50 条）+ 标签缓存。
+  - ⚠️ 唯一改动：`bindAuthManager(PlatformAccountManager)` → `bindAuthProviders(cookieProvider, accountProvider)` 函数注入（因 `PlatformAccountManager` 待 P2-08 按 D7 重做）。行为不变。
+
+- [x] **P1-10 全网搜歌（多平台聚合）** — ✅ 已完成（同一文件）：`searchSongsAllPlatforms` 并发 fan-out + `searchSongsAggregated` 轮询合并去重，以及 `searchArtists` / 歌手详情 / 歌手专辑 / `parseLinkOrText`。
   - 依赖：P1-09
 
 - [ ] **P1-11 播放解析适配层** — 从 `OnlineAudioSourceManager` 只摘算法：`OnlinePlaybackMatcher`（标题清洗/歌手拆分/时长容差/打分）、音质阶梯、`OnlinePlaybackProbe`（HEAD/Range + 时长校验）、网易 outer / 咪咕直链兜底；**接在 RawS 既有 `MusicSourceAudioResolver` 前后，不替换**。
