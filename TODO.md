@@ -234,9 +234,20 @@
   - **播放与队列**：整单播放时本地曲沿用现有队列；在线曲需逐首解析（与 P1-14「播放全部只起播第一首」同一限制），**不要**为它伪造本地路径。
   - 依赖：P2-05
 
-- [ ] **P2-06 歌单导入导出（逻辑层）** — 移植 `PlaylistTransferManager`：JSON(schema v1) / M3U8(`#EXTINF` + `#EXTRAWS-*` 标签) / 纯文本 / 分享；导出到 `cacheDir/playlist_exports` 或 MediaStore Downloads。
-  - ⚠️ **先落实 P2-05b 的在线曲表示**，否则导入的在线曲目会被 `resolveSongs` 丢掉。
-  - ⚠️ 批量写用 `UserPlaylistDao.insertSongs`（`IGNORE`）还是 `upsertSongs`（`REPLACE`）要想清楚：**同曲重复导入时二者行为不同**（IGNORE 保留旧行与旧 `addedAt`，REPLACE 覆盖）。
+- [ ] **P2-06 歌单导入导出（逻辑层）** — ⚠️ **已重新勘察：不要从零写 `PlaylistTransferManager`，RawS 已有一大半。**
+  - **`PlaylistStore` 里已经存在（禁止重写，铁律 5）**：
+    | 已有能力 | 位置 |
+    | --- | --- |
+    | 纯文本/M3U8 路径导入（三层模糊匹配：精确 path → 后缀匹配 → 文件名唯一匹配；按同名歌单**合并**；按 `key` 去重） | `importTextPlaylist(uri, librarySongs)` |
+    | JSON 导出 / 导入（`{playlists:[...]}`，含 `playlistToJson` / `jsonToPlaylist`） | `exportJson` / `exportJsonForBackup` / `restoreJson` / `restoreJsonAndVerify` |
+    | 编码嗅探、行解析、路径归一化 | `decodeText` / `parsePlaylistLine` / `normalizedPath` / `pathCandidates` |
+  - **P2-06 真正要补的（5 件事）**：
+    1. **M3U8 导出**：`#EXTM3U` + `#EXTINF:<秒>,<歌手> - <歌名>` + 自定义标签 **`#EXTRAWS-*`**（AGENTS 要求把 OrBit 的 `#EXTORBIT-*` 改名）。
+    2. **M3U8 导入的元数据**：现在 `parsePlaylistLine` 直接 `if (line.startsWith('#')) return null` —— `#EXTINF` 里的**歌手/时长被整个丢掉**，只能靠路径匹配。而 OrBit 的 M3U8 主要靠「歌名 - 歌手」匹配 → 需要先用 `#EXTINF` 元数据匹配曲库，失败再回退到现有的路径匹配。
+    3. **导出到文件 + 分享**：`cacheDir/playlist_exports` → `ACTION_SEND`，或写 MediaStore `Downloads/RawS-Music`。
+    4. **链接/文本导入**：平台分享链接 → `OnlineMusicRepository.parseLinkOrText`。
+    5. **在线曲目要能进出**：现在 `importTextPlaylist` 的 `matched` **只从 `librarySongs` 里取**，所以引用在线曲的条目会被静默丢弃；导出时也要用 `isOnlineEntry()` 区分本地/在线，并让 `OnlineSourceMediaMapper.toUserPlaylistSong` 负责在线行的构造。
+  - ⚠️ 批量写用 `insertSongs`（`IGNORE`）还是 `upsertSongs`（`REPLACE`）要想清楚：**同曲重复导入时二者行为不同**（IGNORE 保留旧行与旧 `addedAt`，REPLACE 覆盖）。
   - 依赖：P2-05、P2-05b
 
 - [ ] **P2-07 歌单导入导出（UI）** — `ExportPlaylistDialog` / `ImportPlaylistDialog`（Miuix + `RawMiuixOverlayDialog`）；导入支持 链接 / JSON / M3U8 / 纯文本 四种输入。
