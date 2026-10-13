@@ -141,7 +141,7 @@
   - `resolveFirstPlayable`：逐个候选尝试，resolver 以函数注入（不直接依赖 `:module:data` 实现，保持可测）。
   - ⚠️ **已知集成约束（P1-14 必须处理）**：映射产出的 `sourceId` 是**平台 id**（身份用途），而 `MusicSourceAudioResolver` 是按「用户已安装的音源 id」查表的 → **不能把映射结果直接交给解析器**。正确顺序：先搜用户音源拿候选 → `selectBestCandidate` → 再调既有 resolver → `validateResolved` 探活。端到端接线的落点在 P1-14 的播放按钮处（那里才有真实调用点）。
 
-- [ ] **P1-14 广场/歌手库/全网搜歌/收藏 四个 tab 的完整 UI** — 平台 chip 行、精选/分类/榜单/收藏 次级 tab、歌单卡片网格（`chunked(N)` + `VirtualListCustomProvider`，**不用 LazyVerticalGrid**）、歌单详情页（`NavScene.ONLINE_PLAYLIST_DETAIL`=**55**）、歌手网格与详情、双输入搜歌 + 平台过滤 + 分页 + 历史、四态（加载/空/错误/内容）齐全、失败经 `AppNoticeBus`。
+- [x] **P1-14 广场/歌手库/全网搜歌/收藏 四个 tab 的完整 UI** — ✅ 已完成（提交 `7399138` / `8b06ec2` / `46643a6`）
   - 验收：见 `AGENTS.MD` §8.2 ① 全部 6 项。
   - 依赖：P1-13、P2-01（喜欢/不喜欢落库）
   - **进度**：
@@ -149,12 +149,13 @@
     - [x] **② 歌手库 tab** —— ✅ 提交 `8b06ec2`（`OnlineArtistTab.kt`，355 行）：分类 chip + 两列歌手网格 + 分页 + 四态。
     - [x] **③ 全网搜歌 tab** —— ✅ 提交 `8b06ec2`（`OnlineSearchTab.kt`，728 行）：歌名+歌手**双输入**、平台过滤（全部＝并发搜 5 平台并按平台分组，单平台失败隔离）、mm:ss 时长、分页、内存态搜索历史。
     - [x] **④ 我的收藏 tab** —— ✅ 提交 `8b06ec2`（`OnlineFavoritesTab.kt`，242 行）+ 数据层提交 `e8fca36`（`OnlinePlaylistFavoriteStore`）：分组 chip + 取消收藏。
-    - [x] **⑥ 播放接线（数据层）** —— ✅ 提交 `9136dc0`（`OnlinePlaybackLauncher`）：`MusicSourceSearchCoordinator` 检索 → `selectBestCandidate` → `MusicSourcePlaybackController.playItem`。**尚未从 UI 调用**（等 ⑤ 的播放按钮）。
-    - [ ] ⑤ 歌单详情页（`OnlinePlazaDetailPage.kt` + `ComposeNavHost` 注册 `ONLINE_PLAYLIST_DETAIL`=55）—— **P1 最后一块**，做完把 ⑥ 接到「播放全部 / 点歌」上。
-  - **已勘察好的 ⑤ 接入点（下一轮直接用）**：
-    - 导航参数机制：`NavigationState.navigateTo(scene, argument: String = "")`（`NavigationState.kt:170`），参数存在 `state.currentArgument`（`:52`，并有 `argumentStack` / `transitionFromArgument` 供转场用）。`ComposeNavHost` 在 `providerScene.isDetail()` 时读 `state.currentArgument`（约 `:337`）。所以进详情页用 `navigateTo(ONLINE_PLAYLIST_DETAIL, playlistId)`，页面里读 `state.currentArgument`。
-    - 行参编码：建议 `"<platformId>|<playlistId>"`（playlistId 理论上可能含 `|`，取 `substringBefore` / `substringAfter` 时注意）。
-    - `ONLINE_PLAYLIST_DETAIL` **已在 `NavScene.isDetail()` 里**（P1-13 就加了），虚拟列表 provider 会正确带上 argument。
+    - [x] **⑤ 歌单详情页** —— ✅ 提交 `46643a6`（`OnlinePlazaDetailPage.kt`）：头部（封面/标题/创建者/播放量/曲目数）+ 收藏切换 + 曲目列表（序号/歌名/歌手·专辑/mm:ss）+ 四态；`ComposeNavHost` 已注册 `ONLINE_PLAYLIST_DETAIL` 分支读 `state.currentArgument`；广场卡片点击已接到本页。
+      - 导航参数编码：`onlinePlaylistDetailArgument(platform, playlistId)` = `"<platformId>|<Uri.encode(playlistId)>"`。
+      - **`isDetail()` 成员是有意的**：它决定 `SceneTransitionEngine` 在转场期间是否保留并传递 `currentArgument`，本页依赖该参数；本页没注册共享封面 provider，所以只会退化为普通转场，不会出错。
+      - ⚠️ **已知限制**：「播放全部」目前只起播第一首。完整队列续播需要为每首预解析候选（N 次音源检索），代价高，留作后续。
+    - [x] **⑥ 播放接线（UI 已接）** —— ✅ 数据层提交 `9136dc0`，UI 接线在 `46643a6`：点歌 / 播放全部 → `OnlinePlaybackLauncher.play` → `Started` / `NoSourceInstalled` / `NoMatchFound` / `Failed` 分别给明确文案（不暴露原始异常）。
+
+> **P1 状态：14 项全部完成**（P1-01…P1-14）。唯一待办是 **P1-12 的迁移真机验证**：需要在装有 v6 库的设备上覆盖安装一次，确认不抛 Room schema 校验异常。
   - **⑥ 的现成基础设施（已确认，不要重造）**：
     - `MusicSourceSearchCoordinator.search(context, sources, lxSources, query, page, type): AggregatedMusicSourceSearch`（`module/data/.../runtime/MusicSourceSearchCoordinator.kt:18`），其 `.items` 已是全部候选；MusicFree 组的 `sourceId` 是**裸 source id**，可被 `MusicSourceAudioResolver` 解析。
     - `MusicSourcePlaybackController.play(context, queue, index)` / `playItem(context, item)`（`:162` / `:183`）。
