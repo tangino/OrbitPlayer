@@ -322,9 +322,13 @@
     - [x] **契约序列化 + 配置存储** —— ✅ 提交 `0530f42`（`module/online/.../sync/CloudPlaylistJson.kt` + 8 个契约测试，`tests=8 failures=0 errors=0 skipped=0`）。`AppPreferences.CloudSync`（地址自填不内嵌 / 用户名 / **密码只存密文** / 上次备份与还原时间 / 上传模式）。
       - 已在文件头注明契约里**三处容易猜错的不对称**：① 请求字段 camelCase（`playlistsJson`）而响应字段 snake_case（`playlists_json`），JSON **内容**又是 camelCase；② `sourcePlatform` 与在线收藏的 `platform` 要**大写枚举名**（`NETEASE|QQ|...`），不是内部小写平台 id（Kotlin 枚举 `name` 恰好就是它）；③ 契约里在线收藏叫 `customGroup`，本地实体叫 `groupName`（OrBit 历史命名，**契约优先，不要统一**）。
       - 按 §5 合并语义：上传侧**丢掉「默认」**（服务端 merge 会丢，但 `overwrite` 不过滤，带着上传会真的存进云端分组列表）、**总是带上「系统」**。
-    - [ ] 剩余：`CloudSyncClient` / `CloudPlaylistSyncClient`（OkHttp + `POST /api/user/auth` + backup/restore/delete/clear + 响应解析 + `CloudSyncResult<T>` 错误映射）。
-      - ⚠️ 实现时必须守 §6 的四条服务端缺陷容错：**① 非法 JSON → 500**（保证序列化合法）；**② `playlists/delete` 不传 `deleteAll` 也不传数组会清空全部云端歌单**（必须显式传参，清空要显式 `deleteAll:true`）；③ 选择性删除不回写 `groups_json`（分组可能残留）；④ `data/clear` **不接受 `userId` 别名**。另：restore 无备份返回 404（不是空数据）。
-      - 注意 P5-01 会把这里的 HTTP 逻辑与 P3-03 合并成统一客户端，所以**别把 HTTP 细节散落到多个地方**。
+    - [x] **HTTP 客户端** —— ✅ 提交 `8a3c4ae`（`CloudSyncClient.kt`）。统一 `CloudSyncResult<T>`；响应 DTO 用 snake_case；四条服务端缺陷容错全部落实，其中 **`deletePlaylists` 加了硬护栏：既不 `deleteAll` 又数组全空时直接本地拒绝、不发请求**（服务端那种请求会清空用户全部云端歌单）；restore 的 404 用 `codeOverrides` 映射成「云端还没有备份」；`data/clear` 只传 `username`。
+    - [x] **上传侧编排** —— ✅ 提交 `4890c85`（`CloudPlaylistSyncService.kt`）。`buildPayload` 装配四处数据源；`upload` 复用 `CloudSyncClient.backupPlaylists`。
+      - ⚠️ **上传前必须 refresh 四个 Store 并 `awaitBackupReady`**：DAO 全是 `suspend`、`StateFlow` 只在 refresh 后新鲜，而云同步是一次性快照 —— 用陈旧内存态上传会在服务端 last-write-wins 下把云端写回旧版本。
+      - 喜欢/不喜欢塞进两个系统歌单（契约无独立表/接口）；普通歌单排除系统 `favorites`，避免同名合并出两个语义不同的歌单；在线曲的喜欢/不喜欢没有本地元数据 → 用 `songOfKey` 上传（身份在 `path`）。
+    - [ ] 剩余：**下载/还原侧**（`restore` → 解析三个 JSON → 识别两个系统歌单走 `SongAttitudeRepository` 而不是建普通歌单 → 普通歌单与分组写回 `PlaylistStore`/`PlaylistGroupStore`/`OnlinePlaylistFavoriteStore`）。这是 P2-12 最难的一半：契约的合并语义在**服务端**，客户端只负责「把云端结果落回本地」。
+  - 补充（契约 §6 容错，实现时必须守）：**① 非法 JSON → 500**（保证序列化合法）；**② `playlists/delete` 不传 `deleteAll` 也不传数组会清空全部云端歌单**（已在客户端加护栏）；③ 选择性删除不回写 `groups_json`（分组可能残留）；④ `data/clear` **不接受 `userId` 别名**。另：restore 无备份返回 404（不是空数据）。
+  - 注意 P5-01 会把这里的 HTTP 逻辑与 P3-03 合并成统一客户端，所以**别把 HTTP 细节散落到多个地方**（目前只在 `CloudSyncClient`）。
   - 依赖：P1-12、P2-01
 
 - [ ] **P2-13 歌单同步（UI）** — 云同步页（骨架照抄 `WebDavPage.kt`）：地址 / 账号 / 上传模式 / 选择性上传下载 / 清空二次确认 / 显示 `updated_at`。
