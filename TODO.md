@@ -247,8 +247,12 @@
   - **进度**：
     - [x] **M3U8 编解码器** —— ✅ 提交 `317d0a8`（`module/data/.../playlist/PlaylistM3u8Codec.kt` + 6 个往返单测，`tests=6 failures=0 errors=0 skipped=0`）。`encode` / `decode` 是纯函数，`writeExportFile` 落 `cacheDir/playlist_exports`。解码侧同时认 `#EXT-RAWS-` 与 `#EXT-ORBIT-` 两种前缀。
       - ⚠️ **导出侧写不了封面/平台/创建者标签**：RawS 的 `UserPlaylist` 只有 id/name/songs/时间，歌曲的 `albumArtPath` 是**本地路径**而非 http 封面 → 不写 `COVER`/`PLATFORM`/`CREATOR`/`EXTIMG`，但**解码侧全部认识**（读 OrBit 的完整文件没问题，我们导出的只是少装饰信息）。
-    - [ ] **接线到 `PlaylistStore`**：导出走 `playlistStore.playlists` + `PlaylistM3u8Codec.writeExportFile`；导入要**先按 `#EXTINF` 的「歌名/歌手」匹配曲库**（现有 `importTextPlaylist` 只按路径匹配，`#` 行被整个跳过，元数据白丢），匹配不到再回退路径匹配；在线条目用 `OnlineSourceMediaMapper.toUserPlaylistSong` 落库（注意 `:module:data` **不能**依赖 `:module:online`，所以在线行要用 core 里的 `onlineSongKey` / `generateVirtualSongId` 自己构造）。
-    - [ ] **文件分享**（`ACTION_SEND` 或 MediaStore Downloads）+ **链接导入**（`OnlineMusicRepository.parseLinkOrText`，这步在 `:module:online` 或 UI 层）。
+    - [x] **导入编排 + 元数据匹配** —— ✅ 提交 `8c9e4cf`。
+      - `PlaylistStore` 新增公开 `matchLibrarySongs(candidates, librarySongs)`（把 `importTextPlaylist` 里的三层路径匹配**原样提取**出来共用，逻辑未改）与 `importResolvedPlaylist(name, localSongs, onlineSongs)`（按同名合并、按 key 去重、在线行一并落库）。
+      - `PlaylistTransferStore.importM3u8`：解码 → 有在线身份的直接建在线行（不走曲库匹配）→ 路径匹配 → **对没匹配上的再用「歌名+歌手」兜底**（跨设备导入时路径必然失效，这层才是主力）→ 交给 `importResolvedPlaylist`。同名多首时用歌手收敛，**仍不唯一就放弃而不是猜错**。
+      - `PlaylistTransferStore.exportM3u8` 委托给编解码器落盘。
+      - 刻意**不**复用 `OnlinePlaybackMatcher.normalizeForCompare`：它在 `:module:online`（依赖方向不允许），且策略面向跨平台找歌（宽松），而这里是本地库找回自己的歌（可以更严）。
+    - [ ] **接线到 `PlaylistStore`** 的剩余部分：把 M3U8 导入接到 UI（文件选择器 / 分享目标）；**链接导入**（`OnlineMusicRepository.parseLinkOrText`，这步只能在 `:module:online` 或 UI 层）；**文件分享**（`ACTION_SEND` 或 MediaStore Downloads）。
   - **`PlaylistStore` 里已经存在（禁止重写，铁律 5）**：
     | 已有能力 | 位置 |
     | --- | --- |
