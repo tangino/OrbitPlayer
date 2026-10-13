@@ -225,7 +225,8 @@
 - [x] **P2-05b 在线曲目在本地歌单里怎么表示（P2-06 / P2-07 的前置设计）** — ✅ 数据层已完成（提交 `2d43c4d`）。
   - **已实现**：`core:common` 里唯一定义 `ONLINE_SONG_KEY_PREFIX` / `onlineSongKey(platformId, songId)` / `isOnlineSongKey` / `generateVirtualSongId` / `UserPlaylistSong.isOnlineEntry`；`:module:online` 的 `OnlineSourceMediaMapper.onlineSongKey` 改为**委托**到 core（不再自己拼串）；新增 `OnlineSourceMediaMapper.toUserPlaylistSong(item)`；`PlaylistStore` 新增并列访问器 `onlineSongsOf` + 合并视图 `PlaylistEntries` / `playlistEntries`。
   - **`resolveSongs` 未改动**（16 处调用，改返回类型回归面太大）——在线曲由并列访问器暴露。
-  - [ ] **剩余（UI 接线）**：歌单详情页改用 `playlistEntries` 并**分两段渲染**（本地段走既有虚拟列表；在线段点击走 `OnlinePlaybackLauncher`）。这块要改 `:app` 的 `PlaylistDetailScreen.kt`，**等 P2-02 落盘后再做**（避免与它并发改 `:app`）。
+  - [x] **UI 接线已完成**（提交 `ec38da7`）：`PlaylistDetailScreen` 改用 `playlistEntries`，本地曲 + 在线条目一起进同一个虚拟列表（在线条目的 `id` 是负数虚拟 id、`path` 就是 `online://` 串，都不与本地曲冲突）；随机播放只取本地曲；`OnlineSourceMediaMapper` 新增 `parseOnlineSongKey` + 反解 `toOnlineSongItem`，在线条目交给 `OnlinePlaybackLauncher` **单曲**起播（整单队列仍需逐首预解析）。
+    - 🐛 **顺带修掉一个真实 bug**：`onRemoveSong` 原先一律用 `playlistIdentityKey()`，而它会**给在线路径加上 `path|` 前缀**，与存的 `song_key`（裸 `online://` 串）对不上 → 移除在线曲目会**静默 no-op**。现在先判 `isOnlineSongKey` 再决定用哪个 key。**后续任何按 key 操作在线条目的地方都要注意这个前缀差异。**
   - [ ] 剩余（P2-06）：导入时用 `toUserPlaylistSong` 落库，并决定批量写用 `insertSongs`(IGNORE) 还是 `upsertSongs`(REPLACE)。
   - **背景**：P2-05 查明 `PlaylistStore.resolveSongs` 会把不在曲库、且本地文件不存在的行**静默丢弃**，而导入 QQ/酷狗歌单必然产生这类行。不定好表示法，导入会「看起来成功但列表是空的」。
   - **选定方案（Option B：本地/在线两条路，不新建表）**：仍写进 `user_playlist_songs`，用以下约定区分 ——
