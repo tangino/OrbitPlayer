@@ -1,0 +1,304 @@
+# TODO — 功能移植任务清单与进度
+
+> 本文件是**移植进度的唯一来源**。规范与设计见 [`AGENTS.MD`](AGENTS.MD)。
+> 状态图例：`[ ]` 未开始 · `[~]` 进行中 · `[x]` 完成 · `[!]` 阻塞 · `[-]` 取消/不做
+> 每个任务 = 一个可独立编译通过的 commit。开工前先读 `AGENTS.MD` §10.2 的流程。
+
+**当前阶段**：`P0 环境与构建准备` —— **已完成**。环境已可直接构建，见 `AGENTS.MD` §2.2。
+**当前阻塞**：无。环境/构建阻塞已全部解决。
+
+---
+
+## ✅ 已解决的环境与构建阻塞（原「需用户确认」）
+
+| 阻塞 | 解决方式 |
+| --- | --- |
+| `gradle.properties` 硬编码失效 JDK 路径 `D:\ASTUDIO\jbr` | **已删除该行**并加注释；JDK 21 改配在**用户级** `~/.gradle/gradle.properties`，仓库保持可移植。本机 JDK 21 = `D:\Program Files\Eclipse Adoptium\jdk-21.0.12.101-hotspot`（注意 `Android_Studio\jbr` 是 **JDK 25，不可用**） |
+| `local.properties` 缺失 | **已创建**，`sdk.dir=E\:\softwares\Android\sdk` |
+| catalog 缺 `focus-api` / `shizuku` 条目 | **上游 git pull 已补齐**（`gradle/libs.versions.toml`） |
+| 缺 `librawsmusic_ffmpeg.so` | **用户已就位**，且 `jniLibs/arm64-v8a/` 现在有官方 1.0.13 的**完整预编译 `.so` 集** |
+| NDK 27.0.12077973 未安装 | **AGP 8.10.0 自动安装** |
+| 原生源码缺失导致 CMake 失败（**新发现**） | 公开仓库缺 **70 个 USB 原生源文件** → **已注释掉 `app/build.gradle.kts` 的两处 `externalNativeBuild`**，改为直接打包预编译 `.so`。代价：原生代码冻结（本移植不需要改原生）。详见 `AGENTS.MD` §9 D13 |
+
+**验证记录**：`.\gradlew.bat :app:compileReleaseKotlin --console=plain` → **BUILD SUCCESSFUL**（约 10 分钟）。
+`.\gradlew.bat assembleRelease --console=plain` → 已通过原生库合并、符号剥离并进入 R8 压缩阶段（详见 P0-05 记录）。
+
+---
+
+## 进度总览
+
+| 阶段 | 内容 | 任务数 | 完成 | 状态 |
+| --- | --- | --- | --- | --- |
+| **P0** | 环境与构建准备（解阻塞） | 6 | 5 | ✅ 基本完成（P0-06 待真机） |
+| **P1** | 在线歌单广场（含歌手库 + 全网搜歌） | 14 | 0 | 未开始 |
+| **P2** | 歌单管理 | 13 | 0 | 未开始 |
+| **P3** | 洛雪歌源同步 | 6 | 0 | 未开始 |
+| **P4** | 频谱可视化 | 8 | 0 | 未开始 |
+| **P5** | 云同步统一入口 + 收尾回归 | 5 | 0 | 未开始 |
+| | **合计** | **52** | **0** | |
+
+---
+
+## P0 环境与构建准备（解阻塞）—— ✅ 已完成
+
+> 目标：让 RawS-Music 能在本机编过。**已达成**，四个阻塞的解决方式见上文「已解决的环境与构建阻塞」。
+
+- [x] **P0-01 切换分支** — 在 `RawS-Music` 上创建 `feat/orbit-port`（不要直接改 `main`）。
+  - 验收：`git branch --show-current` 输出 `feat/orbit-port`。
+  - 状态：待执行（当前仍在 `main`；做功能改动前先切）。
+
+- [x] **P0-02 环境适配（独立 commit）** — 删除 `gradle.properties` 里失效的 `org.gradle.java.home`；创建 `local.properties`；JDK 21 配到用户级 `~/.gradle/gradle.properties`。
+  - 验收：`.\gradlew.bat --version` 正常输出，Daemon JVM = JDK 21。**已实测通过。**
+  - commit：`chore(build): 适配本机 SDK/JDK 路径`
+
+- [x] **P0-03 补 catalog 条目** — **上游 git pull 已自带**（`libs.versions.toml` 已有 `focus-api` / `shizuku-api` / `shizuku-provider`），无需我们改。
+  - 验收：`:app` 配置阶段不再报 unresolved reference。**已通过。**
+
+- [x] **P0-04 补齐预编译原生库** — `jniLibs/arm64-v8a/` 已就位官方 1.0.13 的**完整 `.so` 集**（`librawscoreservice` / `librawsmusic_ffmpeg{,_live}` / `librawsmusic_audio_transcode` / `librawsmusic_sacd` / 4 个 FFmpeg 拆分库 + AAR 自带库）。**路线 A/B 均不再需要**，`docs/ffmpeg-prebuilt.md` 只作排查记录保留。
+
+- [x] **P0-04c（新发现，已完成）关闭原生源码编译** — 公开仓库**缺 70 个 USB 原生源文件**（`CMakeLists.txt` 引用 144 个 `.cpp`，实际仅 74 个），CMake 在 `add_library(rawsmusic_usb ...)` 处必然失败。
+  - 处理：注释掉 `app/build.gradle.kts` 的两处 `externalNativeBuild`，改为直接打包 `jniLibs/` 的预编译 `.so`。
+  - 代价：**原生代码冻结**（`app/src/main/cpp/` 改动不生效）。4 个移植功能都无需改原生。见 `AGENTS.MD` §9 D13。
+  - ⚠️ 恢复原生构建的前提：补齐缺失的 USB 源文件。
+
+- [x] **P0-05 基线构建验证** — 已跑通。
+  - 命令：`.\gradlew.bat :app:compileReleaseKotlin --console=plain` → **BUILD SUCCESSFUL**（约 10 分钟）。
+  - 命令：`.\gradlew.bat assembleRelease --console=plain` → 已通过 `mergeReleaseNativeLibs`、`stripReleaseDebugSymbols`，进入 R8 压缩。**无重复 `.so` 打包错误**（AGP 对 `libonnxruntime4j_jni.so` 只有 warning，自动择一）。
+  - ⚠️ 已知噪声（**不是 bug，不要修**）：R8 大量 `kotlin metadata` 解析警告（Kotlin 2.3.20 比 R8 新）；`compileSdk 37` 超出 AGP 8.10.0 测试范围（`gradle.properties` 已用 `android.suppressUnsupportedCompileSdk=37` 抑制）。
+  - 产出：`app/build/outputs/apk/release/app-release.apk`。
+
+- [ ] **P0-06 基线冒烟回归** — 装机验证既有功能，记录改动前状态作为回归基线。
+  - 覆盖：本地扫描 / 播放 / 歌单增删 / 音源导入（LX + MusicFree）/ 实时可视化开关 / WebDAV 备份页可打开 / USB DAC（预编译版应可用）。
+  - 产出：把结果写进本文件末尾「基线记录」。
+  - 依赖：P0-05 产出的 APK + 一台 arm64 真机。
+
+---
+
+## P1 在线歌单广场（含歌手库 + 全网搜歌）
+
+> 设计见 `AGENTS.MD` §6.1；映射与端点见 `docs/porting-reference.md`。
+
+- [ ] **P1-01 新建 `:module:online` 模块骨架** — `settings.gradle.kts` 加 `include(":module:online")`；建 `build.gradle.kts`（namespace `com.rawsmusic.module.online`，依赖 core:common / module:data / okhttp / gson / zxing / coroutines）；`:core:ui` 与 `:app` 加依赖。
+  - 验收：`.\gradlew.bat :module:online:compileDebugKotlin` 通过（空模块）。
+  - 依赖：P0-05
+
+- [ ] **P1-02 移植在线模型** — `OnlinePlatform`(5 平台) / `OnlinePlaylistTag` / `OnlinePlaylist` / `OnlineSongItem` / `OnlineLeaderboard` / `OnlineArtistCategory` / `OnlineArtist` / `OnlineAlbum` / `OnlineArtistDetail` → `core/common/.../model/OnlineMusicModels.kt`（或 module:online 内，视引用范围定）。
+  - 依赖：P1-01
+
+- [ ] **P1-03 定义 `OnlinePlatformSource` 接口** — 从 `IOnlineMusicSource` 改名迁入；保留歌手/专辑方法的默认空实现。
+  - 依赖：P1-02
+
+- [ ] **P1-04 移植网易云适配器** — 含 `NeteaseCrypto`（weapi/eapi）。端点/Referer/fallback 照搬。
+  - 验收：真机能拉到 tags、分类歌单、榜单、歌单详情。
+  - 依赖：P1-03
+
+- [ ] **P1-05 移植 QQ 音乐适配器** — 含 `musicu.fcg` 统一入口、JSONP 清洗、封面 URL 规则。
+  - 依赖：P1-03
+
+- [ ] **P1-06 移植酷狗适配器** — 含 `mobilecdn*` 系列与 2 条搜索 fallback。
+  - 依赖：P1-03
+
+- [ ] **P1-07 移植酷我适配器** — 含 `r.s` 单引号 JSON 修正。
+  - 依赖：P1-03
+
+- [ ] **P1-08 移植咪咕适配器** — 含硬编码榜单兜底与 `resolveMiguDirectPlayUrl` 两步直链。
+  - 依赖：P1-03
+
+- [ ] **P1-09 `OnlineMusicRepository`（单平台 + 缓存）** — 平台切换、tags/歌单/榜单/详情/搜索、LruCache 风格缓存（详情 50 条）。
+  - 依赖：P1-04 ~ P1-08
+
+- [ ] **P1-10 全网搜歌（多平台聚合）** — `searchSongsAllPlatforms` 并发 fan-out + `searchSongsAggregated` 轮询合并去重 + `searchArtists`/歌手详情/歌手专辑 + `parseLinkOrText`。
+  - 依赖：P1-09
+
+- [ ] **P1-11 播放解析适配层** — 从 `OnlineAudioSourceManager` 只摘算法：`OnlinePlaybackMatcher`（标题清洗/歌手拆分/时长容差/打分）、音质阶梯、`OnlinePlaybackProbe`（HEAD/Range + 时长校验）、网易 outer / 咪咕直链兜底；**接在 RawS 既有 `MusicSourceAudioResolver` 前后，不替换**。
+  - 依赖：P1-09
+  - 注意：`OnlinePlaylistViewModel` 不要移植，改成 Store + `StateFlow`。
+
+- [ ] **P1-12 Room 建表 + 迁移（6→7，与 P2-01 同一迁移）** — `MIGRATION_6_7`（⚠️ **`MIGRATION_5_6` 已被上游的 `scan_directory` 占用，DB 当前 version = 6**）：`online_playlist_favorites` + `song_attitude` + `playlist_groups` + `user_playlists.group_name` 列 + 索引；在 `MusicDatabase.getInstance()` 的 `.addMigrations(...)` 注册；比对 `module/data/schemas/7.json`。
+  - 验收：升级安装后老数据（曲库/收藏/统计）不丢；schema 校验通过。
+  - 依赖：P0-05
+
+- [ ] **P1-13 在线门户 UI 骨架** — `NavScene.ONLINE_MUSIC`(**id 54**；上游当前最大是 `HDR_SETTINGS(53)`) + `OnlineMusicPortalPage.kt`（骨架照抄 `SourceImportPage`：二级 tab + `LiquidBottomTabs` + 独立返回栈）+ `ComposeNavHost` 分支 + `AppSideRailDestination` 入口 + 文案（core:ui 中/英双语）。
+  - 验收：侧栏能进入门户，4 个 tab 可切换，返回手势正确。
+  - 依赖：P1-09、P1-13 前置的 P1-12
+
+- [ ] **P1-14 广场/歌手库/全网搜歌/收藏 四个 tab 的完整 UI** — 平台 chip 行、精选/分类/榜单/收藏 次级 tab、歌单卡片网格（`chunked(N)` + `VirtualListCustomProvider`，**不用 LazyVerticalGrid**）、歌单详情页（`NavScene.ONLINE_PLAYLIST_DETAIL`=**55**）、歌手网格与详情、双输入搜歌 + 平台过滤 + 分页 + 历史、四态（加载/空/错误/内容）齐全、失败经 `AppNoticeBus`。
+  - 验收：见 `AGENTS.MD` §8.2 ① 全部 6 项。
+  - 依赖：P1-13、P2-01（喜欢/不喜欢落库）
+
+---
+
+## P2 歌单管理
+
+> 设计见 `AGENTS.MD` §6.2。
+
+- [ ] **P2-01 喜欢 / 不喜欢（数据层）** — `SongAttitudeDao` + `SongAttitudeRepository`（`StateFlow`）；`song_key` 规则必须与 `UserPlaylistSongEntity.song_key` 一致；`NONE→FAVORITE→DISLIKED→NONE` 循环 + `setFavorite` / `removeDislike` / `clearAllDislikes` / `batchSync`。
+  - 依赖：P1-12
+
+- [ ] **P2-02 喜欢 / 不喜欢（UI）** — **改 `app/.../ui/playlist/PlaylistScreen.kt`（不是 `core/ui/.../PlaylistsPage.kt`，后者是 29 行空壳占位页）**：顶部两个伪歌单卡片（曲目数实时）+ 歌曲长按菜单三项 + 清空不喜欢的二次确认 + 批量喜欢。
+  - 依赖：P2-01
+
+- [ ] **P2-03 歌单分组（数据层）** — `PlaylistGroupStore`：增/改名/删/排序；删分组时其下歌单回落 `默认`。
+  - 依赖：P1-12
+
+- [ ] **P2-04 歌单分组（UI）** — 歌单页按 `SectionHeader(groupName)` 分区；歌单/分组长按 → 移动分组/改名/删除。
+  - 依赖：P2-03、P2-02（同一文件，建议串行）
+
+- [ ] **P2-05 先定契约** — 读 `UserPlaylistDao` + `PlaylistStore`，把在线虚拟曲目与 `song_key` / `media_id` 的约定写成简短结论（贴进本任务备注），再动手 P2-06。
+  - 依赖：P1-12
+
+- [ ] **P2-06 歌单导入导出（逻辑层）** — 移植 `PlaylistTransferManager`：JSON(schema v1) / M3U8(`#EXTINF` + `#EXTRAWS-*` 标签) / 纯文本 / 分享；导出到 `cacheDir/playlist_exports` 或 MediaStore Downloads。
+  - 依赖：P2-05
+
+- [ ] **P2-07 歌单导入导出（UI）** — `ExportPlaylistDialog` / `ImportPlaylistDialog`（Miuix + `RawMiuixOverlayDialog`）；导入支持 链接 / JSON / M3U8 / 纯文本 四种输入。
+  - 依赖：P2-06
+
+- [ ] **P2-08 QQ 音乐扫码登录（逻辑层）** — `IPlatformAuthService` / `PlatformAccountModels` / `QQMusicAuthService` / `PlatformAccountManager`；cookie 用 Keystore + AES-GCM 加密后存 `AppPreferences.PlatformAuth`；`QrCodeGenerator`（ZXing）。
+  - 验收：能拿到二维码、轮询到登录成功、能拉取"我创建的"与"我收藏的"歌单。
+  - 依赖：P1-01
+
+- [ ] **P2-09 酷狗扫码登录（逻辑层）** — `KugouMusicAuthService`，**必须保留 10 条候选 URL 兜底链**与签名盐常量；凭据同样加密存储。
+  - 依赖：P1-01、P2-08（复用账号模型与存储）
+
+- [ ] **P2-10 平台账号 UI** — 「平台账号」页（QQ / 酷狗两张账号卡：头像/昵称/VIP/登录/退出/刷新），入口放设置「在线音乐」分组；扫码弹窗（`RawMiuixOverlayDialog` + `DisposableEffect` 取消轮询）。
+  - 依赖：P2-08、P2-09
+
+- [ ] **P2-11 导入我的歌单（UI）** — 拉取账号歌单 → 多选 → 导入为本地歌单（在线曲目保留 `online://` 标识，播放走 P1-11 解析层）。
+  - 依赖：P2-10、P2-06
+
+- [ ] **P2-12 歌单同步（逻辑层）** — `CloudPlaylistSyncClient`：对接 `/api/user/auth`、`/api/user/playlists/{backup,restore,delete}`；JSON 字段与 `docs/cloud-sync-contract.md` §4 **逐字一致**；`mode=merge|overwrite`；喜欢/不喜欢按系统歌单名 `我喜欢的音乐`/`不喜欢的音乐` + `groupName="系统"` 序列化；密码加密存储。
+  - 依赖：P1-12、P2-01
+
+- [ ] **P2-13 歌单同步（UI）** — 云同步页（骨架照抄 `WebDavPage.kt`）：地址 / 账号 / 上传模式 / 选择性上传下载 / 清空二次确认 / 显示 `updated_at`。
+  - 依赖：P2-12
+
+- [ ] **P2-14（可选，低优先）最近播放歌单** — `AppPreferences` 存 current/previous 两个条目。
+  - 依赖：P2-13
+
+---
+
+## P3 洛雪歌源同步
+
+> 设计见 `AGENTS.MD` §6.3。**运行时不移植**（RawS 已有 `MusicSourceRuntimeService`），只做云同步。
+
+- [ ] **P3-01 阅读音源安装 API** — 读 `LxSourcePluginStore` / `MusicSourcePluginStore` / `MusicSourcePersistenceJson`，确认"从内容安装脚本"的现有入口与目录约定，写下结论。
+  - 依赖：P0-05
+
+- [ ] **P3-02 定义同步 DTO（并集）** — `CloudSourceEntry`：`id, name, version, author, description, sourceUrl, scriptContent, scriptSha256, enabled, isPrimary, supportPlatforms, installedAtMs, updatedAtMs, origin, methods`；Gson 序列化。
+  - 依赖：P3-01
+
+- [ ] **P3-03 `CloudSourceSyncClient`** — 上传时**读取脚本文件内容内联进 JSON**（RawS 只存 `scriptPath`，不能只传路径）；还原时写回文件 → 校验 sha256 → 走既有安装 API 注册；兼容 OrBit 备份（有 `scriptContent` 无 `scriptPath`）；缺正文时报「该备份不完整」。
+  - 依赖：P3-02
+  - 验收：清数据后从云端还原的音源**能真正解析出播放地址**。
+
+- [ ] **P3-04 音源门户新增「云同步」tab** — 追加 `SourcePortalTab.CloudSync`；**同步更新 `SourcePortalBottomNavigation` 的 tab 数、`SourcePortalTabIcon` 映射**；内容：地址输入（用户自填、不内嵌）/ 登录 / 上传 / 下载 / 删除 / 清空 / 上次备份时间 / 条目列表。
+  - 依赖：P3-03
+
+- [ ] **P3-05 音源门户新增「云同步」文案** — core:ui 中英双语。
+  - 依赖：P3-04
+
+- [ ] **P3-06（可选，P3）社区音源广场** — `GET /api/sources` 列表 + 一键安装。**注意该接口无鉴权**；开放发布需先改 Worker（属改后端，须用户批准）。默认关闭。
+  - 依赖：P3-04
+
+---
+
+## P4 频谱可视化
+
+> 设计见 `AGENTS.MD` §6.4。**数据源已存在**（`RealtimeSpectrumPipeline`，112 频点）；只做渲染 + 参数 + UI。
+
+- [ ] **P4-01 扩展 `AudioVisualizerStyle` 枚举** — **只追加** `BarsWithPeaks=6, AuroraMountain=7, MirroredBars=8, TimeTunnel=9, Octgrams=10, SoundCity=11, FractalGalaxy=12, QuantumVortex=13`；**严禁重排 0..5**；`from(value)` 兜底保持 `Spectrum`。
+  - 验收：老用户偏好（0..5）升级后不错位。
+  - 依赖：P0-05
+
+- [ ] **P4-02 新增 `VisualizerColorScheme`** — 5 种配色（primary/secondary/peak 三色），存 `AppPreferences.UI`。
+  - 依赖：P4-01
+
+- [ ] **P4-03 视觉参数入 `AppPreferences.UI.Visualizer`** — `barWidthDp` / `barAlpha` / 描边（宽、色、透明度、仅描边）/ `singleColor` / 自定义双色 / `peakDecayEnabled` / 背景亮暗色 / `isVisualizerMaximized`。
+  - 依赖：P4-02
+
+- [ ] **P4-04 Canvas 形态：BarsWithPeaks / AuroraMountain / MirroredBars** — 移植物理参数（attack 0.82 / decay 0.68、<0.02 归零、峰值保持 5 帧、重力 0.0035、峰值≥柱高）；复用 RawS 频点，不新造数据源。
+  - 依赖：P4-03
+
+- [ ] **P4-05 GL 形态 1/2：TimeTunnel、Octgrams** — `core/ui/.../widget/player/gl/`：`GLSurfaceView.Renderer` 数学照搬 + `AndroidView` 包装（EGL2/3、`RENDERMODE_CONTINUOUSLY`、不可见即 `onPause()`）。
+  - 依赖：P4-03
+
+- [ ] **P4-06 GL 形态 2/2：SoundCity、FractalGalaxy、QuantumVortex** — 同上。
+  - 依赖：P4-05（复用 GL 包装与生命周期工具）
+
+- [ ] **P4-07 播放器页形态选择器扩展** — 改 `MainActivity.kt`（约 `:3483-3494` 一带）与 `ComposePlayerContainer.kt` 的 `AudioVisualizerStyle` 参数；**不要只改设置页**（现有形态切换在播放器页）。
+  - 依赖：P4-04、P4-06
+
+- [ ] **P4-08 设置页参数 + 全屏最大化** — `PlayerInterfaceScreen.kt` 加配色/参数滑块 + 小尺寸实时预览；播放器页加全屏最大化可视化（点按退出 + 返回键处理）。
+  - 依赖：P4-07
+  - 验收：见 `AGENTS.MD` §8.2 ④ 全部 8 项（含 50 次切换不崩、GL 正确 pause/resume）。
+
+---
+
+## P5 云同步统一入口 + 收尾回归
+
+- [ ] **P5-01 `CloudSyncClient` 统一封装** — 合并 P2-12 与 P3-03 的重复 HTTP 逻辑：统一 OkHttp 实例、`CloudSyncResult<T>`、服务器地址/账号/密码的 `AppPreferences.CloudSync` 与加密、错误映射。
+  - 依赖：P2-12、P3-03
+
+- [ ] **P5-02 独立「云同步」设置页** — `NavScene.CLOUD_SYNC` + 入口；集中呈现歌单同步与音源同步两块（骨架照抄 `WebDavPage.kt`）。
+  - 依赖：P5-01
+
+- [ ] **P5-03 全量构建 + Room 升级回归** — `:app:assembleDebug` + 覆盖安装升级测试（老版本 → 新版），确认曲库/收藏/播放统计/音源/设置全部保留。
+  - 依赖：P0-04、全部功能任务
+  - 验收：`AGENTS.MD` §8.1 全部条目。
+
+- [ ] **P5-04 四大功能端到端验收** — 逐条勾选 `AGENTS.MD` §8.2 ①②③④ 的全部验收项，结果记录在本文件末尾。
+  - 依赖：P5-03
+
+- [ ] **P5-05 文档收口** — 更新 `AGENTS.MD` §9 决策表（补充实际发生的决策）、`docs/` 两份参考文档；把本文件所有任务置为 `[x]` 或 `[-]`。
+  - 依赖：P5-04
+
+---
+
+## 依赖关系（串行链）
+
+```
+P0-01 → P0-02 → P0-03 ┐
+                      ├→ P0-05 → P0-06
+        P0-04 ────────┘
+P0-05 → P1-01 → P1-02 → P1-03 → P1-04..P1-08 → P1-09 → P1-10
+P0-05 → P1-12 → P1-09 → P1-13 → P1-14
+P1-12 → P2-01 → P2-02 → P2-04
+P1-12 → P2-03 ─────────┘
+P1-12 → P2-05 → P2-06 → P2-07 → P2-11
+P1-01 → P2-08 → P2-09 → P2-10 → P2-11
+P1-12 + P2-01 → P2-12 → P2-13 → P2-14
+P0-05 → P3-01 → P3-02 → P3-03 → P3-04 → P3-05 → P3-06
+P0-05 → P4-01 → P4-02 → P4-03 → P4-04 ┐
+                        P4-03 → P4-05 → P4-06 ┴→ P4-07 → P4-08
+P2-12 + P3-03 → P5-01 → P5-02 → P5-03 → P5-04 → P5-05
+```
+
+**可并行开工的三条线**（互不冲突）：
+- 线 A：`P1-*` → `P2-*`（在线能力与歌单管理）
+- 线 B：`P3-*`（音源云同步，只碰音源门户与独立文件）
+- 线 C：`P4-*`（可视化，只碰 `core/ui/.../widget/player/` 与 `PlayerInterfaceScreen`/`MainActivity` 可视化段）
+
+⚠️ **冲突提示**：`P2-02`/`P2-04` 与 `P4-07` 都会改 `MainActivity.kt`；`P2-02`/`P2-04` 会改 `PlaylistScreen.kt`。这些任务**不要并行**。
+
+---
+
+## 基线记录（P0-06 产出，待填）
+
+| 功能 | 改动前状态 | 备注 |
+| --- | --- | --- |
+| 本地曲库扫描 | 待填 | |
+| 本地播放 | 待填 | |
+| 歌单增删改 | 待填 | |
+| 音源导入（LX） | 待填 | |
+| 音源导入（MusicFree） | 待填 | |
+| 实时可视化开关 | 待填 | |
+| WebDAV 备份页 | 待填 | |
+
+## 验收记录（P5-04 产出，待填）
+
+| 功能域 | 结果 | 日期 | 备注 |
+| --- | --- | --- | --- |
+| ① 在线歌单广场 | 待填 | | |
+| ② 歌单管理 | 待填 | | |
+| ③ 洛雪歌源同步 | 待填 | | |
+| ④ 频谱可视化 | 待填 | | |
