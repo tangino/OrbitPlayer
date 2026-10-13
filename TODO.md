@@ -214,8 +214,26 @@
   - **`insertSongs` 用 `OnConflictStrategy.IGNORE`，而 `upsertSongs` 用 `REPLACE`** —— 重复添加同一首歌时两者行为不同（IGNORE 保留旧行、REPLACE 覆盖）。P2-06 批量导入时要想清楚用哪个，否则重复导入会静默丢数据或覆盖 `addedAt`。
   - 依赖：P1-12
 
-- [ ] **P2-06 歌单导入导出（逻辑层）** — 移植 `PlaylistTransferManager`：JSON(schema v1) / M3U8(`#EXTINF` + `#EXTRAWS-*` 标签) / 纯文本 / 分享；导出到 `cacheDir/playlist_exports` 或 MediaStore Downloads。
+- [ ] **P2-05b 在线曲目在本地歌单里怎么表示（P2-06 / P2-07 的前置设计，**先定这个再写导入**）** — 已设计，待实现：
+  - **背景**：P2-05 查明 `PlaylistStore.resolveSongs` 会把不在曲库、且本地文件不存在的行**静默丢弃**，而导入 QQ/酷狗歌单必然产生这类行。不定好表示法，导入会「看起来成功但列表是空的」。
+  - **选定方案（Option B：本地/在线两条路，不新建表）**：仍写进 `user_playlist_songs`，用以下约定区分 ——
+    | 列 | 在线曲取值 |
+    | --- | --- |
+    | `song_key` | `"online://<platformId>/<songId>"`（**与 `song_attitude.song_key` 完全一致**，这样喜欢/不喜欢能对上） |
+    | `path` | **同一个 `online://` 串** —— OrBit 的 `isOnlineSong` 就是判 `path.startsWith("online://")`，沿用这个约定可以让「是否在线曲」跟着行走 |
+    | `id` | `generateVirtualSongId(platform, songId)`，**照搬 OrBit 算法**（`OnlineAudioSourceManager:48`）：`hash = "<platformId>:<songId>".hashCode().toLong()`，`hash > 0 → -hash`，`hash == 0 → -999999L`，否则原样。**负数保证不与本地 MediaStore id 冲突，且是稳定值**（跨端同步要靠它对齐） |
+    | 元数据 | `title/artist/album/duration` 存平台快照；`fileSize = 0`、`albumArtPath` **留空**（在线封面是 http URL，塞进 albumArtPath 会被当作本地文件路径使用而出错；封面由在线解析层按需取） |
+  - **`resolveSongs` 不改语义、不改返回类型**（它被 16 处调用，改返回类型会大面积回归）。改为**新增**一个并列访问器：
+    `PlaylistStore.onlineSongsOf(playlist): List<UserPlaylistSong>`（过滤 `key.startsWith("online://")`），
+    并提供一个合并视图 `playlistEntries(playlist, librarySongs)` 返回 `(local: List<AudioFile>, online: List<OnlineEntry>)`，**歌单详情页改用这个**，分两段渲染：本地段走既有虚拟列表，在线段点击走 `OnlinePlaybackLauncher`。
+  - **不新建表**：`playlist_groups` / `song_attitude` 已在 `MIGRATION_6_7` 落地，再建表就得开 `MIGRATION_7_8`，而现有列完全够用（`key` 是 TEXT、`id` 是 INTEGER，负数 Long 放得下）。
+  - **播放与队列**：整单播放时本地曲沿用现有队列；在线曲需逐首解析（与 P1-14「播放全部只起播第一首」同一限制），**不要**为它伪造本地路径。
   - 依赖：P2-05
+
+- [ ] **P2-06 歌单导入导出（逻辑层）** — 移植 `PlaylistTransferManager`：JSON(schema v1) / M3U8(`#EXTINF` + `#EXTRAWS-*` 标签) / 纯文本 / 分享；导出到 `cacheDir/playlist_exports` 或 MediaStore Downloads。
+  - ⚠️ **先落实 P2-05b 的在线曲表示**，否则导入的在线曲目会被 `resolveSongs` 丢掉。
+  - ⚠️ 批量写用 `UserPlaylistDao.insertSongs`（`IGNORE`）还是 `upsertSongs`（`REPLACE`）要想清楚：**同曲重复导入时二者行为不同**（IGNORE 保留旧行与旧 `addedAt`，REPLACE 覆盖）。
+  - 依赖：P2-05、P2-05b
 
 - [ ] **P2-07 歌单导入导出（UI）** — `ExportPlaylistDialog` / `ImportPlaylistDialog`（Miuix + `RawMiuixOverlayDialog`）；导入支持 链接 / JSON / M3U8 / 纯文本 四种输入。
   - 依赖：P2-06
