@@ -244,6 +244,11 @@
   - 依赖：P2-05
 
 - [ ] **P2-06 歌单导入导出（逻辑层）** — ⚠️ **已重新勘察：不要从零写 `PlaylistTransferManager`，RawS 已有一大半。**
+  - **进度**：
+    - [x] **M3U8 编解码器** —— ✅ 提交 `317d0a8`（`module/data/.../playlist/PlaylistM3u8Codec.kt` + 6 个往返单测，`tests=6 failures=0 errors=0 skipped=0`）。`encode` / `decode` 是纯函数，`writeExportFile` 落 `cacheDir/playlist_exports`。解码侧同时认 `#EXT-RAWS-` 与 `#EXT-ORBIT-` 两种前缀。
+      - ⚠️ **导出侧写不了封面/平台/创建者标签**：RawS 的 `UserPlaylist` 只有 id/name/songs/时间，歌曲的 `albumArtPath` 是**本地路径**而非 http 封面 → 不写 `COVER`/`PLATFORM`/`CREATOR`/`EXTIMG`，但**解码侧全部认识**（读 OrBit 的完整文件没问题，我们导出的只是少装饰信息）。
+    - [ ] **接线到 `PlaylistStore`**：导出走 `playlistStore.playlists` + `PlaylistM3u8Codec.writeExportFile`；导入要**先按 `#EXTINF` 的「歌名/歌手」匹配曲库**（现有 `importTextPlaylist` 只按路径匹配，`#` 行被整个跳过，元数据白丢），匹配不到再回退路径匹配；在线条目用 `OnlineSourceMediaMapper.toUserPlaylistSong` 落库（注意 `:module:data` **不能**依赖 `:module:online`，所以在线行要用 core 里的 `onlineSongKey` / `generateVirtualSongId` 自己构造）。
+    - [ ] **文件分享**（`ACTION_SEND` 或 MediaStore Downloads）+ **链接导入**（`OnlineMusicRepository.parseLinkOrText`，这步在 `:module:online` 或 UI 层）。
   - **`PlaylistStore` 里已经存在（禁止重写，铁律 5）**：
     | 已有能力 | 位置 |
     | --- | --- |
