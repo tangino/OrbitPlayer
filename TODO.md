@@ -135,9 +135,24 @@
   - 已核对自动生成的 `module/data/schemas/.../7.json`：`version=7`、**18/18 列**（列名/类型/notNull/defaultValue）与迁移 SQL 一致、三个索引名满足 `index_<表>_<列>`、`group_name` 的 `defaultValue` 在实体/迁移/schema 三处逐字符一致（`'默认'`）。
   - ⚠️ **待真机验证**：迁移**没有在真实 v6 库上跑过**（`module:data` 无 `MigrationTestHelper`，加测试依赖违反「不新增依赖」）。需要在装有 v6 库的设备上覆盖安装一次，确认不抛 schema 校验异常。
 
+- [x] **P1-11b 接入 RawS 既有解析链路** — ✅ 已完成（提交 `b5853f9`）。新增 `OnlineSourceMediaMapper` + `OnlinePlaybackBridge`，**不替换** `MusicSourceAudioResolver`（AGENTS §6.1-5 / §9 D5）。
+  - `onlineSongKey = online://<platformId>/<songId>`（与 OrBit 逐字一致 → `song_attitude` 跨端互认）；`onlinePlaylistKey = <platformId>_<remoteId>`（与 `online_playlist_favorites.playlist_key` 一致）。
+  - `selectBestCandidate`：先 `isMatched` **硬过滤**（歌名+歌手+5 秒容差）再按 `calculateMatchScore` 排序 —— 防止「歌名像就播了别人的版本」。
+  - `resolveFirstPlayable`：逐个候选尝试，resolver 以函数注入（不直接依赖 `:module:data` 实现，保持可测）。
+  - ⚠️ **已知集成约束（P1-14 必须处理）**：映射产出的 `sourceId` 是**平台 id**（身份用途），而 `MusicSourceAudioResolver` 是按「用户已安装的音源 id」查表的 → **不能把映射结果直接交给解析器**。正确顺序：先搜用户音源拿候选 → `selectBestCandidate` → 再调既有 resolver → `validateResolved` 探活。端到端接线的落点在 P1-14 的播放按钮处（那里才有真实调用点）。
+
 - [ ] **P1-14 广场/歌手库/全网搜歌/收藏 四个 tab 的完整 UI** — 平台 chip 行、精选/分类/榜单/收藏 次级 tab、歌单卡片网格（`chunked(N)` + `VirtualListCustomProvider`，**不用 LazyVerticalGrid**）、歌单详情页（`NavScene.ONLINE_PLAYLIST_DETAIL`=**55**）、歌手网格与详情、双输入搜歌 + 平台过滤 + 分页 + 历史、四态（加载/空/错误/内容）齐全、失败经 `AppNoticeBus`。
   - 验收：见 `AGENTS.MD` §8.2 ① 全部 6 项。
   - 依赖：P1-13、P2-01（喜欢/不喜欢落库）
+  - **执行计划（先拆分再并行，避免多任务改同一文件冲突）**：
+    1. **先拆分**：把 `OnlineMusicPortalPage.kt` 里的 tab 枚举/顶栏/chip 行/tab 栏留在原文件，四个 tab 的内容各自拆成独立文件：
+       `OnlinePlazaTab.kt`（广场）、`OnlineArtistTab.kt`（歌手库）、`OnlineSearchTab.kt`（全网搜歌）、`OnlineFavoritesTab.kt`（我的收藏），
+       再加 `OnlinePlazaDetailPage.kt`（歌单详情）与 `OnlinePlazaComponents.kt`（歌单卡片等共用件）。**每个文件 ≤800 行**（AGENTS §5.1）。
+       `OnlineMusicPortalPage` 的 body 改为 `when (selectedTab)` 分发到这四个 Composable。**这一步做完必须先编译通过再往下走。**
+    2. 拆完后四个 tab 可**并行**开发（分属不同文件，无冲突）。
+    3. 统一约定：状态用页面内 `remember` + 单例 Store/Repository 的 `StateFlow`（**不引入 ViewModel**，AGENTS §4.4）；四态页面内联实现（**全仓没有共享 Loading/Empty/Error 组件**）；错误经 `AppNoticeBus.error`；所有文案进 `core:ui` 的 `values/`（中）+ `values-en/`（英）。
+    4. 歌单详情页要在 `ComposeNavHost` 注册 `NavScene.ONLINE_PLAYLIST_DETAIL` 分支（该场景已建好，id 55）。
+    5. 每完成一个 tab 就跑一次 `:app:compileReleaseKotlin` 并单独提交。
 
 ---
 
