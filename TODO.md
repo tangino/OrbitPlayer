@@ -107,15 +107,29 @@
 - [x] **P1-10 全网搜歌（多平台聚合）** — ✅ 已完成（同一文件）：`searchSongsAllPlatforms` 并发 fan-out + `searchSongsAggregated` 轮询合并去重，以及 `searchArtists` / 歌手详情 / 歌手专辑 / `parseLinkOrText`。
   - 依赖：P1-09
 
-- [ ] **P1-11 播放解析适配层** — 从 `OnlineAudioSourceManager` 只摘算法：`OnlinePlaybackMatcher`（标题清洗/歌手拆分/时长容差/打分）、音质阶梯、`OnlinePlaybackProbe`（HEAD/Range + 时长校验）、网易 outer / 咪咕直链兜底；**接在 RawS 既有 `MusicSourceAudioResolver` 前后，不替换**。
-  - 依赖：P1-09
+- [x] **P1-11a 播放解析算法层（从 `OnlineAudioSourceManager` 摘算法）** — ✅ 已完成（`playback/` 三个文件）：
+  - `OnlinePlaybackMatcher`：HTML 清洗 / 归一化 / 核心歌名提取 / 特殊版本标签 / 多歌手拆分 / `isMatched`（5 秒容差）/ `calculateMatchScore`（100 分制）。
+  - `OnlineQualityLadder`：音质降级阶梯（原先在 OrBit 里重复出现两处，已抽成一处防漂移）。
+  - `OnlinePlaybackProbe`：Range/HEAD 探活 + Content-Type / 流长度 / `MediaMetadataRetriever` 时长**四层试听片段拦截**；咪咕两步直链解析。
+  - ⚠️ 阈值与 Referer 映射都是反推出来的经验值，**不要凭直觉调整**。
+
+- [ ] **P1-11b 接入 RawS 既有解析链路** — 把 `OnlineSongItem` 转成 `RawSourceMediaItem`，接在 `MusicSourceAudioResolver` 前后作为候选筛选与兜底；**不要替换** RawS 的解析器。
+  - 依赖：P1-11a
   - 注意：`OnlinePlaylistViewModel` 不要移植，改成 Store + `StateFlow`。
 
 - [ ] **P1-12 Room 建表 + 迁移（6→7，与 P2-01 同一迁移）** — `MIGRATION_6_7`（⚠️ **`MIGRATION_5_6` 已被上游的 `scan_directory` 占用，DB 当前 version = 6**）：`online_playlist_favorites` + `song_attitude` + `playlist_groups` + `user_playlists.group_name` 列 + 索引；在 `MusicDatabase.getInstance()` 的 `.addMigrations(...)` 注册；比对 `module/data/schemas/7.json`。
   - 验收：升级安装后老数据（曲库/收藏/统计）不丢；schema 校验通过。
   - 依赖：P0-05
 
-- [ ] **P1-13 在线门户 UI 骨架** — `NavScene.ONLINE_MUSIC`(**id 54**；上游当前最大是 `HDR_SETTINGS(53)`) + `OnlineMusicPortalPage.kt`（骨架照抄 `SourceImportPage`：二级 tab + `LiquidBottomTabs` + 独立返回栈）+ `ComposeNavHost` 分支 + `AppSideRailDestination` 入口 + 文案（core:ui 中/英双语）。
+- [ ] **P1-13 在线门户 UI 骨架** — `NavScene.ONLINE_MUSIC`(**id 54**；上游当前最大是 `HDR_SETTINGS(53)`) + `OnlineMusicPortalPage.kt` + `ComposeNavHost` 分支 + `AppSideRailDestination` 入口 + 文案（core:ui 中/英双语）。
+  - **已勘察完毕的接入点（下一轮直接用，不必再找）**：
+    - `core/ui/.../scene/NavScene.kt`：枚举末端追加，并加进 `isDetail()`。`icon` 传字符串（与现有一致，如 `"public"`）。
+    - `core/ui/.../scene/ComposeNavHost.kt`：在巨型 `when (scene)` 里加分支，照 `NavScene.SOURCE_IMPORT -> SourceImportPage(onBack = onBack, modifier = Modifier.fillMaxSize())` 的写法。
+    - `core/ui/.../scene/AppSideRail.kt`：`AppSideRailDestination` 枚举（L51-59）加成员 + `sideRailItems`（L75-83）加 `SideRailItem(dest, R.string.side_rail_xxx, R.drawable.ic_xxx)`。
+    - 资源：字符串加在 `core/ui/src/main/res/values/strings.xml`（**中文**）与 `values-en/strings.xml`（**英文**）；侧栏图标是 `core/ui/src/main/res/drawable/ic_side_rail_*.xml` 风格的 vector drawable。**注意：改 `AppSideRailDestination` 会让 `MainActivity` 里的 `when (destination)` 变成非穷尽 → 编译报错会直接指出要改的位置，跟着改即可。**
+    - 依赖：`core/ui/build.gradle.kts` 与 `app/build.gradle.kts` 各加 `implementation(project(":module:online"))`（`settings.gradle.kts` 已登记该模块）。
+  - ⚠️ **有意偏差**：不照搬 `SourceImportPage` 背后的整套门户机制（`SourcePortalChrome` / `SourcePortalTab` / `SourcePortalNavigationState` / `SourcePortalPredictiveBack` / `SourcePortalRouteTransition` / `SourcePortalTabHistory` / `SourcePortalTabTransition`，合计 1000+ 行且 `SourcePortalTab` 是音源专用枚举）。在线门户改为**自定义 `OnlinePortalTab` 枚举 + `rememberSaveable` 选中态**，复用通用件 `RawFlowBackground` / `rememberLayerBackdrop` / `LiquidBottomTabs` / `RawMiuixOverlayDialog`，视觉与交互一致但避免复制一整套专用机制。若后续确实需要 tab 级转场与预测性返回的同等打磨，再考虑把该机制泛化，而不是复制。
+  - 验收：侧栏能进入门户，4 个 tab（歌单广场 / 歌手库 / 全网搜歌 / 我的收藏）可切换，返回正确。
   - 验收：侧栏能进入门户，4 个 tab 可切换，返回手势正确。
   - 依赖：P1-09、P1-13 前置的 P1-12
 
