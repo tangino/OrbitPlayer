@@ -177,10 +177,14 @@
 
 > 设计见 `AGENTS.MD` §6.2。
 
-- [ ] **P2-01 喜欢 / 不喜欢（数据层）** — `SongAttitudeDao` + `SongAttitudeRepository`（`StateFlow`）；`song_key` 规则必须与 `UserPlaylistSongEntity.song_key` 一致；`NONE→FAVORITE→DISLIKED→NONE` 循环 + `setFavorite` / `removeDislike` / `clearAllDislikes` / `batchSync`。
+- [x] **P2-01 喜欢 / 不喜欢（数据层）** — ✅ 已完成（提交 `69fe4bc`，`module/data/.../repository/SongAttitudeRepository.kt`）。
+  - ⚠️ **本轮发现规格有误**：`AGENTS.MD` §3.5 原写「喜欢/不喜欢都不存在」，实测 RawS **已有**完整的「喜欢」机制 —— `FAVORITES_PLAYLIST_ID = "favorites"` 系统歌单（名正好是「我喜欢的音乐」）+ `PlaylistStore.favoriteSongKeys/isFavorite/toggleFavorite`，且已打通**播放器**（`PlayerService`）、**长按菜单**（`SongActionSheetHelper`）、**歌单页**（`PlaylistScreen` 心形/粉色强调/禁止改名删除）、**WebDAV 备份**（`BackupAndroidPersistence`/`BackupArchiveCodec`）。
+  - **用户决策（§9 D14）：混合方案** —— 本地曲的喜欢**沿用既有歌单**（不接管，避免两个事实来源让心形状态不一致）；**不喜欢（本地+在线）**与**在线曲的喜欢**走 `song_attitude`。
+  - 已实现：`dislikedKeys` / `onlineFavoriteKeys`（**只收 `online://` 前缀**）/ `setDisliked` / `removeDislike` / `clearAllDislikes` / `setOnlineFavorite` / `setOnlineFavorites`（批量）/ `cycleOnline`（`NONE→FAVORITE→DISLIKED→NONE`）。写入后统一 `refresh` 发布 `StateFlow`。
   - 依赖：P1-12
 
 - [ ] **P2-02 喜欢 / 不喜欢（UI）** — **改 `app/.../ui/playlist/PlaylistScreen.kt`（不是 `core/ui/.../PlaylistsPage.kt`，后者是 29 行空壳占位页）**：顶部两个伪歌单卡片（曲目数实时）+ 歌曲长按菜单三项 + 清空不喜欢的二次确认 + 批量喜欢。
+  - ⚠️ **按 §9 D14**：本地曲的「喜欢」要调 `PlaylistStore.toggleFavorite(song)`（既有机制），**不要**调 `SongAttitudeRepository`；「不喜欢」与在线曲的「喜欢」才走 `SongAttitudeRepository`。
   - 依赖：P2-01
 
 - [ ] **P2-03 歌单分组（数据层）** — `PlaylistGroupStore`：增/改名/删/排序；删分组时其下歌单回落 `默认`。

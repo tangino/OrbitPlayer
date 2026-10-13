@@ -228,7 +228,7 @@ RawS **不用** Navigation-Compose 的 route 字符串，用自研枚举 + 单�
 | 歌单 | `module/data/.../db/UserPlaylistDao.kt`、`entity/UserPlaylistEntities.kt`、`prefs/PlaylistStore.kt` | **扩展** |
 | 平台账号登录 | **不存在** | 需完整移植（QQ / 酷狗扫码） |
 | 原生平台曲库（网易/QQ/酷狗/酷我/咪咕） | **不存在**（RawS 只支持用户导入的 LX/MusicFree 脚本） | 需完整移植 |
-| 歌曲喜欢/不喜欢 | **不存在** | 需新建（Room + UI） |
+| 歌曲喜欢/不喜欢 | ⚠️ **「喜欢」其实已经存在**：`FAVORITES_PLAYLIST_ID = "favorites"` 系统歌单（名「我喜欢的音乐」）+ `PlaylistStore.favoriteSongKeys/isFavorite/toggleFavorite`，**已打通**播放器（`PlayerService`）、长按菜单（`SongActionSheetHelper`）、歌单页（`PlaylistScreen` 心形与改名/删除保护）、WebDAV 备份（`BackupAndroidPersistence`/`BackupArchiveCodec`）。**「不喜欢」确实不存在。** | **不要照搬 §6.2(A) 的字面计划**：本地曲的喜欢沿用既有歌单，不喜欢与在线曲喜欢走新表。见 §9 **D14** |
 
 ---
 
@@ -515,6 +515,25 @@ RawS 现有：`user_playlists` / `user_playlist_songs`（Room）+ `PlaylistStore
 
 **(A) 我喜欢的歌 / 我不喜欢的歌**
 
+> ⚠️ **本节原先的假设是错的**（原写「喜欢/不喜欢都不存在」）。实测 RawS **已有**一套完整的「喜欢」机制：
+> 系统歌单 `FAVORITES_PLAYLIST_ID`（`core/common/.../model/UserPlaylist.kt`，名**正好是**「我喜欢的音乐」）
+> + `PlaylistStore.favoriteSongKeys()/isFavorite()/toggleFavorite()`，并且已打通 **播放器**（`PlayerService`）、
+> **长按菜单**（`SongActionSheetHelper`）、**歌单页**（`PlaylistScreen` 的心形、粉色强调色、禁止改名/删除）、
+> **WebDAV 备份**（`BackupAndroidPersistence` / `BackupArchiveCodec`）。
+>
+> 若按本节字面新建 `song_attitude` 并把它当作「喜欢」的事实来源，会**制造第二个事实来源**：
+> 播放器写一处、歌单页读另一处，心形状态不一致。
+>
+> **已确认的决策（§9 D14，用户拍板）——混合方案**：
+>
+> | 场景 | 归属 | 说明 |
+> | --- | --- | --- |
+> | **本地曲的「喜欢」** | `PlaylistStore`（**既有**） | 不要走 `song_attitude.is_favorite` |
+> | **「不喜欢」（本地 + 在线）** | `song_attitude.is_disliked` | RawS 原本没有，纯新增 |
+> | **在线曲的「喜欢」** | `song_attitude.is_favorite` | 既有歌单只能装 `AudioFile`，装不下在线曲 |
+>
+> 实现见 `module/data/.../repository/SongAttitudeRepository.kt`（它**只**负责后两行）。
+
 - Room 新表（与 §6.1 建表同在 `MIGRATION_6_7`）：
   ```sql
   song_attitude(song_key TEXT NOT NULL PRIMARY KEY,
@@ -747,6 +766,7 @@ RawS 现有：`user_playlists` / `user_playlist_songs`（Room）+ `PlaylistStore
 | D11 | 广场/歌手库网格 | **沿用 `chunked(N)` + `VirtualListCustomProvider`**，不引入 `LazyVerticalGrid` | §4.5 / §6.1 |
 | D12 | 环境/构建阻塞 | **已全部解决**（见 §2.2）。`docs/ffmpeg-prebuilt.md` 记录的是当时的排查过程 | — |
 | D13 | **放弃从源码编译原生库，改用预编译 `.so`** | 公开仓库缺 70 个 USB 原生源文件 → CMake 必然失败；改为打包 `jniLibs/` 中官方 1.0.13 的完整 `.so` 集 | §2.2；代价：**原生代码冻结**（本移植不需要改原生） |
+| D14 | **「喜欢」不搬到 `song_attitude`（混合方案，用户拍板）** | 实测 RawS **已有**完整「喜欢」机制（`FAVORITES_PLAYLIST_ID` 系统歌单 + `PlaylistStore`，已打通播放器/长按菜单/歌单页/WebDAV 备份），再建一套会造成**两个事实来源**让心形状态不一致。故：**本地曲的喜欢沿用既有歌单**；**「不喜欢」（本地+在线）与「在线曲的喜欢」**走 `song_attitude` | 修正 §3.5 原「喜欢/不喜欢都不存在」的误判；实现见 `SongAttitudeRepository` |
 
 ### 风险
 
