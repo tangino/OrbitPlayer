@@ -318,6 +318,13 @@
   - 依赖：P2-10、P2-06
 
 - [ ] **P2-12 歌单同步（逻辑层）** — `CloudPlaylistSyncClient`：对接 `/api/user/auth`、`/api/user/playlists/{backup,restore,delete}`；JSON 字段与 `docs/cloud-sync-contract.md` §4 **逐字一致**；`mode=merge|overwrite`；喜欢/不喜欢按系统歌单名 `我喜欢的音乐`/`不喜欢的音乐` + `groupName="系统"` 序列化；密码加密存储。
+  - **进度**：
+    - [x] **契约序列化 + 配置存储** —— ✅ 提交 `0530f42`（`module/online/.../sync/CloudPlaylistJson.kt` + 8 个契约测试，`tests=8 failures=0 errors=0 skipped=0`）。`AppPreferences.CloudSync`（地址自填不内嵌 / 用户名 / **密码只存密文** / 上次备份与还原时间 / 上传模式）。
+      - 已在文件头注明契约里**三处容易猜错的不对称**：① 请求字段 camelCase（`playlistsJson`）而响应字段 snake_case（`playlists_json`），JSON **内容**又是 camelCase；② `sourcePlatform` 与在线收藏的 `platform` 要**大写枚举名**（`NETEASE|QQ|...`），不是内部小写平台 id（Kotlin 枚举 `name` 恰好就是它）；③ 契约里在线收藏叫 `customGroup`，本地实体叫 `groupName`（OrBit 历史命名，**契约优先，不要统一**）。
+      - 按 §5 合并语义：上传侧**丢掉「默认」**（服务端 merge 会丢，但 `overwrite` 不过滤，带着上传会真的存进云端分组列表）、**总是带上「系统」**。
+    - [ ] 剩余：`CloudSyncClient` / `CloudPlaylistSyncClient`（OkHttp + `POST /api/user/auth` + backup/restore/delete/clear + 响应解析 + `CloudSyncResult<T>` 错误映射）。
+      - ⚠️ 实现时必须守 §6 的四条服务端缺陷容错：**① 非法 JSON → 500**（保证序列化合法）；**② `playlists/delete` 不传 `deleteAll` 也不传数组会清空全部云端歌单**（必须显式传参，清空要显式 `deleteAll:true`）；③ 选择性删除不回写 `groups_json`（分组可能残留）；④ `data/clear` **不接受 `userId` 别名**。另：restore 无备份返回 404（不是空数据）。
+      - 注意 P5-01 会把这里的 HTTP 逻辑与 P3-03 合并成统一客户端，所以**别把 HTTP 细节散落到多个地方**。
   - 依赖：P1-12、P2-01
 
 - [ ] **P2-13 歌单同步（UI）** — 云同步页（骨架照抄 `WebDavPage.kt`）：地址 / 账号 / 上传模式 / 选择性上传下载 / 清空二次确认 / 显示 `updated_at`。
