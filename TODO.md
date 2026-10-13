@@ -144,15 +144,21 @@
 - [ ] **P1-14 广场/歌手库/全网搜歌/收藏 四个 tab 的完整 UI** — 平台 chip 行、精选/分类/榜单/收藏 次级 tab、歌单卡片网格（`chunked(N)` + `VirtualListCustomProvider`，**不用 LazyVerticalGrid**）、歌单详情页（`NavScene.ONLINE_PLAYLIST_DETAIL`=**55**）、歌手网格与详情、双输入搜歌 + 平台过滤 + 分页 + 历史、四态（加载/空/错误/内容）齐全、失败经 `AppNoticeBus`。
   - 验收：见 `AGENTS.MD` §8.2 ① 全部 6 项。
   - 依赖：P1-13、P2-01（喜欢/不喜欢落库）
-  - **执行计划（先拆分再并行，避免多任务改同一文件冲突）**：
-    1. **先拆分**：把 `OnlineMusicPortalPage.kt` 里的 tab 枚举/顶栏/chip 行/tab 栏留在原文件，四个 tab 的内容各自拆成独立文件：
-       `OnlinePlazaTab.kt`（广场）、`OnlineArtistTab.kt`（歌手库）、`OnlineSearchTab.kt`（全网搜歌）、`OnlineFavoritesTab.kt`（我的收藏），
-       再加 `OnlinePlazaDetailPage.kt`（歌单详情）与 `OnlinePlazaComponents.kt`（歌单卡片等共用件）。**每个文件 ≤800 行**（AGENTS §5.1）。
-       `OnlineMusicPortalPage` 的 body 改为 `when (selectedTab)` 分发到这四个 Composable。**这一步做完必须先编译通过再往下走。**
-    2. 拆完后四个 tab 可**并行**开发（分属不同文件，无冲突）。
-    3. 统一约定：状态用页面内 `remember` + 单例 Store/Repository 的 `StateFlow`（**不引入 ViewModel**，AGENTS §4.4）；四态页面内联实现（**全仓没有共享 Loading/Empty/Error 组件**）；错误经 `AppNoticeBus.error`；所有文案进 `core:ui` 的 `values/`（中）+ `values-en/`（英）。
-    4. 歌单详情页要在 `ComposeNavHost` 注册 `NavScene.ONLINE_PLAYLIST_DETAIL` 分支（该场景已建好，id 55）。
-    5. 每完成一个 tab 就跑一次 `:app:compileReleaseKotlin` 并单独提交。
+  - **进度**：
+    - [x] **① 歌单广场 tab** —— ✅ 已完成（提交 `7399138`，文件 `OnlinePlazaTab.kt`）。三段式（推荐/分类/榜单）+ 标签 chip 行 + 两列卡片网格（`chunked(2)` + `LazyColumn` 内嵌行）+ 分页 + 万/亿播放量 + 四态内联 + `AppNoticeBus` 错误提示 + `reloadToken` 重试。
+    - [ ] ② 歌手库 tab（`OnlineArtistTab.kt`）
+    - [ ] ③ 全网搜歌 tab（`OnlineSearchTab.kt`）
+    - [ ] ④ 我的收藏 tab（`OnlineFavoritesTab.kt`）—— 依赖 P2-01 的在线歌单收藏读写
+    - [ ] ⑤ 歌单详情页（`OnlinePlazaDetailPage.kt` + `ComposeNavHost` 注册 `ONLINE_PLAYLIST_DETAIL`=55）
+    - [ ] ⑥ 播放接线：歌单详情点歌 → 搜用户音源拿候选 → `OnlinePlaybackBridge.selectBestCandidate` → 既有 `MusicSourceAudioResolver` → `validateResolved` 探活 → `MusicSourcePlaybackController`（**注意 `OnlineSourceMediaMapper` 产出的 `sourceId` 是平台 id，不能直接交给解析器**）
+  - **已建立的约定（后续 tab 照此办理）**：
+    - 状态用页面内 `remember` + 单例 Repository 的 `StateFlow`（**不引入 ViewModel**，AGENTS §4.4）；**不要用 `Get-Content` 读含中文的日志/源码**（pwsh 代码页会乱码，但**同时会让行号偏移约 9 行**，用 `read` 工具）。
+    - 四态**页面内联**实现（全仓没有共享 Loading/Empty/Error 组件）；错误额外经 `AppNoticeBus.error`。
+    - 文案进 `core:ui` 的 `values/`（中）+ `values-en/`（英），key 用 `online_*`。
+    - **Miuix `TextButton` 是 `TextButton(text = String, onClick = ...)`**，没有 slot 版本（踩过：`TextButton(onClick=){...}` 会报 `No value passed for parameter 'text'`）。
+    - `CircularProgressIndicator` 用 `androidx.compose.material3` 的（全仓 13 处、无 Miuix 等价物）；
+    - 封面用 `BitmapImage(key = url, ...)`，其底层 `BitmapProvider` 已支持 http(s) 远程源，**不要引入 Coil**。
+    - 网格沿用 `chunked(N)`（决策 D11），**不要 `LazyVerticalGrid`**。
 
 ---
 
