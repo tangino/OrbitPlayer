@@ -117,21 +117,23 @@
   - 依赖：P1-11a
   - 注意：`OnlinePlaylistViewModel` 不要移植，改成 Store + `StateFlow`。
 
-- [ ] **P1-12 Room 建表 + 迁移（6→7，与 P2-01 同一迁移）** — `MIGRATION_6_7`（⚠️ **`MIGRATION_5_6` 已被上游的 `scan_directory` 占用，DB 当前 version = 6**）：`online_playlist_favorites` + `song_attitude` + `playlist_groups` + `user_playlists.group_name` 列 + 索引；在 `MusicDatabase.getInstance()` 的 `.addMigrations(...)` 注册；比对 `module/data/schemas/7.json`。
-  - 验收：升级安装后老数据（曲库/收藏/统计）不丢；schema 校验通过。
+- [x] **P1-12 Room 建表 + 迁移（6→7，与 P2-01 同一迁移）** — ✅ 已完成（提交 `6c301d0`），详见下方 P1-12 小节。
   - 依赖：P0-05
 
-- [ ] **P1-13 在线门户 UI 骨架** — `NavScene.ONLINE_MUSIC`(**id 54**；上游当前最大是 `HDR_SETTINGS(53)`) + `OnlineMusicPortalPage.kt` + `ComposeNavHost` 分支 + `AppSideRailDestination` 入口 + 文案（core:ui 中/英双语）。
-  - **已勘察完毕的接入点（下一轮直接用，不必再找）**：
-    - `core/ui/.../scene/NavScene.kt`：枚举末端追加，并加进 `isDetail()`。`icon` 传字符串（与现有一致，如 `"public"`）。
-    - `core/ui/.../scene/ComposeNavHost.kt`：在巨型 `when (scene)` 里加分支，照 `NavScene.SOURCE_IMPORT -> SourceImportPage(onBack = onBack, modifier = Modifier.fillMaxSize())` 的写法。
-    - `core/ui/.../scene/AppSideRail.kt`：`AppSideRailDestination` 枚举（L51-59）加成员 + `sideRailItems`（L75-83）加 `SideRailItem(dest, R.string.side_rail_xxx, R.drawable.ic_xxx)`。
-    - 资源：字符串加在 `core/ui/src/main/res/values/strings.xml`（**中文**）与 `values-en/strings.xml`（**英文**）；侧栏图标是 `core/ui/src/main/res/drawable/ic_side_rail_*.xml` 风格的 vector drawable。**注意：改 `AppSideRailDestination` 会让 `MainActivity` 里的 `when (destination)` 变成非穷尽 → 编译报错会直接指出要改的位置，跟着改即可。**
-    - 依赖：`core/ui/build.gradle.kts` 与 `app/build.gradle.kts` 各加 `implementation(project(":module:online"))`（`settings.gradle.kts` 已登记该模块）。
-  - ⚠️ **有意偏差**：不照搬 `SourceImportPage` 背后的整套门户机制（`SourcePortalChrome` / `SourcePortalTab` / `SourcePortalNavigationState` / `SourcePortalPredictiveBack` / `SourcePortalRouteTransition` / `SourcePortalTabHistory` / `SourcePortalTabTransition`，合计 1000+ 行且 `SourcePortalTab` 是音源专用枚举）。在线门户改为**自定义 `OnlinePortalTab` 枚举 + `rememberSaveable` 选中态**，复用通用件 `RawFlowBackground` / `rememberLayerBackdrop` / `LiquidBottomTabs` / `RawMiuixOverlayDialog`，视觉与交互一致但避免复制一整套专用机制。若后续确实需要 tab 级转场与预测性返回的同等打磨，再考虑把该机制泛化，而不是复制。
-  - 验收：侧栏能进入门户，4 个 tab（歌单广场 / 歌手库 / 全网搜歌 / 我的收藏）可切换，返回正确。
-  - 验收：侧栏能进入门户，4 个 tab 可切换，返回手势正确。
-  - 依赖：P1-09、P1-13 前置的 P1-12
+- [x] **P1-13 在线门户 UI 骨架** — ✅ 已完成（提交 `b402fc2`）。
+  - `NavScene.ONLINE_MUSIC(54)` + `ONLINE_PLAYLIST_DETAIL(55)`；`NavSceneLabels` 补两个 `nav_scene_*` 文案（编译期穷尽性检查抓出了这里，已修）。
+  - 侧栏入口：`AppSideRailDestination.ONLINE_MUSIC` + `sideRailItems` 条目 + 新图标 `ic_side_rail_online.xml`；`MainActivity` 的 `when (destination)` 加分支 → `navigateTo(ONLINE_MUSIC)`（同样是穷尽性检查抓出来的，已修）。
+  - `ComposeNavHost` 挂载 `OnlineMusicPortalPage`；`core:ui` 与 `app` 各自加了 `implementation(project(":module:online"))`。
+  - 门户内容：标题栏 + **平台切换 chip 行**（直接驱动 `OnlineMusicRepository.currentPlatform`，是真功能）+ 四个二级 tab + 底部胶囊 tab 栏 + 新图标 `ic_online_{plaza,artist,search,favorite}.xml`。
+  - ⚠️ **有意偏差**：未复用音源专用的 `SourcePortal*` 机制（`SourcePortalChrome`/`SourcePortalTab`/`SourcePortalNavigationState`/预测性返回/路由转场，合计 1000+ 行，且 `SourcePortalTab` 是音源专用枚举）。改为自定义 `OnlinePortalTab` + `rememberSaveable`，只复用通用件。**若后续确实需要同等转场打磨，应把该机制泛化而不是复制。**
+  - 编译验证：`:core:ui:compileReleaseKotlin` ✅ 与 `:app:compileReleaseKotlin` ✅。
+  - 剩余：四个 tab 的内容目前是占位（`online_section_placeholder`），由 P1-14 填入真实数据。
+
+- [x] **P1-12 Room 建表 + 迁移（6→7，与 P2-01 同一迁移）** — ✅ 已完成（提交 `6c301d0`）。
+  - 新增 `online_playlist_favorites` / `song_attitude` / `playlist_groups` 三张表 + `user_playlists.group_name` 列；`MIGRATION_6_7` 已注册，`version = 7`。
+  - 三个 DAO 全部 `suspend`、零 `Flow`；建表 SQL 常量化照抄上游 `ScanDirectorySchema` 范式。
+  - 已核对自动生成的 `module/data/schemas/.../7.json`：`version=7`、**18/18 列**（列名/类型/notNull/defaultValue）与迁移 SQL 一致、三个索引名满足 `index_<表>_<列>`、`group_name` 的 `defaultValue` 在实体/迁移/schema 三处逐字符一致（`'默认'`）。
+  - ⚠️ **待真机验证**：迁移**没有在真实 v6 库上跑过**（`module:data` 无 `MigrationTestHelper`，加测试依赖违反「不新增依赖」）。需要在装有 v6 库的设备上覆盖安装一次，确认不抛 schema 校验异常。
 
 - [ ] **P1-14 广场/歌手库/全网搜歌/收藏 四个 tab 的完整 UI** — 平台 chip 行、精选/分类/榜单/收藏 次级 tab、歌单卡片网格（`chunked(N)` + `VirtualListCustomProvider`，**不用 LazyVerticalGrid**）、歌单详情页（`NavScene.ONLINE_PLAYLIST_DETAIL`=**55**）、歌手网格与详情、双输入搜歌 + 平台过滤 + 分页 + 历史、四态（加载/空/错误/内容）齐全、失败经 `AppNoticeBus`。
   - 验收：见 `AGENTS.MD` §8.2 ① 全部 6 项。
