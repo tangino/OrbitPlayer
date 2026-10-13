@@ -304,7 +304,11 @@
   - 待验证（真机）：能拿到二维码、轮询到登录成功、能列出并导入「我创建的」与「我收藏的」歌单；以及**落盘不可明文读出**。
   - 依赖：P1-01
 
-- [ ] **P2-09 酷狗扫码登录（逻辑层）** — `KugouMusicAuthService`，**必须保留 10 条候选 URL 兜底链**与签名盐常量；凭据同样加密存储。
+- [x] **P2-09 酷狗扫码登录（逻辑层）** — ✅ **已完成，但不是在独立提交里完成的**：范围已被 P1 与 P2-08 覆盖，本轮核实并销账。
+  - 服务本体在 **P1 提交 `c547956`**（「移植 QQ/酷狗扫码登录服务」，逐字移植）。
+  - 核实证据：`KugouMusicAuthService.kt` 里 `WEB_SIGN_SALT`(L42) / `ANDROID_SIGN_SALT`(L43) / `APP_ID="1005"`(L39) / `SRC_APP_ID="2919"`(L40) / `PLAT_ID="4"`(L41) 五个易变常量**全部保留**；**候选 URL 兜底链**保留（`candidateUrls = listOf(...)` 出现在 `:240` 与 `:441` 两处，全文 24 个 `https://`）。
+  - 凭据加密存储由 **P2-08** 统一提供：`PlatformAccountManager` 已注册 `OnlinePlatform.KUGOU to KugouMusicAuthService()`（`PlatformAccountManager.kt:50`），走同一套 `PlatformCredentialCipher` + `AppPreferences.PlatformAuth`。
+  - ⚠️ 真机验证仍待做（在 P2-10 的扫码 UI 落地后一起验）。
   - 依赖：P1-01、P2-08（复用账号模型与存储）
 
 - [ ] **P2-10 平台账号 UI** — 「平台账号」页（QQ / 酷狗两张账号卡：头像/昵称/VIP/登录/退出/刷新），入口放设置「在线音乐」分组；扫码弹窗（`RawMiuixOverlayDialog` + `DisposableEffect` 取消轮询）。
