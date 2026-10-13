@@ -169,6 +169,27 @@ RawS **不用** Navigation-Compose 的 route 字符串，用自研枚举 + 单�
 > **新功能尽量只加 1 个 NavScene**，内部用二级 tab 切换，避免污染底部导航。
 > 现成范例：`SourceImportPage`（`NavScene.SOURCE_IMPORT`）自带 `SourcePortalTab { Sources, Configuration, Downloads }` + `SourcePortalBottomNavigation` + 独立返回栈 `SourcePortalBackRuntime`。
 
+> ⚠️ **设置入口加在哪里（踩过，务必先读）**：**不要**往 `core:ui` 的 `SettingsRootPage` 里加条目 ——
+> 在真实 App 里它根本不会被渲染。原因在 `AppMainLayout.kt`：
+> ```kotlin
+> // core/ui/.../scene/AppMainLayout.kt:667
+> if (targetScene == NavScene.SETTINGS) {
+>     onSettingsClick?.invoke() ?: navState.navigateToSettings()
+> }
+> ```
+> 宿主**提供了 `onSettingsClick` 就直接走宿主自己的设置页**，`ComposeNavHost` 的
+> `NavScene.SETTINGS -> SettingsRootPage`（`ComposeNavHost.kt:882`）只是**没提供回调时的兜底**。
+> 而本项目 `MainActivity.kt:2272` 提供的正是 `launchSettingsActivity(SettingsActivity::class.java)`
+> → 真正渲染的是 **`:app` 的 `LiquidGlassSettingsScreen`（`app/.../ui/settings/LiquidGlassSettings.kt`）**。
+>
+> 所以新设置页的落法（P2-10 已验证可行）：
+> 1. 在 `LiquidGlassSettings.kt` 的 `sections` / `rootItems` 里加分组与入口（入口会自动进入设置搜索索引，不必改 `SettingsSearchIndex.kt`）；
+> 2. 新建 `<Xxx>Activity : BaseSettingsActivity` + `setContent { XxxScreen(onBack = { finish() }) }`（照 `WebDavBackupActivity`）；
+> 3. `AndroidManifest.xml` 声明：`@style/SettingsActivityTheme` + `singleTop` + `enableOnBackInvokedCallback="true"`；
+> 4. `SettingsActivity.kt` 里把导航回调传进去。
+> 这条路**不需要**新加 `NavScene` / `ComposeNavHost` / `AppPageRenderer`，也不必动 `MainActivity.kt`。
+> 文案照 §4.7：`:app` 是**英文进 `values/`、中文进 `values-zh/`**。
+
 ### 3.3 数据层
 
 **Room —— 唯一持久化结构化数据的地方**

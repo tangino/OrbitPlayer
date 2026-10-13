@@ -311,7 +311,11 @@
   - ⚠️ 真机验证仍待做（在 P2-10 的扫码 UI 落地后一起验）。
   - 依赖：P1-01、P2-08（复用账号模型与存储）
 
-- [ ] **P2-10 平台账号 UI** — 「平台账号」页（QQ / 酷狗两张账号卡：头像/昵称/VIP/登录/退出/刷新），入口放设置「在线音乐」分组；扫码弹窗（`RawMiuixOverlayDialog` + `DisposableEffect` 取消轮询）。
+- [x] **P2-10 平台账号 UI** — ✅ 已完成（提交 `f72cf02`）。新增 `PlatformAccountScreen.kt`(518 行) + `PlatformAccountActivity.kt`(12 行)；设置入口新建「在线音乐」分组。
+  - **轮询防泄漏**：弹窗用 `qrTarget?.let { }` 条件组合，轮询全在 `PlatformAccountQrDialog` 的 `LaunchedEffect(platform, attempt)` 内（取码 → `withContext(Default)` 生成位图 → `while(isActive){ delay(2s); checkQrStatus }`）——关弹窗即离开 composition、effect 协程被取消并立刻打断 `delay`；**没有长驻协程、没有要手动 stop 的 Job**。另三道终止：`EXPIRED`/`ERROR` 立即结束、按 `expireTimeMs` 的 deadline 本地兜底、`attempt++` 重新出码。全程未用 `runCatching`。
+  - 文案 EN/ZH 各 35 条、键完全对齐（脚本核对）。
+  - ⚠️ **未真机验证**：二维码两条取图路径（QQ 的 `qrImageBytes` PNG / 酷狗 base64 或 `qrUrl`→ZXing）、头像远程加载（`BitmapImage` 内建 http(s)）、真机扫码全链路、VIP 字段实际返回值。
+  - 📌 **它发现并被我核实的架构事实（已写入 `AGENTS.MD` §3.2）**：设置入口**不能**加在 `core:ui` 的 `SettingsRootPage` —— `AppMainLayout.kt:667` 是 `onSettingsClick?.invoke() ?: navState.navigateToSettings()`，宿主提供了回调就**绕过** core:ui 那页；本项目 `MainActivity.kt:2272` 提供的正是 `launchSettingsActivity(SettingsActivity)` → 真正渲染的是 `:app` 的 `LiquidGlassSettingsScreen`。**后续所有新设置页（含 P2-13 云同步、P4 可视化设置）都按 §3.2 的落法走。**
   - 依赖：P2-08、P2-09
 
 - [ ] **P2-11 导入我的歌单（UI）** — 拉取账号歌单 → 多选 → 导入为本地歌单（在线曲目保留 `online://` 标识，播放走 P1-11 解析层）。
