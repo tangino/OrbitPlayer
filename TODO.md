@@ -145,12 +145,20 @@
   - 验收：见 `AGENTS.MD` §8.2 ① 全部 6 项。
   - 依赖：P1-13、P2-01（喜欢/不喜欢落库）
   - **进度**：
-    - [x] **① 歌单广场 tab** —— ✅ 已完成（提交 `7399138`，文件 `OnlinePlazaTab.kt`）。三段式（推荐/分类/榜单）+ 标签 chip 行 + 两列卡片网格（`chunked(2)` + `LazyColumn` 内嵌行）+ 分页 + 万/亿播放量 + 四态内联 + `AppNoticeBus` 错误提示 + `reloadToken` 重试。
-    - [ ] ② 歌手库 tab（`OnlineArtistTab.kt`）
-    - [ ] ③ 全网搜歌 tab（`OnlineSearchTab.kt`）
-    - [ ] ④ 我的收藏 tab（`OnlineFavoritesTab.kt`）—— 依赖 P2-01 的在线歌单收藏读写
-    - [ ] ⑤ 歌单详情页（`OnlinePlazaDetailPage.kt` + `ComposeNavHost` 注册 `ONLINE_PLAYLIST_DETAIL`=55）
-    - [ ] ⑥ 播放接线：歌单详情点歌 → 搜用户音源拿候选 → `OnlinePlaybackBridge.selectBestCandidate` → 既有 `MusicSourceAudioResolver` → `validateResolved` 探活 → `MusicSourcePlaybackController`（**注意 `OnlineSourceMediaMapper` 产出的 `sourceId` 是平台 id，不能直接交给解析器**）
+    - [x] **① 歌单广场 tab** —— ✅ 提交 `7399138`（`OnlinePlazaTab.kt`）。
+    - [x] **② 歌手库 tab** —— ✅ 提交 `8b06ec2`（`OnlineArtistTab.kt`，355 行）：分类 chip + 两列歌手网格 + 分页 + 四态。
+    - [x] **③ 全网搜歌 tab** —— ✅ 提交 `8b06ec2`（`OnlineSearchTab.kt`，728 行）：歌名+歌手**双输入**、平台过滤（全部＝并发搜 5 平台并按平台分组，单平台失败隔离）、mm:ss 时长、分页、内存态搜索历史。
+    - [x] **④ 我的收藏 tab** —— ✅ 提交 `8b06ec2`（`OnlineFavoritesTab.kt`，242 行）+ 数据层提交 `e8fca36`（`OnlinePlaylistFavoriteStore`）：分组 chip + 取消收藏。
+    - [x] **⑥ 播放接线（数据层）** —— ✅ 提交 `9136dc0`（`OnlinePlaybackLauncher`）：`MusicSourceSearchCoordinator` 检索 → `selectBestCandidate` → `MusicSourcePlaybackController.playItem`。**尚未从 UI 调用**（等 ⑤ 的播放按钮）。
+    - [ ] ⑤ 歌单详情页（`OnlinePlazaDetailPage.kt` + `ComposeNavHost` 注册 `ONLINE_PLAYLIST_DETAIL`=55）—— **P1 最后一块**，做完把 ⑥ 接到「播放全部 / 点歌」上。
+  - **已勘察好的 ⑤ 接入点（下一轮直接用）**：
+    - 导航参数机制：`NavigationState.navigateTo(scene, argument: String = "")`（`NavigationState.kt:170`），参数存在 `state.currentArgument`（`:52`，并有 `argumentStack` / `transitionFromArgument` 供转场用）。`ComposeNavHost` 在 `providerScene.isDetail()` 时读 `state.currentArgument`（约 `:337`）。所以进详情页用 `navigateTo(ONLINE_PLAYLIST_DETAIL, playlistId)`，页面里读 `state.currentArgument`。
+    - 行参编码：建议 `"<platformId>|<playlistId>"`（playlistId 理论上可能含 `|`，取 `substringBefore` / `substringAfter` 时注意）。
+    - `ONLINE_PLAYLIST_DETAIL` **已在 `NavScene.isDetail()` 里**（P1-13 就加了），虚拟列表 provider 会正确带上 argument。
+  - **⑥ 的现成基础设施（已确认，不要重造）**：
+    - `MusicSourceSearchCoordinator.search(context, sources, lxSources, query, page, type): AggregatedMusicSourceSearch`（`module/data/.../runtime/MusicSourceSearchCoordinator.kt:18`），其 `.items` 已是全部候选；MusicFree 组的 `sourceId` 是**裸 source id**，可被 `MusicSourceAudioResolver` 解析。
+    - `MusicSourcePlaybackController.play(context, queue, index)` / `playItem(context, item)`（`:162` / `:183`）。
+    - `MusicSourceSearchStore` 已有 `history` / `latest()` / `remember()` / `clearHistory()` —— **搜索历史的持久化其实 RawS 已经做好了**，后续可把 ③ 的内存态历史升级为复用它（不必再动 `SearchHistoryEntity`）。
   - **已建立的约定（后续 tab 照此办理）**：
     - 状态用页面内 `remember` + 单例 Repository 的 `StateFlow`（**不引入 ViewModel**，AGENTS §4.4）；**不要用 `Get-Content` 读含中文的日志/源码**（pwsh 代码页会乱码，但**同时会让行号偏移约 9 行**，用 `read` 工具）。
     - 四态**页面内联**实现（全仓没有共享 Loading/Empty/Error 组件）；错误额外经 `AppNoticeBus.error`。
