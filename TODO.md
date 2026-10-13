@@ -321,7 +321,7 @@
 - [ ] **P2-11 导入我的歌单（UI）** — 拉取账号歌单 → 多选 → 导入为本地歌单（在线曲目保留 `online://` 标识，播放走 P1-11 解析层）。
   - 依赖：P2-10、P2-06
 
-- [ ] **P2-12 歌单同步（逻辑层）** — `CloudPlaylistSyncClient`：对接 `/api/user/auth`、`/api/user/playlists/{backup,restore,delete}`；JSON 字段与 `docs/cloud-sync-contract.md` §4 **逐字一致**；`mode=merge|overwrite`；喜欢/不喜欢按系统歌单名 `我喜欢的音乐`/`不喜欢的音乐` + `groupName="系统"` 序列化；密码加密存储。
+- [x] **P2-12 歌单同步（逻辑层）** — ✅ **已完成**（4 批提交：`0530f42` 序列化 / `8a3c4ae` HTTP / `4890c85` 上传 / `4681d1d` 还原）。`CloudSyncClient` 对接 `/api/user/auth`、`/api/user/playlists/{backup,restore,delete}`、`/api/user/data/clear`；JSON 字段与 `docs/cloud-sync-contract.md` §4 逐字一致（`SerializedName` + 16 个契约测试断言字段名）；`mode=merge|overwrite`；喜欢/不喜欢按系统歌单名 `我喜欢的音乐`/`不喜欢的音乐` + `groupName="系统"` 序列化；密码加密存储（Keystore + AES-GCM，复用 `PlatformCredentialCipher`）。
   - **进度**：
     - [x] **契约序列化 + 配置存储** —— ✅ 提交 `0530f42`（`module/online/.../sync/CloudPlaylistJson.kt` + 8 个契约测试，`tests=8 failures=0 errors=0 skipped=0`）。`AppPreferences.CloudSync`（地址自填不内嵌 / 用户名 / **密码只存密文** / 上次备份与还原时间 / 上传模式）。
       - 已在文件头注明契约里**三处容易猜错的不对称**：① 请求字段 camelCase（`playlistsJson`）而响应字段 snake_case（`playlists_json`），JSON **内容**又是 camelCase；② `sourcePlatform` 与在线收藏的 `platform` 要**大写枚举名**（`NETEASE|QQ|...`），不是内部小写平台 id（Kotlin 枚举 `name` 恰好就是它）；③ 契约里在线收藏叫 `customGroup`，本地实体叫 `groupName`（OrBit 历史命名，**契约优先，不要统一**）。
@@ -330,7 +330,10 @@
     - [x] **上传侧编排** —— ✅ 提交 `4890c85`（`CloudPlaylistSyncService.kt`）。`buildPayload` 装配四处数据源；`upload` 复用 `CloudSyncClient.backupPlaylists`。
       - ⚠️ **上传前必须 refresh 四个 Store 并 `awaitBackupReady`**：DAO 全是 `suspend`、`StateFlow` 只在 refresh 后新鲜，而云同步是一次性快照 —— 用陈旧内存态上传会在服务端 last-write-wins 下把云端写回旧版本。
       - 喜欢/不喜欢塞进两个系统歌单（契约无独立表/接口）；普通歌单排除系统 `favorites`，避免同名合并出两个语义不同的歌单；在线曲的喜欢/不喜欢没有本地元数据 → 用 `songOfKey` 上传（身份在 `path`）。
-    - [ ] 剩余：**下载/还原侧**（`restore` → 解析三个 JSON → 识别两个系统歌单走 `SongAttitudeRepository` 而不是建普通歌单 → 普通歌单与分组写回 `PlaylistStore`/`PlaylistGroupStore`/`OnlinePlaylistFavoriteStore`）。这是 P2-12 最难的一半：契约的合并语义在**服务端**，客户端只负责「把云端结果落回本地」。
+    - [x] **下载/还原侧** —— ✅ 提交 `4681d1d`。`CloudPlaylistJson` 补 `parsePlaylists`/`parseOnlineFavorites`/`parseGroups`/`systemKindOf`/`toAudioFile`/`toOnlineSongRow`/`toOnlinePlaylist`；`CloudPlaylistSyncService.restore` + `applyBackup` 落回本地。三个契约细节：①「我喜欢的音乐」「不喜欢的音乐」**不能当普通歌单建**（契约里它们只是 like/dislike 的载体，没有独立表或接口），认名字跳过、改走 `song_attitude` 与既有 `favorites`，否则会建出两个与伪歌单重名、语义又不同的真歌单；② 态度从**所有歌单里的所有歌**的 `isFavorite`/`isDisliked` 读（同一首歌可能出现在普通歌单里也带标记，全认才幂等）；③ `groups_json` 里的「系统」**不建成分组**（契约内部标记，RawS 把系统歌单建模成伪卡，建出来只会得到永远空的分组）。
+      - ⚠️ **最容易写错的一处**：本地曲的 `song_key` 必须让 core 算（`path|` 前缀），**不能拿 `path` 顶替**；写错会往 `song_attitude` 存一条永远匹配不上的记录、而外观毫无异常。已写成断言测试 `local song key carries the path prefix while online key stays bare`。
+      - ⚠️ **已知边界**：`toAudioFile` 的 `id` 故意留 0（云端 id 属于别的设备，带过来会指错歌）。因此**跨设备还原**时若本地没有对应文件，这些行会被 `resolveSongs` 过滤掉、在歌单里看不见 —— 同设备备份/还原（主要用例）不受影响。要做「灰色显示不可用曲目」需另开任务。
+    - 测试：`tests=16 failures=0 errors=0 skipped=0`。
   - 补充（契约 §6 容错，实现时必须守）：**① 非法 JSON → 500**（保证序列化合法）；**② `playlists/delete` 不传 `deleteAll` 也不传数组会清空全部云端歌单**（已在客户端加护栏）；③ 选择性删除不回写 `groups_json`（分组可能残留）；④ `data/clear` **不接受 `userId` 别名**。另：restore 无备份返回 404（不是空数据）。
   - 注意 P5-01 会把这里的 HTTP 逻辑与 P3-03 合并成统一客户端，所以**别把 HTTP 细节散落到多个地方**（目前只在 `CloudSyncClient`）。
   - 依赖：P1-12、P2-01
