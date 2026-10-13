@@ -193,7 +193,21 @@
 - [ ] **P2-04 歌单分组（UI）** — 歌单页按 `SectionHeader(groupName)` 分区；歌单/分组长按 → 移动分组/改名/删除。
   - 依赖：P2-03、P2-02（同一文件，建议串行）
 
-- [ ] **P2-05 先定契约** — 读 `UserPlaylistDao` + `PlaylistStore`，把在线虚拟曲目与 `song_key` / `media_id` 的约定写成简短结论（贴进本任务备注），再动手 P2-06。
+- [x] **P2-05 先定契约** — ✅ 已完成（勘察结论如下，**动手 P2-06/07 前必读**）。
+  - **`song_key` 规则**（权威定义在 `core/common/.../model/UserPlaylist.kt:33`）：`AudioFile.playlistIdentityKey()` =
+    有 `path` → `"path|<path 反斜杠转正斜杠并 lowercase>"`；无 `path` → `"media|<id>|<title>|<artist>|<album>|<duration>"`。
+    `song_attitude.song_key` **必须**沿用同一函数，否则会出现「歌单里有这首、喜欢状态读不到」的错位。
+  - **`UserPlaylistSong`（`UserPlaylist.kt:15`）是「元数据快照」而不是引用**：除了 `key` 之外把 `id/title/artist/album/albumId/duration/path/fileSize/format/sampleRate/bitRate/bitsPerSample/albumArtPath` 全存了一份，并有 `toAudioFile()` 反解。所以即使歌不在曲库里，只要文件还在也能播。
+  - ⚠️ **`id` 是 `Long`（非空）** → 在线曲入库必须给一个**合成 Long id**。OrBit 现成算法是 `OnlineAudioSourceManager.generateVirtualSongId(platform, songId): Long`（该文件 `:48`），P2-06 直接照搬这个算法，**不要自己发明编码**（跨端同步要靠它对齐）。
+  - 🚧 **在线曲目目前会被静默丢弃 —— 这是 P2-06/07 的关键阻塞点**：`PlaylistStore.resolveSongs`（`:216-227`）只有三层回退：
+    ① `byIdentity[stored.key]`（曲库里找）→ ② 按 path 候选匹配 → ③ `stored.toAudioFile().takeIf { File(it.path).exists() }`。
+    在线曲既不在曲库、也没有本地文件，**三层全落空 → 该曲目从播放列表里消失**。
+    → P2-06 必须补一条分支：`key.startsWith("online://")` 时**不走 `resolveSongs`**，而是交给 `OnlinePlaybackLauncher` 解析播放；UI 侧要么单独维护在线曲目列表，要么把 `resolveSongs` 扩展成能返回「在线曲目占位」。
+    **这一步必须先设计好再写导入 UI，否则导入的在线曲目会"看起来成功了但列表里没有"。**
+  - **`UserPlaylistDao` 缺 `updateGroup`**：现有方法只有 `upsertPlaylist(s)` / `renamePlaylist` / `touchPlaylist` / `deletePlaylist` / `deleteSong` / `insertSongs` / `upsertSongs` / `replaceAll`。`user_playlists.group_name` 列已在 `MIGRATION_6_7` 加上，但**没有任何 DAO 方法能改它** → P2-03 必须新增 `updateGroup(playlistId, groupName, updatedAt)` + 一个 `PlaylistGroupDao` 的联动事务（改分组名时要同步改其下歌单的 `group_name`，否则歌单会指向不存在的分组）。
+  - **`UserPlaylist` 领域模型没有 `groupName` 字段**（`UserPlaylist.kt:5`）→ P2-04 的分组 UI 需要把它**加进 `:core:common` 的模型**，并同步改 `PlaylistStore` 的加载/保存路径。这是对既有模型的增量改字段，注意 `BackupArchiveCodec` 的序列化也要一并带上，否则 WebDAV 备份会丢分组。
+  - **系统歌单标识**：`FAVORITES_PLAYLIST_ID = "favorites"`（`UserPlaylist.kt:3`）——**id 是 `favorites`，显示名才是「我喜欢的音乐」**。导出/导入与云端互认时要按 **id** 判断，不要按名字判断。
+  - **`insertSongs` 用 `OnConflictStrategy.IGNORE`，而 `upsertSongs` 用 `REPLACE`** —— 重复添加同一首歌时两者行为不同（IGNORE 保留旧行、REPLACE 覆盖）。P2-06 批量导入时要想清楚用哪个，否则重复导入会静默丢数据或覆盖 `addedAt`。
   - 依赖：P1-12
 
 - [ ] **P2-06 歌单导入导出（逻辑层）** — 移植 `PlaylistTransferManager`：JSON(schema v1) / M3U8(`#EXTINF` + `#EXTRAWS-*` 标签) / 纯文本 / 分享；导出到 `cacheDir/playlist_exports` 或 MediaStore Downloads。
