@@ -393,7 +393,32 @@
 
 > 设计见 `AGENTS.MD` §6.3。**运行时不移植**（RawS 已有 `MusicSourceRuntimeService`），只做云同步。
 
-- [ ] **P3-01 阅读音源安装 API** — 读 `LxSourcePluginStore` / `MusicSourcePluginStore` / `MusicSourcePersistenceJson`，确认"从内容安装脚本"的现有入口与目录约定，写下结论。
+- [x] **P3-01 阅读音源安装 API** — ✅ 已完成（**纯调研，无代码改动**）。结论如下，P3-02/P3-03 直接照这个做。
+  - **存储模型**（`module/data/.../source/LxSourcePluginStore.kt:19`）：`InstalledLxSource` =
+    `id, name, version, author, description, homepage, sourceUrl,` **`scriptPath, scriptSha256`** `, origin, enabled, format, platforms, actions, installedAtMs, updatedAtMs, lastError`。
+    → **只存路径 + sha256，不存正文**（与契约文档 §4 末尾「RawS 音源同步的结构差异」一致）。
+  - **脚本落盘约定**：`File(context.filesDir, PLUGIN_DIR)/"${sha256}.js"`（`LxSourcePluginStore.kt:151-153`）。
+    → **按 sha256 内容寻址**，所以「同一脚本重复还原」天然幂等，且还原后可以用 `scriptSha256` 校验完整性 ✅。
+  - 🔴 **关键发现：没有「从内存内容安装」的公开入口。** `LxSourcePluginStore` 只暴露
+    `installFromUri(context, uri)`（:64）与 `installFromUrl(context, url)`（:82），内部真正的
+    `install(context, script, ...)`（:141 附近）是 **private**。
+    → 而云端还原拿到的正是**内存里的脚本文本**，既不是 content URI 也不是可下载 URL。
+    → 所以 **P3-03 需要给 `LxSourcePluginStore` 补一个公开的 `installFromScript(context, script, sourceUrl)`**
+      （把现有 private `install` 暴露出来即可，不要重写解析逻辑，也不要绕过它直接写文件 —— 契约 §4 明确要求走既有安装 API 注册）。
+      **不要**为了绕过这点去搞「写临时文件 + FileProvider URI」那种绕路方案。
+  - **序列化现状**：`MusicSourcePersistenceJson.encodeLxSources/decodeLxSources`（`MusicSourcePersistenceJson.kt:23,26`）用的是
+    **kotlinx-serialization 的 `JsonArray`**，而云同步 DTO 按 AGENTS §3.4 约定用 **Gson**。两者**不要混用** —— 云同步另建 DTO，别去改这个文件。
+  - **契约 → 本地字段映射**（契约形状见 `docs/cloud-sync-contract.md` §4 ④）：
+    | 契约字段 | `InstalledLxSource` | 说明 |
+    | --- | --- | --- |
+    | `id` / `name` / `version` / `author` / `description` / `sourceUrl` | 同名 | 直接对应 |
+    | **`scriptContent`** | ❌ **无** | **上传时必须从 `scriptPath` 读文件内联**；这是 P3 最核心的一条 |
+    | `scriptSha256` / `enabled` / `installedAtMs` / `updatedAtMs` | 同名 | 直接对应 |
+    | **`isPrimary`** | ❌ **无** | RawS 没有「主音源」概念 → 上传时按 `false` 写、还原时忽略 |
+    | **`supportPlatforms`** | ≈ `platforms: Map<String, Set<String>>` | ⚠️ **类型不同**（契约是扁平结构）→ 需转换，不要直接塞 |
+    | （契约无） | `homepage` / `origin` / `format` / `actions` / `lastError` | 本地独有，上传时可不带；`format` 用来区分 LX 与 MusicFree |
+  - **还原步骤**（契约 §4 末尾明确要求，照做）：写回脚本文件到插件目录 → **校验 sha256** → 走既有安装 API 注册。
+  - **兼容 OrBit 备份**：有 `scriptContent` 无 `scriptPath` → 按内联脚本安装；**只有路径没有正文 → 明确报错「该备份不完整」，绝不静默失败**（AGENTS §6.0 红线）。
   - 依赖：P0-05
 
 - [ ] **P3-02 定义同步 DTO（并集）** — `CloudSourceEntry`：`id, name, version, author, description, sourceUrl, scriptContent, scriptSha256, enabled, isPrimary, supportPlatforms, installedAtMs, updatedAtMs, origin, methods`；Gson 序列化。
