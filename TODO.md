@@ -361,14 +361,21 @@
   - 📌 **它发现并被我核实的架构事实（已写入 `AGENTS.MD` §3.2）**：设置入口**不能**加在 `core:ui` 的 `SettingsRootPage` —— `AppMainLayout.kt:667` 是 `onSettingsClick?.invoke() ?: navState.navigateToSettings()`，宿主提供了回调就**绕过** core:ui 那页；本项目 `MainActivity.kt:2272` 提供的正是 `launchSettingsActivity(SettingsActivity)` → 真正渲染的是 `:app` 的 `LiquidGlassSettingsScreen`。**后续所有新设置页（含 P2-13 云同步、P4 可视化设置）都按 §3.2 的落法走。**
   - 依赖：P2-08、P2-09
 
-- [ ] **P2-11 导入我的歌单（UI）** — 拉取账号歌单 → 多选 → 导入为本地歌单（在线曲目保留 `online://` 标识，播放走 P1-11 解析层）。
+- [x] **P2-11 导入我的歌单（UI）** — ✅ **已完成（提交 `f882a54`）**。拉取账号歌单 → 多选 → 导入为本地歌单（在线曲目保留 `online://` 标识，播放走 P1-11 解析层）。
   - [x] **前置修复（提交 `b37d061`）**：`PlatformAccountManager.fetchUserPlaylists` 原先失败时 `return emptyList()`，
     UI 只能显示「你没有歌单」—— **用户会以为歌单丢了，而实际是网络/平台接口问题**，属本工程反复强调要避免的**静默失败**。
     已改为 `Result<List<OnlinePlaylist>>`：未登录 / 无可用服务 / 接口异常都是 `Result.failure`；
     **`Result.success(emptyList())` 表示该账号确实没有歌单**（正常结果，不是错误），两者可区分。
     该方法此前**没有任何调用方**，所以改签名安全；`IPlatformAuthService.getUserPlaylists` 签名不动，避免动到已移植的平台实现。
     → **P2-11 的 UI 必须分别呈现这三种状态**（失败可重试 / 确实没有 / 正常列表）。
-  - [ ] UI：入口放平台账号页（每张账号卡一个「导入我的歌单」，仅已登录可用）→ 列表多选 → 逐个 `OnlinePlaylistImportService.importPlaylist` → 汇总结果（失败项要列出歌单名与原因）。子代理实现中。
+  - [x] UI：入口放平台账号页（每张账号卡一个「导入我的歌单」，仅已登录可用）→ 列表多选 → 逐个 `OnlinePlaylistImportService.importPlaylist` → 汇总结果（失败项要列出歌单名与原因）。
+    - 新增 `app/.../ui/settings/PlatformPlaylistImportScreen.kt`(572 行) + `PlatformPlaylistImportActivity.kt`(30 行)；`PlatformAccountScreen.kt` 卡片加「导入我的歌单」（未登录**可见但禁用**而不是隐藏 —— 避免重演 P1-15「入口被藏起来用户走不到」），`AndroidManifest.xml` 按 `CloudSyncActivity` 同款声明。**不需要新 NavScene**，也没动扫码/退出/刷新逻辑。
+    - 三种状态分开呈现：`Result.failure` → `..._fetch_failed` + `Retry` + `AppNoticeBus.error`；`success(emptyList())` → `..._empty` + `Refresh`（不报错）；正常 → `LazyColumn` 多选列表。
+    - 页面壳用 `SimplePageScaffold` + `LazyColumn`（`SettingsPage` 自带 `verticalScroll`，里面放惰性列表会崩）+ 底部固定动作条（进度 / 导入）。
+    - 导入结果：`成功 N / 失败 M / 共 N 首`，失败逐条列 `歌单名: 人话原因`（`PlaylistNotFound`/`EmptyPlaylist`/`LinkNotRecognized`/`Failed(reason)` 分别映射）；单个失败不中断其余项。
+    - 文案 EN/ZH 各 26 条、键完全对齐（已脚本核对）；新增行审计干净（中文命中都是 `AppLogger` 日志）。
+    - `.\gradlew.bat :app:compileReleaseKotlin` → BUILD SUCCESSFUL。
+    - ⚠️ **未真机验证**（此环境无法登录 QQ/酷狗）；另子代理主动说明三处取舍：页面壳改用 `SimplePageScaffold` 所以没有 COUI 毛玻璃顶栏（与平台账号页观感略异）、未加「导入中拦截返回」的 `BackHandler`、列表项未设 LazyColumn `key`（防平台返回重复 id 时崩）。
   - 依赖：P2-10、P2-06
 
 - [x] **P2-12 歌单同步（逻辑层）** — ✅ **已完成**（4 批提交：`0530f42` 序列化 / `8a3c4ae` HTTP / `4890c85` 上传 / `4681d1d` 还原）。`CloudSyncClient` 对接 `/api/user/auth`、`/api/user/playlists/{backup,restore,delete}`、`/api/user/data/clear`；JSON 字段与 `docs/cloud-sync-contract.md` §4 逐字一致（`SerializedName` + 16 个契约测试断言字段名）；`mode=merge|overwrite`；喜欢/不喜欢按系统歌单名 `我喜欢的音乐`/`不喜欢的音乐` + `groupName="系统"` 序列化；密码加密存储（Keystore + AES-GCM，复用 `PlatformCredentialCipher`）。
