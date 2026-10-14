@@ -175,8 +175,20 @@
   3. `customBottomNavigationIconResOrNull()` 补分支复用 `ic_side_rail_online` —— 否则退化成与 `SONGS` 相同的通用音乐图标。
 - **附带修正**：`NavigationState.kt:225` 用 `bottomNavigationEntries` 决定「切底栏时回退到最近顶层入口」；进入该集合后，
   从「在线歌单详情」切标签能**正确回到广场**，之前会一路弹过 `ONLINE_MUSIC`。
-- **仍未做（需用户决策）**：① 是否把 `ONLINE_MUSIC` 也放进 `defaultBottomNavigationScenes`（会改变所有未自定义用户的默认底栏，属产品决策）；
-  ② 设置页内的「在线音乐」入口 —— 全仓库**没有**「Intent → NavScene」的机制，要做需新增管线（或把门户再挂一个 Activity），不是一行的事。
+- **② 主界面卡片入口 —— ✅ 已完成（提交 `57ec1e6`，按用户要求「放到主界面做成卡片」）**：
+  - `HomeLibraryCardScenes` 加入 `ONLINE_MUSIC` 并置于**首位**（该列表同时是默认顺序）。
+  - 🔑 **关键点：已有自定义卡片顺序的用户也能看到这张新卡** —— `normalizeOrder` 里有一句
+    `defaults.forEach(seen::add)`，会把 defaults 中缺失的场景**补到末尾**。所以不会出现「存过偏好就看不到新卡」。
+  - 卡片图标原先只特判了 `SOURCE_IMPORT`（画 `ic_cloud`），其余走关联歌曲封面 `song?.coverKey`；
+    而门户型场景没有「关联歌曲」，`coverKey` 恒空 → 不处理的话卡片**只有底色和标题、看起来像坏了**。
+    已收敛成 `homeCardFixedIconResOrNull()` 映射，`ONLINE_MUSIC` 复用 `ic_side_rail_online`。
+  - 文案走既有 `scene.labelRes()`（`NavSceneLabels` 里已有中英双语 `nav_scene_online_music`）；
+    统计计数 `countFor` 的 `else -> null` 保证不显示数字也不崩；点击是通用的 `onNavigate(card.scene)`。
+- **仍未做（需用户决策）**：
+  1. 是否也把 `ONLINE_MUSIC` 放进 `defaultBottomNavigationScenes`（会改变所有未自定义用户的默认底栏，属产品决策）。
+     （底栏**可选列表**里已经有它了，见上一条提交 `bfd5250`。）
+  2. 设置页内的「在线音乐」入口 —— 全仓库**没有**「Intent → NavScene」的机制，要做需新增管线（或把门户再挂一个 Activity），不是一行的事。
+
 
   - **⑥ 的现成基础设施（已确认，不要重造）**：
     - `MusicSourceSearchCoordinator.search(context, sources, lxSources, query, page, type): AggregatedMusicSourceSearch`（`module/data/.../runtime/MusicSourceSearchCoordinator.kt:18`），其 `.items` 已是全部候选；MusicFree 组的 `sourceId` 是**裸 source id**，可被 `MusicSourceAudioResolver` 解析。
