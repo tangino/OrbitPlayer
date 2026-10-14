@@ -156,6 +156,28 @@
     - [x] **⑥ 播放接线（UI 已接）** —— ✅ 数据层提交 `9136dc0`，UI 接线在 `46643a6`：点歌 / 播放全部 → `OnlinePlaybackLauncher.play` → `Started` / `NoSourceInstalled` / `NoMatchFound` / `Failed` 分别给明确文案（不暴露原始异常）。
 
 > **P1 状态：14 项全部完成**（P1-01…P1-14）。唯一待办是 **P1-12 的迁移真机验证**：需要在装有 v6 库的设备上覆盖安装一次，确认不抛 Room schema 校验异常。
+
+### P1-15（补充修复）在线音乐入口不可达 —— ✅ 已完成（提交 `bfd5250`）
+
+🔴 **这是一个真机反馈暴露的接线缺陷，值得记下来当教训。**
+
+- **现象**：用户装到真机后反馈「除了平台账号，其他功能都没看到入口」。
+- **根因**：`ONLINE_MUSIC` 的**唯一**入口是侧栏（`AppSideRail.kt:83`），而侧栏启用条件是
+  `sideRailEnabled = !bottomNavigationEnabled && currentScene == HOME && ...`（`AppMainLayout.kt:461`），
+  且 `AppPreferences.UI.isBottomBarEnabled` **默认 `true`** → **默认配置下侧栏手势是死的，整个在线歌单广场（4 个 tab + 歌单详情）不可达。**
+- **我的验证盲区**：P1 收尾时我核对的是「`NavScene` / `ComposeNavHost` / `AppSideRail` / `MainActivity` 四处**代码都接上了**」，
+  但**没核对「默认配置下用户能不能走到」**。四处都通、终点却在一个默认关闭的模式里 = 等于没有入口。
+  → **以后接线 UI 必须多问一句：默认配置下走得到吗？**
+- **修法**（3 处）：
+  1. `NavScene.bottomNavigationEntries` 加入 `ONLINE_MUSIC` → 出现在设置「底部导航栏」选择器里，用户可放进底栏。
+     ⚠️ 该列表只决定「**可选范围**」，**不会**改变任何现有用户的底栏（选择按 `tag` 存储；默认底栏是 `defaultBottomNavigationScenes`，仍是原来 5 项）。
+  2. `bottomNavigationLabel()` 补分支 —— 否则落到 `else -> label` 会显示 `NavScene` 枚举里**硬编码的中文**，英文环境串味。
+  3. `customBottomNavigationIconResOrNull()` 补分支复用 `ic_side_rail_online` —— 否则退化成与 `SONGS` 相同的通用音乐图标。
+- **附带修正**：`NavigationState.kt:225` 用 `bottomNavigationEntries` 决定「切底栏时回退到最近顶层入口」；进入该集合后，
+  从「在线歌单详情」切标签能**正确回到广场**，之前会一路弹过 `ONLINE_MUSIC`。
+- **仍未做（需用户决策）**：① 是否把 `ONLINE_MUSIC` 也放进 `defaultBottomNavigationScenes`（会改变所有未自定义用户的默认底栏，属产品决策）；
+  ② 设置页内的「在线音乐」入口 —— 全仓库**没有**「Intent → NavScene」的机制，要做需新增管线（或把门户再挂一个 Activity），不是一行的事。
+
   - **⑥ 的现成基础设施（已确认，不要重造）**：
     - `MusicSourceSearchCoordinator.search(context, sources, lxSources, query, page, type): AggregatedMusicSourceSearch`（`module/data/.../runtime/MusicSourceSearchCoordinator.kt:18`），其 `.items` 已是全部候选；MusicFree 组的 `sourceId` 是**裸 source id**，可被 `MusicSourceAudioResolver` 解析。
     - `MusicSourcePlaybackController.play(context, queue, index)` / `playItem(context, item)`（`:162` / `:183`）。
