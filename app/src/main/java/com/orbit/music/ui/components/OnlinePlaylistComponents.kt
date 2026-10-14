@@ -364,7 +364,7 @@ fun OnlinePlaylistSquareView(
             }
         }
 
-        // 3. 搜索结果视图
+        // 3. 搜索结果视图与常规内容分流
         if (uiState.isSearchMode && uiState.searchKeyword.isNotBlank()) {
             if (uiState.isSearching) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -385,276 +385,274 @@ fun OnlinePlaylistSquareView(
                     }
                 }
             }
-            return
-        }
-
-        // 4. 错误提示
-        if (uiState.errorMessage != null) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = OrbitTheme.colors.surfaceCard,
-                border = BorderStroke(0.5.dp, Color(0xFFF43F5E).copy(alpha = 0.3f)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+        } else {
+            // 4. 错误提示
+            if (uiState.errorMessage != null) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = OrbitTheme.colors.surfaceCard,
+                    border = BorderStroke(0.5.dp, Color(0xFFF43F5E).copy(alpha = 0.3f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
                 ) {
-                    Text(
-                        text = uiState.errorMessage ?: "",
-                        color = Color(0xFFF43F5E),
-                        fontSize = 12.sp,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "重试",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = OrbitTheme.colors.primary,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable {
-                                if (uiState.selectedTab == 2) viewModel.loadLeaderboards() else viewModel.loadCurrentPlatformData()
-                            }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-            }
-        }
-
-        // 5. 分类标签横向滑动条 (仅在 Tab 1 热门分类 下展示)
-        if (uiState.selectedTab == 1 && uiState.tags.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                uiState.tags.forEach { tag ->
-                    val isSelected = tag.id == uiState.selectedTag.id
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(if (isSelected) OrbitTheme.colors.primary.copy(alpha = 0.18f) else OrbitTheme.colors.surfaceCard)
-                            .border(
-                                0.5.dp,
-                                if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.surfaceBorder,
-                                RoundedCornerShape(14.dp)
-                            )
-                            .clickable {
-                                viewModel.selectTag(tag)
-                            }
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = tag.name,
+                            text = uiState.errorMessage ?: "",
+                            color = Color(0xFFF43F5E),
                             fontSize = 12.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "重试",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = OrbitTheme.colors.primary,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable {
+                                    if (uiState.selectedTab == 2) viewModel.loadLeaderboards() else viewModel.loadCurrentPlatformData()
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
                 }
             }
-        }
 
-        // 6. 主体歌单网格与榜单
-        if (uiState.isLoading && uiState.playlists.isEmpty() && uiState.leaderboards.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp, color = OrbitTheme.colors.primary)
-            }
-            return
-        }
-
-        val effectiveTab = uiState.selectedTab
-        if (effectiveTab == 0 || effectiveTab == 1) {
-            // 精选推荐 / 分类歌单 (自适应网格)
-            val gridState = rememberLazyGridState()
-            val isScrolledToEnd by remember {
-                derivedStateOf {
-                    val total = gridState.layoutInfo.totalItemsCount
-                    val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                    total > 0 && lastVisible >= total - 4
-                }
-            }
-
-            LaunchedEffect(isScrolledToEnd) {
-                if (isScrolledToEnd && !uiState.isLoading && !uiState.isPagingLoading && uiState.hasMorePlaylists) {
-                    viewModel.loadNextPage()
-                }
-            }
-
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 140.dp),
-                state = gridState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 98.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                itemsIndexed(uiState.playlists, key = { index, item -> "${item.platform.id}_${item.id}_$index" }) { _, item ->
-                    OnlinePlaylistCardItem(playlist = item, onClick = { onPlaylistClick(item) })
-                }
-
-                if (uiState.isPagingLoading) {
-                    item {
+            // 5. 分类标签横向滑动条 (仅在 Tab 1 热门分类 下展示)
+            if (uiState.selectedTab == 1 && uiState.tags.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    uiState.tags.forEach { tag ->
+                        val isSelected = tag.id == uiState.selectedTag.id
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            contentAlignment = Alignment.Center
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(if (isSelected) OrbitTheme.colors.primary.copy(alpha = 0.18f) else OrbitTheme.colors.surfaceCard)
+                                .border(
+                                    0.5.dp,
+                                    if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.surfaceBorder,
+                                    RoundedCornerShape(14.dp)
+                                )
+                                .clickable {
+                                    viewModel.selectTag(tag)
+                                }
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
                         ) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = OrbitTheme.colors.primary)
+                            Text(
+                                text = tag.name,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) OrbitTheme.colors.primary else OrbitTheme.colors.textSecondary
+                            )
                         }
                     }
                 }
             }
-        } else if (effectiveTab == 2) {
-            // 官方排行榜
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 98.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                itemsIndexed(uiState.leaderboards, key = { index, board -> "${board.platform.id}_${board.id}_$index" }) { _, board ->
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = OrbitTheme.colors.surfaceCard,
-                        border = BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                onPlaylistClick(
-                                    OnlinePlaylist(
-                                        id = board.id,
-                                        platform = board.platform,
-                                        title = board.title,
-                                        coverUrl = board.coverUrl
-                                    )
-                                )
-                            }
+
+            // 6. 主体歌单网格与榜单
+            if (uiState.isLoading && uiState.playlists.isEmpty() && uiState.leaderboards.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp, color = OrbitTheme.colors.primary)
+                }
+            } else {
+                val effectiveTab = uiState.selectedTab
+                if (effectiveTab == 0 || effectiveTab == 1) {
+                    // 精选推荐 / 分类歌单 (自适应网格)
+                    val gridState = rememberLazyGridState()
+                    val isScrolledToEnd by remember {
+                        derivedStateOf {
+                            val total = gridState.layoutInfo.totalItemsCount
+                            val lastVisible = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                            total > 0 && lastVisible >= total - 4
+                        }
+                    }
+
+                    LaunchedEffect(isScrolledToEnd) {
+                        if (isScrolledToEnd && !uiState.isLoading && !uiState.isPagingLoading && uiState.hasMorePlaylists) {
+                            viewModel.loadNextPage()
+                        }
+                    }
+
+                    LazyVerticalGrid(
+                        columns = GridCells.Adaptive(minSize = 140.dp),
+                        state = gridState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 98.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
+                        itemsIndexed(uiState.playlists, key = { index, item -> "${item.platform.id}_${item.id}_$index" }) { _, item ->
+                            OnlinePlaylistCardItem(playlist = item, onClick = { onPlaylistClick(item) })
+                        }
+
+                        if (uiState.isPagingLoading) {
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = OrbitTheme.colors.primary)
+                                }
+                            }
+                        }
+                    }
+                } else if (effectiveTab == 2) {
+                    // 官方排行榜
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 98.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        itemsIndexed(uiState.leaderboards, key = { index, board -> "${board.platform.id}_${board.id}_$index" }) { _, board ->
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = OrbitTheme.colors.surfaceCard,
+                                border = BorderStroke(0.5.dp, OrbitTheme.colors.surfaceBorder),
                                 modifier = Modifier
-                                    .size(76.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(OrbitTheme.colors.surface)
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        onPlaylistClick(
+                                            OnlinePlaylist(
+                                                id = board.id,
+                                                platform = board.platform,
+                                                title = board.title,
+                                                coverUrl = board.coverUrl
+                                            )
+                                        )
+                                    }
                             ) {
-                                AsyncImage(
-                                    model = board.coverUrl,
-                                    contentDescription = board.title,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
-                                )
-                                if (!board.updateFrequency.isNullOrEmpty()) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     Box(
                                         modifier = Modifier
-                                            .align(Alignment.BottomStart)
-                                            .fillMaxWidth()
-                                            .background(Color.Black.copy(alpha = 0.55f))
-                                            .padding(vertical = 1.dp),
-                                        contentAlignment = Alignment.Center
+                                            .size(76.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(OrbitTheme.colors.surface)
+                                    ) {
+                                        AsyncImage(
+                                            model = board.coverUrl,
+                                            contentDescription = board.title,
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                        if (!board.updateFrequency.isNullOrEmpty()) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(Alignment.BottomStart)
+                                                    .fillMaxWidth()
+                                                    .background(Color.Black.copy(alpha = 0.55f))
+                                                    .padding(vertical = 1.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = board.updateFrequency,
+                                                    color = Color.White,
+                                                    fontSize = 9.sp
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
                                         Text(
-                                            text = board.updateFrequency,
-                                            color = Color.White,
-                                            fontSize = 9.sp
+                                            text = board.title,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = OrbitTheme.colors.textPrimary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
+                                        board.topSongsPreview.take(3).forEachIndexed { idx, track ->
+                                            Text(
+                                                text = "${idx + 1}. $track",
+                                                fontSize = 11.sp,
+                                                color = OrbitTheme.colors.textSecondary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
                                     }
                                 }
                             }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Text(
-                                    text = board.title,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = OrbitTheme.colors.textPrimary,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                board.topSongsPreview.take(3).forEachIndexed { idx, track ->
-                                    Text(
-                                        text = "${idx + 1}. $track",
-                                        fontSize = 11.sp,
-                                        color = OrbitTheme.colors.textSecondary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                            }
                         }
                     }
-                }
-            }
-        } else {
-            // 我的收藏网络歌单视图
-            val context = androidx.compose.ui.platform.LocalContext.current
-            val favoriteManager = remember { com.orbit.music.data.online.repository.OnlinePlaylistFavoriteManager.getInstance(context) }
-            val allFavorites by favoriteManager.favorites.collectAsState()
-            val platformFavorites = remember(allFavorites, platform) {
-                allFavorites.filter { it.platform == platform }
-            }
-
-            if (platformFavorites.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 24.dp, vertical = 40.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.FavoriteBorder,
-                            contentDescription = null,
-                            tint = OrbitTheme.colors.textSecondary.copy(alpha = 0.45f),
-                            modifier = Modifier.size(52.dp)
-                        )
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Text(
-                            text = "暂无收藏的${platform.displayName}歌单",
-                            fontSize = 14.5.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = OrbitTheme.colors.textPrimary
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "在歌单广场浏览歌单并进入详情，点击收藏即可收录至此处",
-                            fontSize = 12.sp,
-                            color = OrbitTheme.colors.textSecondary.copy(alpha = 0.7f),
-                            textAlign = TextAlign.Center,
-                            lineHeight = 17.sp
-                        )
+                } else {
+                    // 我的收藏网络歌单视图
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val favoriteManager = remember { com.orbit.music.data.online.repository.OnlinePlaylistFavoriteManager.getInstance(context) }
+                    val allFavorites by favoriteManager.favorites.collectAsState()
+                    val platformFavorites = remember(allFavorites, platform) {
+                        allFavorites.filter { it.platform == platform }
                     }
-                }
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 140.dp),
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 98.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    itemsIndexed(platformFavorites, key = { index, item -> "fav_${item.platform.id}_${item.id}_$index" }) { _, item ->
-                        OnlinePlaylistCardItem(
-                            playlist = item,
-                            onClick = { onPlaylistClick(item) },
-                            isFavorite = true
-                        )
+
+                    if (platformFavorites.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 24.dp, vertical = 40.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.FavoriteBorder,
+                                    contentDescription = null,
+                                    tint = OrbitTheme.colors.textSecondary.copy(alpha = 0.45f),
+                                    modifier = Modifier.size(52.dp)
+                                )
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Text(
+                                    text = "暂无收藏的${platform.displayName}歌单",
+                                    fontSize = 14.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = OrbitTheme.colors.textPrimary
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "在歌单广场浏览歌单并进入详情，点击收藏即可收录至此处",
+                                    fontSize = 12.sp,
+                                    color = OrbitTheme.colors.textSecondary.copy(alpha = 0.7f),
+                                    textAlign = TextAlign.Center,
+                                    lineHeight = 17.sp
+                                )
+                            }
+                        }
+                    } else {
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(minSize = 140.dp),
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 98.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            itemsIndexed(platformFavorites, key = { index, item -> "fav_${item.platform.id}_${item.id}_$index" }) { _, item ->
+                                OnlinePlaylistCardItem(
+                                    playlist = item,
+                                    onClick = { onPlaylistClick(item) },
+                                    isFavorite = true
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -1322,40 +1320,48 @@ fun OnlinePlaylistDetailView(
                                 vPath in favPaths || vId in favIds || key in favKeys
                             }
 
-                            if (!song.coverUrl.isNullOrEmpty()) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(38.dp)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(OrbitTheme.colors.surface)
-                                ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(OrbitTheme.colors.surface),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (!song.coverUrl.isNullOrEmpty()) {
                                     AsyncImage(
                                         model = song.coverUrl,
                                         contentDescription = null,
                                         modifier = Modifier.fillMaxSize(),
                                         contentScale = ContentScale.Crop
                                     )
-                                    if (isSongFav) {
-                                        Box(
-                                            modifier = Modifier
-                                                .align(Alignment.BottomEnd)
-                                                .padding(2.dp)
-                                                .size(13.dp)
-                                                .clip(CircleShape)
-                                                .background(Color(0xFFFF3366)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Favorite,
-                                                contentDescription = "已喜欢",
-                                                tint = Color.White,
-                                                modifier = Modifier.size(8.dp)
-                                            )
-                                        }
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.MusicNote,
+                                        contentDescription = null,
+                                        tint = OrbitTheme.colors.textSecondary.copy(alpha = 0.4f),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                if (isSongFav) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .padding(2.dp)
+                                            .size(13.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFFFF3366)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Favorite,
+                                            contentDescription = "已喜欢",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(8.dp)
+                                        )
                                     }
                                 }
-                                Spacer(modifier = Modifier.width(10.dp))
                             }
+                            Spacer(modifier = Modifier.width(10.dp))
 
                         Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1369,13 +1375,20 @@ fun OnlinePlaylistDetailView(
                                     modifier = Modifier.weight(1f, fill = false)
                                 )
                                 if (song.isVip) {
-                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Spacer(modifier = Modifier.width(5.dp))
                                     Box(
                                         modifier = Modifier
-                                            .border(0.5.dp, Color(0xFFF43F5E), RoundedCornerShape(3.dp))
-                                            .padding(horizontal = 3.dp, vertical = 0.5.dp)
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(Color(0xFFF43F5E).copy(alpha = 0.15f))
+                                            .border(0.6.dp, Color(0xFFF43F5E), RoundedCornerShape(4.dp))
+                                            .padding(horizontal = 4.dp, vertical = 1.dp)
                                     ) {
-                                        Text("VIP", color = Color(0xFFF43F5E), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            text = "VIP",
+                                            color = Color(0xFFF43F5E),
+                                            fontSize = 8.5.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                     }
                                 }
                             }

@@ -505,18 +505,30 @@ private fun OnlineSongRowItem(
         }
 
         // 歌曲封面
-        if (!song.coverUrl.isNullOrEmpty()) {
-            AsyncImage(
-                model = song.coverUrl,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentScale = ContentScale.Crop
-            )
-            Spacer(modifier = Modifier.width(12.dp))
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center
+        ) {
+            if (!song.coverUrl.isNullOrEmpty()) {
+                AsyncImage(
+                    model = song.coverUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(22.dp)
+                )
+            }
         }
+        Spacer(modifier = Modifier.width(12.dp))
 
         // 歌名与歌手
         Column(
@@ -550,13 +562,15 @@ private fun OnlineSongRowItem(
                 if (song.isVip) {
                     Box(
                         modifier = Modifier
-                            .border(1.dp, DangerRed, RoundedCornerShape(4.dp))
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(DangerRed.copy(alpha = 0.15f))
+                            .border(0.8.dp, DangerRed, RoundedCornerShape(4.dp))
                             .padding(horizontal = 4.dp, vertical = 1.dp)
                     ) {
                         Text(
                             text = "VIP",
                             color = DangerRed,
-                            fontSize = 9.sp,
+                            fontSize = 8.5.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
