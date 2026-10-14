@@ -453,9 +453,18 @@
     （这也解释了为什么 `:module:data` / `:module:online` 的测试能跑通而 `:core:ui` 的不行 —— 后者是上游测试与源码 API 脱节，见上文。）
   - 依赖：P3-01
 
-- [ ] **P3-03 `CloudSourceSyncClient`** — 上传时**读取脚本文件内容内联进 JSON**（RawS 只存 `scriptPath`，不能只传路径）；还原时写回文件 → 校验 sha256 → 走既有安装 API 注册；兼容 OrBit 备份（有 `scriptContent` 无 `scriptPath`）；缺正文时报「该备份不完整」。
+- [x] **P3-03 音源云同步（HTTP 路由 + 编排）** — ✅ 已完成（提交 `0114aed`）。
+  - **没有新建 `CloudSourceSyncClient`**：按本 TODO 上一节自己的要求（「别把 HTTP 细节散落到多个地方，目前只在 `CloudSyncClient`」），三条音源路由直接加进现有 **`CloudSyncClient`**：
+    `backupSources`（服务端语义是**全量覆盖**，没有 `mode` 参数）、`restoreSources`（无备份同样 404 → 映射成「云端还没有音源备份」而非错误）、`deleteSourceBackup`（该路由**没有** `deletePlaylists` 那种「不传参数就清空」的陷阱，故不加护栏）。
+  - 新增 **`CloudSourceSyncService`** 做装配：
+    - **上传**：读 `scriptPath` 指向的文件、把正文**内联进 `scriptContent`**（`InstalledLxSource` 只存路径 + sha256）；**读不到正文时不编造内容**，留空并记进 `CloudSourceUploadReport.incomplete` 让 UI 报出来。
+    - **还原**：逐个走 `LxSourcePluginStore.installFromScript`（P3-01 查明缺失、`41a2788` 补上的入口），**不绕过安装 API 自己写文件**；装完用 `scriptSha256` 校验完整性（备份里该字段为空时**跳过比对**，兼容 OrBit 写的条目）；并补一次 `setEnabled` 还原「已停用」状态（`installFromScript` 对新装一律给 `true`）。
+    - `CloudSourceRestoreReport` 把「装了几个 / 跳过（缺正文）几个 / 哈希不匹配几个 / 失败几个」分开报，失败项带 `名字: 原因`。
+  - **本任务只做 LX**：目标写的是「**洛雪**歌源同步」，契约 §4 ④ 的字段形状（`scriptContent` + `wy/tx/kg/kw/mg` 平台码）本身就是 LX 的；RawS 另有 MusicFree（`MusicSourcePluginStore`）**不在本任务范围**。
+  - ⚠️ **验证程度**：`CloudSourceJson`（格式层）有 12 个单测覆盖；`CloudSourceSyncService` 依赖 `Context`（`filesDir` / `AppPreferences` / 安装 API）**没有单测**，目前只做到编译门禁 + 代码路径推理。
   - 依赖：P3-02
-  - 验收：清数据后从云端还原的音源**能真正解析出播放地址**。
+  - 验收：清数据后从云端还原的音源**能真正解析出播放地址**（**待真机验证**）。
+
 
 - [ ] **P3-04 音源门户新增「云同步」tab** — 追加 `SourcePortalTab.CloudSync`；**同步更新 `SourcePortalBottomNavigation` 的 tab 数、`SourcePortalTabIcon` 映射**；内容：地址输入（用户自填、不内嵌）/ 登录 / 上传 / 下载 / 删除 / 清空 / 上次备份时间 / 条目列表。
   - 依赖：P3-03
