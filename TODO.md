@@ -381,7 +381,19 @@
   - 注意 P5-01 会把这里的 HTTP 逻辑与 P3-03 合并成统一客户端，所以**别把 HTTP 细节散落到多个地方**（目前只在 `CloudSyncClient`）。
   - 依赖：P1-12、P2-01
 
-- [ ] **P2-13 歌单同步（UI）** — 云同步页（骨架照抄 `WebDavPage.kt`）：地址 / 账号 / 上传模式 / 选择性上传下载 / 清空二次确认 / 显示 `updated_at`。
+- [x] **P2-13 歌单同步（UI）** — ✅ 已完成（提交 `d0df1e5`）。新增 `CloudSyncScreen.kt`(481 行) + `CloudSyncActivity.kt`(12 行) + `ic_settings_cloud_sync.xml`；入口放在既有**「媒体库与数据」**分组的第 2 项（紧挨 WebDAV 备份），与它同属「用户数据备份/还原」语义，不新增分组噪声。
+  - 🔑 **入口默认可达已逐环核实**（P1-15 那个坑的复查）：`SettingsActivity` 传 `onNavigateToCloudSync` → `LiquidGlassSettings` 的 `SettingsRootItem`（与扫描设置/WebDAV 备份**同属一个 section**，第 519-526 行）→ `sections.forEach`（`:1270`）**无条件全量渲染** → manifest 声明。**不依赖开关、不依赖侧栏、不依赖底部导航是否关闭。**
+  - 页面能力：服务器地址 / 用户名 / 密码（掩码、初值恒空、保存后清空）+ 保存配置（Keystore 加密走 `Dispatchers.IO`）、上传（merge/overwrite 单选）、下载（提示里给 `CloudRestoreReport` 的 5 个数字）、清空云端数据（`RawMiuixOverlayDialog` 二次确认，文案写明不可恢复）、上次上传/上次还原时间（`DateFormat` 本地化，0 显示为「从未」）。
+  - 进行中状态：页面级 `running` 状态，所有按钮/单选/输入框 `enabled = !busy`；卡片内 Miuix `CircularProgressIndicator` + 文案；`try/finally` 复位（取消也不会卡住）；结果用**提示条 + 状态卡片常驻文本双重呈现**（不怕提示条 2 秒闪过）。
+  - **404 走「云端还没有备份」的 INFO 提示而非报错** ✅；业务只走 `CloudPlaylistSyncService`（**不自己拼 JSON**）。
+  - 文案 EN/ZH 各 45 条、键完全对齐（已脚本核对）；新增行审计干净（4 处"硬编码中文"是 `AppLogger` 日志，非 UI 文案）。
+  - ⚠️ **已知限制（子代理提出，我认可，都不阻塞）**：
+    1. **上传/下载按钮以「已保存配置」为门槛**（未保存时禁用 + 一行说明），所以必须先点「保存配置」；若想「点击自动先保存」属交互取舍，待用户定。
+    2. **清空云端数据后未重置 `lastBackupAtMs`/`lastRestoreAtMs`** → 「上次上传」仍显示旧时间。语义上它只是「本机上次上传时间」，但用户可能期望「从未」。改起来是两行。
+    3. **`:module:online` 的 `Failure.message` 是硬编码中文**（如「云端还没有备份」），英文界面下失败提示会带中文尾巴。要彻底解决需把数据层文案也资源化（**超出本任务范围**，属独立任务）。
+    4. 新图标 `ic_settings_cloud_sync.xml` 是标准 Material `sync` 路径，**无设备未看渲染**；不合适时改一行 `iconRes` 即可。
+    5. **真机交互未验收**（无设备）：编译/资源/manifest/可达路径均已核实，但点按、转圈、弹窗未实测。
+  - 依赖：P2-12
   - 依赖：P2-12
 
 - [ ] **P2-14（可选，低优先）最近播放歌单** — `AppPreferences` 存 current/previous 两个条目。
