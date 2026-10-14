@@ -362,6 +362,13 @@
   - 依赖：P2-08、P2-09
 
 - [ ] **P2-11 导入我的歌单（UI）** — 拉取账号歌单 → 多选 → 导入为本地歌单（在线曲目保留 `online://` 标识，播放走 P1-11 解析层）。
+  - [x] **前置修复（提交 `b37d061`）**：`PlatformAccountManager.fetchUserPlaylists` 原先失败时 `return emptyList()`，
+    UI 只能显示「你没有歌单」—— **用户会以为歌单丢了，而实际是网络/平台接口问题**，属本工程反复强调要避免的**静默失败**。
+    已改为 `Result<List<OnlinePlaylist>>`：未登录 / 无可用服务 / 接口异常都是 `Result.failure`；
+    **`Result.success(emptyList())` 表示该账号确实没有歌单**（正常结果，不是错误），两者可区分。
+    该方法此前**没有任何调用方**，所以改签名安全；`IPlatformAuthService.getUserPlaylists` 签名不动，避免动到已移植的平台实现。
+    → **P2-11 的 UI 必须分别呈现这三种状态**（失败可重试 / 确实没有 / 正常列表）。
+  - [ ] UI：入口放平台账号页（每张账号卡一个「导入我的歌单」，仅已登录可用）→ 列表多选 → 逐个 `OnlinePlaylistImportService.importPlaylist` → 汇总结果（失败项要列出歌单名与原因）。子代理实现中。
   - 依赖：P2-10、P2-06
 
 - [x] **P2-12 歌单同步（逻辑层）** — ✅ **已完成**（4 批提交：`0530f42` 序列化 / `8a3c4ae` HTTP / `4890c85` 上传 / `4681d1d` 还原）。`CloudSyncClient` 对接 `/api/user/auth`、`/api/user/playlists/{backup,restore,delete}`、`/api/user/data/clear`；JSON 字段与 `docs/cloud-sync-contract.md` §4 逐字一致（`SerializedName` + 16 个契约测试断言字段名）；`mode=merge|overwrite`；喜欢/不喜欢按系统歌单名 `我喜欢的音乐`/`不喜欢的音乐` + `groupName="系统"` 序列化；密码加密存储（Keystore + AES-GCM，复用 `PlatformCredentialCipher`）。
