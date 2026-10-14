@@ -583,6 +583,8 @@ object XxxStore { /* ... */ }
 | D12 | 环境/构建阻塞 | **已全部解决**（见 §2.2）。`docs/ffmpeg-prebuilt.md` 记录的是当时的排查过程 | — |
 | D13 | **放弃从源码编译原生库，改用预编译 `.so`** | 公开仓库缺 70 个 USB 原生源文件 → CMake 必然失败；改为打包 `jniLibs/` 中官方 1.0.13 的完整 `.so` 集 | §2.2；代价：**原生代码冻结**（本移植不需要改原生） |
 | D14 | **「喜欢」不搬到 `song_attitude`（混合方案，用户拍板）** | 实测 RawS **已有**完整「喜欢」机制（`FAVORITES_PLAYLIST_ID` 系统歌单 + `PlaylistStore`，已打通播放器/长按菜单/歌单页/WebDAV 备份），再建一套会造成**两个事实来源**让心形状态不一致。故：**本地曲的喜欢沿用既有歌单**；**「不喜欢」（本地+在线）与「在线曲的喜欢」**走 `song_attitude` | 修正 §3.5 原「喜欢/不喜欢都不存在」的误判；实现见 `SongAttitudeRepository` |
+| D15 | **GL 可视化短边 400px 黄金硬件缩放与生命周期** | 为防止在低端机或高分屏片元着色器掉帧，GL 渲染表面限制短边 400px（由 GPU 硬件 Scaler 自动插值全屏），且不可见或页面切入后台时严格触发 `onPause()` 释放 GPU 时钟，保证平滑稳定 | 见 `GLVisualizerCommon.kt` |
+| D16 | **云同步双入口与集中架构** | `CloudSyncClient` 统一底层 HTTP 路由与凭据；在设置页「媒体库与数据」下提供统一「云同步中心」（歌单+音源），同时在「音源导入」门户中保留音源同步专属 Tab，入口互通体验一致 | 见 `CloudSyncScreen.kt` 与 `SourceCloudSyncTab.kt` |
 
 ### 风险
 

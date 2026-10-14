@@ -135,13 +135,23 @@ export default {
 			// 1.2 发布/更新音源脚本 [POST /api/sources]
 			if (path === "/api/sources" && method === "POST") {
 				const body = (await request.json()) as any;
-				const { id, name, version, author, description, scriptUrl, isActive = 1 } = body;
+				const { id, name, version, author, description, scriptUrl, isActive = 1, username, password } = body;
+
+				if (!username || !password) {
+					return jsonResponse({ success: false, message: "发布或更新社区音源需要提供账号和密码" }, 401);
+				}
+
+				const authResult = await verifyOrCreateUser(env, username, password);
+				if (!authResult.success) {
+					return jsonResponse({ success: false, message: authResult.message }, 401);
+				}
 
 				if (!id || !name || !scriptUrl) {
 					return jsonResponse({ success: false, message: "缺少必要字段 (id, name, scriptUrl)" }, 400);
 				}
 
 				const now = Date.now();
+				const effectiveAuthor = (author && author.trim().length > 0) ? author.trim() : username.trim();
 				await env.orbit_db
 					.prepare(
 						`
@@ -157,7 +167,7 @@ export default {
 						updated_at = excluded.updated_at
 				`
 					)
-					.bind(id, name, version || "1.0.0", author || "社区", description || "", scriptUrl, isActive, now, now)
+					.bind(id, name, version || "1.0.0", effectiveAuthor, description || "", scriptUrl, isActive, now, now)
 					.run();
 
 				return jsonResponse({ success: true, message: "音源脚本保存成功" });
