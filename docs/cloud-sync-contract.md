@@ -170,10 +170,24 @@ CREATE TABLE IF NOT EXISTS user_settings (
 // ③ groups_json —— 分组名数组（客户端会放入 "系统"）
 ["分组名", ...]
 
-// ④ sources_json —— RawS 侧自定义结构（Worker 视为不透明字符串）
-[{ "id","name","version","author","description","sourceUrl","scriptContent",
-   "scriptSha256","enabled","isPrimary","supportPlatforms","installedAtMs","updatedAtMs" }]
+// ④ sources_json —— 音源数组（Worker 视为不透明字符串，客户端自定义形状）
+//
+// ⚠️ 下面这份**以 OrBit 的真实实现为准**（`app/src/main/java/com/orbit/music/data/online/model/SourceScriptItem.kt`
+//    的 `toJson()` / `fromJson()`）。本节原先写的是 `enabled` / `installedAtMs` / 无类型的
+//    `supportPlatforms`，与 OrBit 实际不符 —— 照那份写会导致 OrBit ↔ RawS 互相读不到，已于 2026-10 订正。
+[{ "id", "name", "version", "author", "description", "scriptContent", "sourceUrl",
+   "isEnabled",          // ← 不是 enabled
+   "isPrimary",
+   "supportPlatforms",   // ← 逗号分隔**字符串**（OrBit 用 joinToString(",") 写、optString 读），不是数组
+   "importedAt",         // ← 不是 installedAtMs
+   // ↓ 以下两个是 RawS 的扩展字段，OrBit 没有。OrBit 按 key 取值，多出来的键会被忽略，
+   //   所以多写它们是安全的（换来 RawS 侧能做 sha256 完整性校验）。
+   "scriptSha256", "updatedAtMs" }]
 ```
+
+> **`platforms` / `actions` / `format` 不要往云端带**：它们在 RawS 侧是安装时从脚本正文解析出来的
+> （`LxSourcePluginStore` 的 `descriptor.platforms` / `metadata.format`），只要 `scriptContent` 在，
+> 还原后会自动重新推导。`platforms` 里唯一有跨端意义的只是**平台码**，对应 `supportPlatforms`。
 
 **喜欢 / 不喜欢没有独立表或接口**。它们作为两个**系统歌单**塞进 `playlists_json`：
 
