@@ -14,7 +14,10 @@ echo "   Orbit Player - Android Screenshot"
 echo "======================================================"
 
 # 获取已连接并处于 authorized/device 状态的设备列表
-mapfile -t ALL_DEVICES < <(adb devices | awk '$2=="device"{print $1}')
+ALL_DEVICES=()
+while IFS= read -r dev; do
+    [ -n "${dev}" ] && ALL_DEVICES+=("${dev}")
+done < <(adb devices | awk '$2=="device"{print $1}')
 DEVICE_COUNT=${#ALL_DEVICES[@]}
 
 if [ "${DEVICE_COUNT}" -eq 0 ]; then
