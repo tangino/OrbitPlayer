@@ -204,6 +204,15 @@
     - 网格沿用 `chunked(N)`（决策 D11），**不要 `LazyVerticalGrid`**。
     - ⚠️ **不要用 `.\gradlew.bat --rerun-tasks`**：本工程会炸 `:core:common`（`io.github.proify.lyricon.*` 全部 Unresolved —— KMP 依赖 `:lyric:model` 的 jar 在强制重跑语义下拿不到）。用普通命令或 `:app:compileReleaseKotlin` 即可。
     - ⚠️ **`runCatching` 会吞掉 `CancellationException`**：OrBit 代码大量使用 `runCatching`，逐字移植会把「协程取消」伪装成业务失败（切平台/切分类时闪假错误）。已在仓库层用 `resultOf` 根治（提交 `d1674c3`）；**后续移植/新写的挂起函数一律用 `resultOf` 或显式 rethrow**，不要用裸 `runCatching`。
+    - ⚠️ **`:core:ui` 的单元测试整套跑不起来（上游遗留，非本移植造成）**：`.\gradlew.bat :core:ui:testReleaseUnitTest` 会停在
+      `:core:ui:compileReleaseUnitTestKotlin FAILED`，**27 个编译错误分布在 7 个测试文件**，是**测试与源码的 API 脱节**，例如：
+      `CollectionTransitionProtocolTest.kt:22` 用 `nextFrame` 参数（源码里没有）、`ReferenceHeroArtworkGeometryTest.kt:9` 引用 `visibleSidePx`（源码里没有）、
+      `virtuallist/Bound*` 占 15 个。
+      - **已核实与本移植无关**：涉及的源码文件（`CollectionTransitionProtocol.kt` / `ReferenceHeroArtworkGeometry.kt` 等）本会话**从未改动**；报错测试也**零引用**我改过的符号。
+      - **影响**：`:core:ui` 的测试**不能当回归门禁用** —— 其中包括正好覆盖底栏/主界面卡片的 `BottomNavigationEntryTest` / `BottomNavigationCard*` / `HomeCardEditorPolicyTest`。
+        **P4 频谱可视化会大量改 `:core:ui`**，届时需要靠静态核对或先修好这套测试（修它属于动上游测试文件，**需先问用户**）。
+      - 替代手段（本次用过，有效）：① 静态等价验证（如按 `NavScene` 的 `(id, "tag")` 正则抽出全部 56 项，验证 id/tag 唯一性 —— 正是 `BottomNavigationEntryTest` 的断言）；
+        ② `:module:data` / `:module:online` 的测试是**好的**，可以直接跑（云同步契约 16 个、M3U8 编解码 6 个都跑通了）。
 
 ---
 
