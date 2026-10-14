@@ -421,7 +421,17 @@
   - **兼容 OrBit 备份**：有 `scriptContent` 无 `scriptPath` → 按内联脚本安装；**只有路径没有正文 → 明确报错「该备份不完整」，绝不静默失败**（AGENTS §6.0 红线）。
   - 依赖：P0-05
 
-- [ ] **P3-02 定义同步 DTO（并集）** — `CloudSourceEntry`：`id, name, version, author, description, sourceUrl, scriptContent, scriptSha256, enabled, isPrimary, supportPlatforms, installedAtMs, updatedAtMs, origin, methods`；Gson 序列化。
+- [x] **P3-02 定义同步 DTO（并集）** — ✅ 已完成（提交 `ea31399`，`module/online/.../sync/CloudSourceJson.kt` + 12 个契约测试全绿）。
+  - 🔴 **重大发现：契约文档 §4 ④ 的字段名与 OrBit 真实实现不一致。** OrBit 的权威定义 `SourceScriptItem`（`app/.../data/online/model/SourceScriptItem.kt:8`）实际用的是：
+    `isEnabled`（**不是** `enabled`）、`importedAt`（**不是** `installedAtMs`）、`supportPlatforms` 是 **`joinToString(",")` 的逗号分隔字符串**（**不是**数组），而且 OrBit **根本没有** `scriptSha256` / `updatedAtMs`。
+    这与之前 `#EXT-ORBIT-*` 那次是同类的规格偏差 → **一律以 OrBit 真实实现为准**。契约文档 §4 ④ 那一行需要订正（见文末待办）。
+  - 兼容策略（两边都认，实测覆盖）：**写**按 OrBit 格式写；额外多写 `scriptSha256` / `updatedAtMs`（OrBit 按 key 取值、多余的键忽略）。**读**用 Gson `alternate` 同时认 `isEnabled`/`enabled` 与 `importedAt`/`installedAtMs`；`supportPlatforms` 用 `@JsonAdapter(CloudPlatformListAdapter::class)` 同时接受逗号字符串与 JSON 数组。
+  - 🔑 **关键推论（省掉一堆字段）**：本地的 `platforms` / `actions` / `format` **都是安装时从脚本正文解析出来的**（`LxSourcePluginStore.kt:170` 的 `descriptor.platforms`、`:169` 的 `metadata.format`）→ 只要 `scriptContent` 在，还原后它们会被**自动重新推导**，所以**不往云端带**。`platforms` 里唯一有跨端意义的是平台码，取 **Map 的 key**（value 是音质集合，OrBit 不认，不能带）。
+  - 缺脚本正文时**不丢条目、也不编造内容**：`isUsable` / `unusableEntries` 交给调用方明确报错（AGENTS §6.0 红线）。
+  - **另修一个阻塞性基础设施问题**：`core:common` 的 `AppLogger` 直接调 `android.util.Log`，而纯 JVM 单测里它是未 mock 的桩 → 一调用就抛 `RuntimeException: Method e in android.util.Log not mocked`。
+    **后果：本工程任何带日志的错误分支都测不了**（我这两个边界测试正好走这些分支）。已给 `:module:online` 开 `testOptions.unitTests.isReturnDefaultValues = true`。
+    全工程原本**都没有**配这一项 —— 别的模块测试能过只是因为**恰好没走到记日志的代码**。⚠️ 开了之后误用未 mock 的 Android API 会静默拿默认值，所以仍只测不依赖 Android 运行时的纯逻辑。
+    （这也解释了为什么 `:module:data` / `:module:online` 的测试能跑通而 `:core:ui` 的不行 —— 后者是上游测试与源码 API 脱节，见上文。）
   - 依赖：P3-01
 
 - [ ] **P3-03 `CloudSourceSyncClient`** — 上传时**读取脚本文件内容内联进 JSON**（RawS 只存 `scriptPath`，不能只传路径）；还原时写回文件 → 校验 sha256 → 走既有安装 API 注册；兼容 OrBit 备份（有 `scriptContent` 无 `scriptPath`）；缺正文时报「该备份不完整」。
