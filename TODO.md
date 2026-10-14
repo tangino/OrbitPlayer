@@ -488,6 +488,18 @@
 - [ ] **P4-01 扩展 `AudioVisualizerStyle` 枚举** — **只追加** `BarsWithPeaks=6, AuroraMountain=7, MirroredBars=8, TimeTunnel=9, Octgrams=10, SoundCity=11, FractalGalaxy=12, QuantumVortex=13`；**严禁重排 0..5**；`from(value)` 兜底保持 `Spectrum`。
   - 验收：老用户偏好（0..5）升级后不错位。
   - 依赖：P0-05
+  - 🔍 **落点地图（已勘察，P4-04/05/06 直接照这个做）**：
+    - 枚举定义：`core/ui/.../widget/player/ComposeAudioVisualizer.kt:48`，`from(value)` 在 `:56-59`（兜底 `Spectrum` ✅ 已是正确写法，追加即可）。
+    - 🔑 **分发机制不是 `when`，而是一串「条件组合」** —— 所以**追加枚举值能编译通过**，但新形态会**渲染成空白**（所有渲染器的 `visible` 都是 false）。
+      集成点是 **`SharedRealtimeVisualizerOverlay(...)`（同文件 `:1098-1140`）**：里面每个形态一行
+      `XxxSpectrumOverlay(visible = visible && style == AudioVisualizerStyle.Xxx, spectrum, spectrumState, isPlaying, modifier = Modifier.matchParentSize())`。
+      `Particle`/`ParticleTrails` 共用 `BottomParticleSpectrumOverlay`（靠 `showTrails` 区分），`PulseRings`/`EnergyRibbon`/`Ripple` 各一个。
+      → **新增形态 = 在 Box 里加一行 overlay**，不要另外造分发层。
+    - ⚠️ **`Spectrum(0)` 不在这里** —— 它没有 overlay 行，说明走的是另一条渲染路径（`ComposeAudioVisualizer` 主入口）。
+      **P4-04 动手前必须先找到 Spectrum 的渲染处**，否则会误以为「Spectrum 也是在这里加的」。
+    - 其它必须同步的文件（改枚举后逐一检查）：`AppPreferences.kt`（Int 持久化读写）、`MainActivity.kt`、`app/.../ui/player/LandscapePlayerActivity.kt`（形态选择器）、`core/ui/.../widget/ComposePlayerContainer.kt`。
+    - 📌 **顺序提醒**：P4-01 单独提交**没有用户可感的价值**（新形态选了是空白），所以**应与 P4-04（至少 3 个 Canvas 形态）合成一个可审核的增量**一起交付。
+
 
 - [ ] **P4-02 新增 `VisualizerColorScheme`** — 5 种配色（primary/secondary/peak 三色），存 `AppPreferences.UI`。
   - 依赖：P4-01
