@@ -467,9 +467,13 @@
 
 
 - [ ] **P3-04 音源门户新增「云同步」tab** — 追加 `SourcePortalTab.CloudSync`；**同步更新 `SourcePortalBottomNavigation` 的 tab 数、`SourcePortalTabIcon` 映射**；内容：地址输入（用户自填、不内嵌）/ 登录 / 上传 / 下载 / 删除 / 清空 / 上次备份时间 / 条目列表。
+  - 🔄 **子代理实现中**（与 P2-11 并行；P2-11 在 `:app`、这件在 `core:ui`，模块不冲突）。
+  - 已确认落点：`SourcePortalTab` 枚举在 `core/ui/.../scene/pages/SourcePortalChrome.kt:60`（现有 `Sources` / `Configuration` / `Downloads`），`SourcePortalBottomNavigation` 在 `:232`、`SourcePortalTabIcon` 在 `:301`（private）—— **三处都要同步改**；另需检查滑动/分页是否假设了 3 个 tab（搜 `SourcePortalTabTransition` / pager）。
+  - ⚠️ 已提醒子代理：**`:core:ui` 的文案方向与 `:app` 相反** —— 中文进 `core/ui/src/main/res/values/`、英文进 `values-en/`（而 `:app` 是英文进 `values/`）。这是本工程最容易搞反的一处。
   - 依赖：P3-03
 
 - [ ] **P3-05 音源门户新增「云同步」文案** — core:ui 中英双语。
+  - 🔄 与 P3-04 同一子代理一并完成（同属 `core:ui`）；注意 `values-en/` 只翻译了一部分，**新 key 的英文值也要写进去**。
   - 依赖：P3-04
 
 - [ ] **P3-06（可选，P3）社区音源广场** — `GET /api/sources` 列表 + 一键安装。**注意该接口无鉴权**；开放发布需先改 Worker（属改后端，须用户批准）。默认关闭。
