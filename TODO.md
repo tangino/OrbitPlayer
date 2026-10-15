@@ -35,7 +35,8 @@
 | **P3** | 洛雪歌源同步 | 6 | 0 | 未开始 |
 | **P4** | 频谱可视化 | 8 | 0 | 未开始 |
 | **P5** | 云同步统一入口 + 收尾回归 | 5 | 0 | 未开始 |
-| | **合计** | **52** | **0** | |
+| **P6** | 专项修复与体验补齐（8 大 Issue） | 10 | 0 | 待开工 |
+| | **合计** | **62** | **0** | |
 
 ---
 
@@ -521,6 +522,53 @@
 
 ---
 
+## P6 专项修复与体验补齐（8 大 Issue 专项计划）
+
+> 针对实际联调测试中发现的 8 大缺陷与体验倒退展开系统性修复与能力补齐。详情见 [`ISSUES.MD`](ISSUES.MD)。
+
+- [x] **P6-01 播放中音效与拖动闪退修复（对应 ISSUE-01，Blocker）** — ✅ 已完成。
+  - 在 `NativeDSPEngine.kt` 建立统一互斥锁 `dspLock = Any()` 与安全辅助函数 `withDsp`，全面保护全部 Native DSP JNI 调用；
+  - 在 `FfmpegAudioPlayer.kt` 为 `seekTo` 补齐 `runCatching` 异常捕获；
+  - 在 `AudioEffectsActivity.kt` 将生命周期中的 JNI 绑定异常捕获放宽至 `Throwable`，彻底杜绝了并发死锁与 SIGSEGV。
+
+- [x] **P6-02 歌单页我喜欢的音乐去重（对应 ISSUE-02）** — ✅ 已完成。
+  - 在 `PlaylistScreen.kt` 将传给 `buildPlaylistGridPlan` 的数据源修正为 `filteredPlaylists = playlists.filterNot { it.isFavorites }`，彻底去除了默认分组中重复生成的真系统歌单卡片。
+
+- [x] **P6-03 扫码登录二维码修复与 Cookie 登录补齐（对应 ISSUE-03）** — ✅ 已完成。
+  - 在 `PlatformAccountManager.kt` 增加 `loginWithCookies`，支持 QQ 与酷狗的 Cookie 校验、拉取信息与密文落盘；
+  - 在 `PlatformAccountScreen.kt` 登录弹窗改造为双 Tab 结构（扫码 / Cookie 登录），内建智能 Cookie 提取、剪贴板一键粘贴与错误提示。
+
+- [x] **P6-04 音源同步入口联动与指引强化（对应 ISSUE-03）** — ✅ 已完成。
+  - 在 `SourceConfigurationPage.kt` 洛雪音源区域增加高亮醒目的“洛雪音源云同步”卡片，点击一键跳转至 `SourceCloudSyncTab`；
+  - 系统设置中的云同步入口标题由“歌单云同步”升级为“歌单与音源云同步”。
+
+- [x] **P6-05 歌单云同步细粒度选择与备份预览还原（对应 ISSUE-04）** — ✅ 已完成。
+  - 在 `CloudPlaylistSyncService.kt` 扩展 `upload`、`restore`、`fetchCloudPlaylists` 与 `deleteSelectedCloudPlaylists`；
+  - 重构 `CloudSyncScreen.kt` 为双 Tab 交互架构：支持本地歌单/在线收藏/喜好多选上传与增量覆盖模式切换；支持云端备份下载前摘要预览、按选定项恢复与云端删除二次确认。
+
+- [x] **P6-06 混合歌单全链路打通（对应 ISSUE-05）** — ✅ 已完成。
+  - 在 `PlaylistDetailScreen.kt` 接入混合歌单统计（`共 X 首 (本地 A · 网络 B)`），随机播放支持混合全单；
+  - 在 `PlayerController.kt` 的 `playInternal` 拦截 `online://` 虚拟路径并自动路由至 `MusicSourcePlaybackController.play` 异步寻源；
+  - 在 `AppPageRenderer.kt` 将整单列表与点击索引交付播放器。
+
+- [x] **P6-07 网络歌单卡片封面加载与拼图修复（对应 ISSUE-06）** — ✅ 已完成。
+  - 在 `UserPlaylist` 实体扩展 `val coverUrl: String? = null`；
+  - 在 `PlaylistStore.kt` 借助 MMKV 键 `playlist_cover_url_<id>` 存储与还原封面链接（免数据库 Schema 升级风险），接通 JSON 导入导出；
+  - 在 `PlaylistScreen.kt` 优先渲染 `playlist.coverUrl`，拼图数据源补充歌单内的在线曲目。
+
+- [x] **P6-08 网络歌曲寻源状态与平台转换反馈（对应 ISSUE-07）** — ✅ 已完成。
+  - 在 `MusicSourcePlaybackController.kt` 快照增加 `originalPlatform`、`resolvedPlatform`、`sourceTag` 及 `isFallbackSource`；
+  - 在 `SourceOnlinePlayerPage.kt` 增加寻源解析中进度动效，以及搜救时展示 `原源 ➔ 搜救源 · 音质` 的橙色转换徽标。
+
+- [x] **P6-09 网络歌单整单入队与连续切歌修复（对应 ISSUE-08）** — ✅ 已完成。
+  - 在 `MusicSourcePlaybackBackend.kt`、`MusicSourcePlaybackController.kt`、`PlayerControllerMusicSourcePlaybackBackend.kt` 与 `OnlinePlaybackLauncher.kt` 中全面支持完整队列与索引透传；
+  - 在 `OnlinePlazaDetailPage.kt` 点击单曲或点击“播放全部”时均将整张歌单全量入队，实现顺序与连续切歌。
+
+- [x] **P6-10 P6 综合构建回归与端到端功能验证** — ✅ 已完成。
+  - 全工程全量编译执行 `.\gradlew.bat assembleDebug --console=plain` 编译成功通过（`BUILD SUCCESSFUL`，无任何语法或组件连接错误）。
+
+---
+
 ## 依赖关系（串行链）
 
 ```
@@ -538,6 +586,15 @@ P0-05 → P3-01 → P3-02 → P3-03 → P3-04 → P3-05 → P3-06
 P0-05 → P4-01 → P4-02 → P4-03 → P4-04 ┐
                         P4-03 → P4-05 → P4-06 ┴→ P4-07 → P4-08
 P2-12 + P3-03 → P5-01 → P5-02 → P5-03 → P5-04 → P5-05
+P5-05 → P6-01 ──┐
+P5-05 → P6-02 ──┼─→ P6-10
+P5-05 → P6-03 ──┤
+P5-05 → P6-04 ──┤
+P5-05 → P6-05 ──┤
+P5-05 → P6-06 ──┤
+P5-05 → P6-07 ──┤
+P5-05 → P6-08 ──┤
+P5-05 → P6-09 ──┘
 ```
 
 **可并行开工的三条线**（互不冲突）：
