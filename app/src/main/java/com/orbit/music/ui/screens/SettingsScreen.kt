@@ -100,6 +100,7 @@ fun SettingsScreen(
     // 折叠展开状态管理 (支持记住状态与一键全部展开/折叠)
     var isThemeExpanded by rememberSaveable { mutableStateOf(true) }
     var isOnlineExpanded by rememberSaveable { mutableStateOf(true) }
+    var isAudioPipelineExpanded by rememberSaveable { mutableStateOf(false) }
     var isBgExpanded by rememberSaveable { mutableStateOf(true) }
     var isTrailExpanded by rememberSaveable { mutableStateOf(false) }
     var isVisualizerExpanded by rememberSaveable { mutableStateOf(true) }
@@ -123,12 +124,13 @@ fun SettingsScreen(
                     }
                 },
                 actions = {
-                    val anyExpanded = isThemeExpanded || isOnlineExpanded || isBgExpanded || isTrailExpanded || isVisualizerExpanded || isFloatingExpanded || isLangStartupExpanded || isAudioLibExpanded || isBackupExpanded || isDeviceInfoExpanded
+                    val anyExpanded = isThemeExpanded || isOnlineExpanded || isAudioPipelineExpanded || isBgExpanded || isTrailExpanded || isVisualizerExpanded || isFloatingExpanded || isLangStartupExpanded || isAudioLibExpanded || isBackupExpanded || isDeviceInfoExpanded
                     TextButton(
                         onClick = {
                             val target = !anyExpanded
                             isThemeExpanded = target
                             isOnlineExpanded = target
+                            isAudioPipelineExpanded = target
                             isBgExpanded = target
                             isTrailExpanded = target
                             isVisualizerExpanded = target
@@ -285,6 +287,104 @@ fun SettingsScreen(
                             title = "在线音源与脚本管理",
                             subtitle = if (activeScript != null) "活动音源: ${activeScript?.name} (v${activeScript?.version}) · $qualityLabel" else "官方直链兜底模式 (共 ${scripts.size} 个音源) · $qualityLabel",
                             onClick = { showAudioSourceManager = true }
+                        )
+                    }
+                }
+            }
+
+            // 2.5 音频输出与解码核心 (Hi-Fi)
+            item {
+                val audioSettings = remember { com.orbit.music.audio.pipeline.AudioOutputSettings.getInstance(context) }
+                val audioConfig by audioSettings.config.collectAsState()
+                val usbStatus by com.orbit.music.audio.pipeline.UsbExclusiveSession.status.collectAsState()
+
+                val backendOptions = listOf(
+                    com.orbit.music.audio.pipeline.AudioOutputConfig.BACKEND_AUDIOTRACK,
+                    com.orbit.music.audio.pipeline.AudioOutputConfig.BACKEND_AAUDIO,
+                    com.orbit.music.audio.pipeline.AudioOutputConfig.BACKEND_OPENSLES
+                )
+
+                val summaryText = buildString {
+                    append(audioConfig.backend)
+                    if (audioConfig.usbExclusive) append(" · USB独占")
+                    if (audioConfig.preferFfmpeg) append(" · FFmpeg软解")
+                }
+
+                CollapsibleSettingsCard(
+                    icon = Icons.Default.GraphicEq,
+                    title = "音频输出与解码核心 (Hi-Fi)",
+                    subtitle = summaryText,
+                    badgeText = if (audioConfig.backend != com.orbit.music.audio.pipeline.AudioOutputConfig.BACKEND_AUDIOTRACK || audioConfig.usbExclusive) "Hi-Fi" else null,
+                    isExpanded = isAudioPipelineExpanded,
+                    onToggleExpand = { isAudioPipelineExpanded = !isAudioPipelineExpanded }
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    ) {
+                        // 1. 音频输出后端 (AudioTrack / AAudio / OpenSL ES)
+                        SettingsDropdownItem(
+                            icon = Icons.Default.Speaker,
+                            title = "音频输出通道 (Backend)",
+                            subtitle = when (audioConfig.backend) {
+                                com.orbit.music.audio.pipeline.AudioOutputConfig.BACKEND_AAUDIO -> "AAudio (Google Oboe 原生超低延迟，推荐)"
+                                com.orbit.music.audio.pipeline.AudioOutputConfig.BACKEND_OPENSLES -> "OpenSL ES (原生传统通用通道)"
+                                else -> "AudioTrack (Android 标准系统音频服务)"
+                            },
+                            currentValue = audioConfig.backend,
+                            options = backendOptions,
+                            onOptionSelected = { selected ->
+                                audioSettings.setBackend(selected)
+                                Toast.makeText(context, "已切换为 $selected 输出，重新起播或切歌时生效", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+
+                        HorizontalDivider(color = OrbitTheme.colors.surfaceBorder.copy(alpha = 0.3f), modifier = Modifier.padding(horizontal = 16.dp))
+
+                        // 2. USB 独占输出 (Bit-Perfect)
+                        SettingsSwitchItem(
+                            icon = Icons.Default.Usb,
+                            title = "外置 USB DAC 源码直通 (Bit-Perfect)",
+                            subtitle = "连接外置小尾巴/解码耳放时申请底层独占，锁定原始硬件采样率，避免系统 SRC 强制重采样",
+                            checked = audioConfig.usbExclusive,
+                            onCheckedChange = { checked ->
+                                audioSettings.setUsbExclusive(checked)
+                                if (checked) {
+                                    Toast.makeText(context, "已开启 USB 独占模式，请连接外置 DAC 耳放体验", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+
+                        HorizontalDivider(color = OrbitTheme.colors.surfaceBorder.copy(alpha = 0.3f), modifier = Modifier.padding(horizontal = 16.dp))
+
+                        // 3. 优先使用 FFmpeg 软解码
+                        SettingsSwitchItem(
+                            icon = Icons.Default.Memory,
+                            title = "优先使用 FFmpeg 软解码",
+                            subtitle = "启用本地定制 FFmpeg 内核软解主流音频流，绕过高通/联发科/小米系统缺陷硬解",
+                            checked = audioConfig.preferFfmpeg,
+                            onCheckedChange = { checked ->
+                                audioSettings.setPreferFfmpeg(checked)
+                            }
+                        )
+
+                        HorizontalDivider(color = OrbitTheme.colors.surfaceBorder.copy(alpha = 0.3f), modifier = Modifier.padding(horizontal = 16.dp))
+
+                        // 4. 当前硬件状态胶囊展示
+                        val statusDetail = when (usbStatus.state) {
+                            com.orbit.music.audio.pipeline.UsbExclusiveState.ExclusiveActive ->
+                                "Bit-Perfect 直通激活: ${usbStatus.deviceName} (${usbStatus.sampleRate}Hz / ${usbStatus.channelCount}ch)"
+                            com.orbit.music.audio.pipeline.UsbExclusiveState.RoutingOnly ->
+                                "USB 设备就绪 (共享模式): ${usbStatus.deviceName}"
+                            com.orbit.music.audio.pipeline.UsbExclusiveState.ExclusiveFailed ->
+                                "独占模式失败已降级: ${usbStatus.detail}"
+                            else -> "系统内置音频输出 / 未连接 USB DAC"
+                        }
+                        SettingsInfoItem(
+                            icon = Icons.Default.Info,
+                            title = "硬件连接状态",
+                            value = statusDetail
                         )
                     }
                 }

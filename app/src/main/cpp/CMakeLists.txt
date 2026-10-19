@@ -61,3 +61,26 @@ target_link_options(
     PRIVATE
     "-Wl,-z,max-page-size=16384"
 )
+
+# Oboe 原生音频输出层 (AAudio / OpenSL ES / USB Exclusive Bit-Perfect)
+find_package(oboe REQUIRED CONFIG)
+
+add_library(
+    orbit_oboe
+    SHARED
+    player/oboe_sink.cpp
+)
+
+target_link_libraries(
+    orbit_oboe
+    oboe::oboe
+    ${android-lib}
+    ${log-lib}
+)
+
+target_link_options(
+    orbit_oboe
+    PRIVATE
+    "-Wl,-z,max-page-size=16384"
+)
+

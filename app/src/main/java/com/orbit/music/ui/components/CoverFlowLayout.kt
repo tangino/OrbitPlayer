@@ -687,7 +687,7 @@ fun CoverFlowLayout(
                                     ) {
                                         Box(
                                             modifier = Modifier
-                                                .fillMaxSize()
+                                                .requiredSize(cardSize)
                                                 .graphicsLayer {
                                                     this.scaleY = -1f // 直接垂直反转封面，原封面底边像素精准对齐倒影顶部接缝
                                                 }
@@ -703,7 +703,6 @@ fun CoverFlowLayout(
                                                     .build(),
                                                 contentDescription = null,
                                                 contentScale = ContentScale.Crop,
-                                                alignment = Alignment.BottomCenter,
                                                 loading = {
                                                     Box(
                                                         modifier = Modifier.fillMaxSize(),
@@ -1374,53 +1373,58 @@ fun AlbumCoverFlowLayout(
                                     // 2. 真实倒影
                                     Box(
                                         modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(reflectionHeight)
-                                            .clip(RoundedCornerShape(bottomStart = 6.dp, bottomEnd = 6.dp))
+                                            .size(width = cardSize, height = reflectionHeight)
+                                            .clipToBounds()
                                             .graphicsLayer {
-                                                scaleY = -1f
                                                 compositingStrategy = CompositingStrategy.Offscreen
                                             }
                                             .drawWithContent {
                                                 drawContent()
                                                 drawRect(
                                                     brush = Brush.verticalGradient(
-                                                        colorStops = arrayOf(
-                                                            0.00f to Color.Black.copy(alpha = 0.00f),
-                                                            0.10f to Color.Black.copy(alpha = 0.35f),
-                                                            0.40f to Color.Black.copy(alpha = 0.75f),
-                                                            0.75f to Color.Black.copy(alpha = 0.95f),
-                                                            1.00f to Color.Black.copy(alpha = 1.00f)
+                                                        colors = listOf(
+                                                            Color.White.copy(alpha = 0.85f),
+                                                            Color.White.copy(alpha = 0.35f),
+                                                            Color.Transparent
                                                         )
                                                     ),
                                                     blendMode = BlendMode.DstIn
                                                 )
                                             }
                                     ) {
-                                        if (!album.albumArtUri.isNullOrBlank()) {
-                                            SubcomposeAsyncImage(
-                                                model = ImageRequest.Builder(context)
-                                                    .data(album.albumArtUri)
-                                                    .memoryCacheKey("${album.albumArtUri}_$coverVersion")
-                                                    .diskCacheKey("${album.albumArtUri}_$coverVersion")
-                                                    .build(),
-                                                contentDescription = null,
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize()
-                                            )
-                                        } else {
-                                            Box(
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .background(OrbitTheme.colors.surfaceCard),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Album,
+                                        Box(
+                                            modifier = Modifier
+                                                .requiredSize(cardSize)
+                                                .graphicsLayer {
+                                                    scaleY = -1f
+                                                }
+                                                .background(OrbitTheme.colors.surfaceCard)
+                                        ) {
+                                            if (!album.albumArtUri.isNullOrBlank()) {
+                                                SubcomposeAsyncImage(
+                                                    model = ImageRequest.Builder(context)
+                                                        .data(album.albumArtUri)
+                                                        .memoryCacheKey("${album.albumArtUri}_$coverVersion")
+                                                        .diskCacheKey("${album.albumArtUri}_$coverVersion")
+                                                        .build(),
                                                     contentDescription = null,
-                                                    tint = OrbitTheme.colors.primary.copy(alpha = 0.35f),
-                                                    modifier = Modifier.size(cardSize * 0.45f)
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize()
                                                 )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .fillMaxSize()
+                                                        .background(OrbitTheme.colors.surfaceCard),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Album,
+                                                        contentDescription = null,
+                                                        tint = OrbitTheme.colors.primary.copy(alpha = 0.35f),
+                                                        modifier = Modifier.size(cardSize * 0.45f)
+                                                    )
+                                                }
                                             }
                                         }
                                     }

@@ -4532,7 +4532,7 @@ private fun MaximizedVisualizerOverlay(
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .fillMaxSize()
+                                            .requiredSize(currentCoverSize)
                                             .graphicsLayer {
                                                 this.scaleY = -1f // 垂直反转
                                             }
@@ -4548,7 +4548,6 @@ private fun MaximizedVisualizerOverlay(
                                                 .build(),
                                             contentDescription = null,
                                             contentScale = ContentScale.Crop,
-                                            alignment = Alignment.BottomCenter,
                                             loading = {
                                                 Box(modifier = Modifier.fillMaxSize())
                                             },

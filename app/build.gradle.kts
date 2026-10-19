@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
@@ -6,6 +6,7 @@
 android {
     namespace = "com.orbit.music"
     compileSdk = 34
+    ndkVersion = "26.1.10909125"
 
     defaultConfig {
         applicationId = "com.orbit.music"
@@ -27,7 +28,7 @@ android {
             cmake {
                 cppFlags("-std=c++17 -O3 -Wall")
                 arguments(
-                    "-DANDROID_STL=c++_static",
+                    "-DANDROID_STL=c++_shared",
                     "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
                 )
             }
@@ -79,6 +80,7 @@ android {
 
     buildFeatures {
         compose = true
+        prefab = true
     }
 
     composeOptions {
@@ -88,6 +90,10 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        jniLibs {
+            useLegacyPackaging = true
+            pickFirsts += setOf("**/libc++_shared.so")
         }
     }
 
@@ -114,6 +120,9 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended:1.6.6")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
 
+    // Google Oboe 原生低延迟音频输出库 (AAudio / OpenSL ES)
+    implementation("com.google.oboe:oboe:1.11.0")
+
     // AndroidX Media3 (ExoPlayer 播放核心与边播边缓存)
     implementation("androidx.media:media:1.7.0")
     implementation("androidx.media3:media3-exoplayer:1.3.1")
@@ -121,6 +130,7 @@ dependencies {
     implementation("androidx.media3:media3-database:1.3.1")
     implementation("androidx.media3:media3-session:1.3.1")
     implementation("androidx.media3:media3-ui:1.3.1")
+    implementation(project(":ffmpeg-decoder"))
 
     // Coil 高性能图片加载 (用于专辑封面渲染)
     implementation("io.coil-kt:coil-compose:2.6.0")

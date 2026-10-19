@@ -97,6 +97,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        android.util.Log.i("MainActivity", "Native Oboe pre-check loaded: ${com.orbit.music.audio.pipeline.OboeAudioOutput.ensureLoaded()}")
 
         // 优先应用车机与界面缩放配置，确保后续所有子 Window / Dialog / Popup 采用缩放后的 Density
         val savedMode = getSharedPreferences("equalizer_ui_state_prefs", Context.MODE_PRIVATE)

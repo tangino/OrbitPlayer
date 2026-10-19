@@ -99,18 +99,11 @@ class MusicPlayerManager private constructor(private val context: Context) {
 
     private val nativeDspAudioProcessor = NativeDspAudioProcessor()
 
-    private val renderersFactory = object : DefaultRenderersFactory(context) {
-        override fun buildAudioSink(
-            context: Context,
-            enableFloatOutput: Boolean,
-            enableAudioTrackPlaybackParams: Boolean
-        ): AudioSink {
-            return DefaultAudioSink.Builder(context)
-                .setEnableFloatOutput(true)
-                .setAudioProcessors(arrayOf(nativeDspAudioProcessor))
-                .build()
-        }
-    }.apply {
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private val renderersFactory = com.orbit.music.audio.pipeline.OrbitRenderersFactory(
+        context = context,
+        customAudioProcessors = listOf(nativeDspAudioProcessor)
+    ).apply {
         setEnableAudioFloatOutput(true)
     }
 
@@ -148,6 +141,7 @@ class MusicPlayerManager private constructor(private val context: Context) {
 
         setupPlayerListener()
         restoreLastPlayedSong()
+        com.orbit.music.audio.pipeline.UsbAudioController.getInstance(context).startObserving(scope)
     }
 
     /**
