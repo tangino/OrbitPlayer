@@ -104,3 +104,5 @@ Halcyon 拥有成熟且经过真机验证的底层音频输出与解码加固链
   - **阶段二完成**：完成 `OboeAudioSink`、`AudioDecoderCompatibility`、`OrbitRenderersFactory` 与 `MusicPlayerManager` 的无缝接入。引入 `OrbitDelegatingAudioSink` 智能代理调度器。
   - **阶段三完成**：实现 `UsbAudioController` 与 `UsbExclusiveSession` 热插拔监听；在设置界面新增“音频输出与解码核心 (Hi-Fi)”控制卡片。
   - **阶段四完成**：全量编译通过并在 Android 设备上完成联调测试。验证网络广场歌曲在线寻源拉流、边播边存及 Oboe 原生流输出正常运作。
+  - **Release 构建验证**：使用 `build_release.bat` 成功打包生成 `OrbitPlayer-v0.4.5.apk` 并顺利安装至真机设备与模拟器。
+
