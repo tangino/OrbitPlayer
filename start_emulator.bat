@@ -28,6 +28,22 @@ if not defined ANDROID_HOME (
     exit /b 1
 )
 
+:: 1.1 检测并配置 Android 用户与 AVD 目录
+if not defined ANDROID_USER_HOME (
+    if exist "E:\softwares\Android\.android" (
+        set "ANDROID_USER_HOME=E:\softwares\Android\.android"
+    ) else if exist "%USERPROFILE%\.android" (
+        set "ANDROID_USER_HOME=%USERPROFILE%\.android"
+    )
+)
+if not defined ANDROID_AVD_HOME (
+    if exist "E:\softwares\Android\.android\avd" (
+        set "ANDROID_AVD_HOME=E:\softwares\Android\.android\avd"
+    ) else if defined ANDROID_USER_HOME if exist "!ANDROID_USER_HOME!\avd" (
+        set "ANDROID_AVD_HOME=!ANDROID_USER_HOME!\avd"
+    )
+)
+
 set "EMULATOR_BIN=%ANDROID_HOME%\emulator\emulator.exe"
 set "ADB_BIN=%ANDROID_HOME%\platform-tools\adb.exe"
 

@@ -27,10 +27,14 @@ poweramp/
 # 截图输出
 screenshot_*.png
 app_screenshot.png
+screen.png
 
 # 参考工程与临时文件
 auralis/
 HotDownloader-main/
+QTMusic/
+Halcyon/
+RawS-Music/
 *.js
 ghidra_project/
 ghidra_scripts/
